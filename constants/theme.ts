@@ -5,49 +5,62 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+const palette = {
+  backgroundLight: '#FAFAFA',
+  backgroundDark: '#1A1A1A',
+  textLight: '#1A1A1A',
+  textDark: '#FAFAFA',
+  accent: '#A3B8A2',
+  borderLight: '#D9D9D9',
+  borderDark: '#3C3C3C',
+};
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: palette.textLight,
+    background: palette.backgroundLight,
+    tint: palette.accent,
+    accent: palette.accent,
+    icon: palette.textLight,
+    border: palette.borderLight,
+    tabIconDefault: palette.accent,
+    tabIconSelected: palette.textLight,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: palette.textDark,
+    background: palette.backgroundDark,
+    tint: palette.accent,
+    accent: palette.accent,
+    icon: palette.textDark,
+    border: palette.borderDark,
+    tabIconDefault: palette.accent,
+    tabIconSelected: palette.textDark,
   },
 };
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
+    sans: 'Inter',
+    serif: 'Times New Roman',
+    rounded: 'SF Pro Rounded',
+    mono: 'SFMono-Regular',
+    title: 'Inter-SemiBold',
+    body: 'Inter-Regular',
   },
   default: {
-    sans: 'normal',
+    sans: 'Inter',
     serif: 'serif',
-    rounded: 'normal',
+    rounded: 'Manrope',
     mono: 'monospace',
+    title: 'Inter-SemiBold',
+    body: 'Inter-Regular',
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    sans: "'Inter', 'SF Pro Text', 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    serif: "'Inter', 'SF Pro Text', 'Manrope', serif",
+    rounded: "'SF Pro Rounded', 'Manrope', 'Inter', sans-serif",
+    mono: "'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace",
+    title: "'Inter', 'SF Pro Display', 'Manrope', sans-serif",
+    body: "'Inter', 'SF Pro Text', 'Manrope', sans-serif",
   },
 });
