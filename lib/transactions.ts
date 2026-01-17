@@ -12,6 +12,7 @@ export type ApiEntry = {
   date?: string;
   notes?: string;
   merchant?: string;
+  title?: string;
   tag?: string;
   created_at?: string;
   createdAt?: string;
@@ -159,7 +160,7 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   const normalizedType: 'income' | 'expense' = type === 'income' ? 'income' : 'expense';
   const signedAmount = normalizedType === 'income' ? Math.abs(amountValue) : -Math.abs(amountValue);
   const label =
-    entry.notes?.trim() || entry.merchant?.trim() || entry.category?.trim() || entry.mode || 'Transaction';
+    entry.title?.trim() || entry.merchant?.trim() || entry.category?.trim() || entry.notes?.trim() || entry.mode || 'Transaction';
   const category = entry.category ?? (normalizedType === 'income' ? 'Income' : 'Expense');
   const dateSource =
     entry.date ?? entry.created_at ?? entry.createdAt ?? entry.updated_at ?? null;
@@ -170,6 +171,7 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   return {
     id: entry.id ? String(entry.id) : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     name: label,
+    title: entry.title ?? null,
     category,
     amount: signedAmount,
     icon: resolveIconForEntry(category, entry.type),
