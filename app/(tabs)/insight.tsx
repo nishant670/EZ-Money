@@ -1,386 +1,215 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors, Fonts } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { CURRENCY_SYMBOL } from '@/constants/Currency';
 
-const months = [
-  { id: '2025-01', label: 'January 2025' },
-  { id: '2025-02', label: 'February 2025' },
-  { id: '2025-03', label: 'March 2025' },
+
+// Mock Data for Chart
+const weeklyData = [
+    { day: 'M', value: 0.3, active: false },
+    { day: 'T', value: 0.5, active: false },
+    { day: 'W', value: 0.8, active: true },
+    { day: 'T', value: 0.2, active: false },
+    { day: 'F', value: 0.4, active: false },
+    { day: 'S', value: 0.6, active: false },
+    { day: 'S', value: 0.5, active: false },
 ];
-
-const stats = [
-  {
-    id: 'spend',
-    label: 'Total Spend',
-    amount: 25400,
-    currency: '₹',
-  },
-  {
-    id: 'savings',
-    label: 'Net Savings',
-    amount: 12800,
-    currency: '₹',
-    positive: true,
-  },
-];
-
-const categories = [
-  { id: 'dining', label: 'Dining', amount: 8200, color: '#6C8DFF' },
-  { id: 'shopping', label: 'Shopping', amount: 6500, color: '#9F7AEA' },
-  { id: 'bills', label: 'Bills', amount: 5100, color: '#F6C85F' },
-  { id: 'transport', label: 'Transport', amount: 3400, color: '#4ABA9A' },
-  { id: 'other', label: 'Other', amount: 2200, color: '#F47373' },
-];
-
-const insights = [
-  {
-    id: 'dining',
-    title: 'Your dining spend is up 12% this month.',
-    body: 'This is compared to your average spending in the last 3 months.',
-    icon: 'trending-up',
-    iconColor: '#F47373',
-  },
-  {
-    id: 'savings',
-    title: "You're saving 8% more than your average.",
-    body: "Keep up the great work! You're on track to meet your financial goals.",
-    icon: 'piggy-bank',
-    iconColor: '#4ABA9A',
-  },
-];
-
-const spacing = {
-  xs: 8,
-  sm: 12,
-  md: 16,
-  lg: 24,
-};
 
 export default function InsightScreen() {
-  const [selectedMonth, setSelectedMonth] = useState(months[1].id);
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
-  const accent = useThemeColor({}, 'accent');
+    const colorScheme = useColorScheme() ?? 'light';
+    const theme = Colors[colorScheme];
+    const accent = theme.accent;
 
-  const surfaceColor = useMemo(
-    () => (colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E'),
-    [colorScheme]
-  );
+    return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
 
-  const borderColor = useMemo(
-    () => (colorScheme === 'light' ? theme.border : '#2E2E2E'),
-    [colorScheme, theme.border]
-  );
-
-  return (
-    <ThemedView style={[styles.screen, { backgroundColor: theme.background }]}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}>
-        <View style={styles.topBar}>
-          <View style={[styles.topIcon, { borderColor }]}>
-            <MaterialCommunityIcons
-              name="currency-usd"
-              size={18}
-              color={theme.text}
-            />
-          </View>
-          <ThemedText style={styles.topTitle}>Overview</ThemedText>
-          <View style={[styles.topIcon, { borderColor }]}>
-            <MaterialCommunityIcons
-              name="account-circle-outline"
-              size={20}
-              color={theme.text}
-            />
-          </View>
-        </View>
-
-        <View style={styles.monthSelector}>
-          {months.map((month) => {
-            const isSelected = month.id === selectedMonth;
-            return (
-              <Pressable
-                key={month.id}
-                accessibilityRole="button"
-                onPress={() => setSelectedMonth(month.id)}
-                style={[
-                  styles.monthPill,
-                  {
-                    backgroundColor: isSelected ? theme.text : surfaceColor,
-                    borderColor,
-                  },
-                ]}>
-                <ThemedText
-                  style={[
-                    styles.monthLabel,
-                    {
-                      color: isSelected ? theme.background : theme.text,
-                    },
-                  ]}>
-                  {month.label}
-                </ThemedText>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.statsRow}>
-          {stats.map((stat) => (
-            <View
-              key={stat.id}
-              style={[
-                styles.statCard,
-                { backgroundColor: surfaceColor, borderColor },
-              ]}>
-              <ThemedText
-                style={styles.statLabel}
-                lightColor="rgba(26,26,26,0.65)"
-                darkColor="rgba(250,250,250,0.65)">
-                {stat.label}
-              </ThemedText>
-              <ThemedText
-                type="title"
-                style={[
-                  styles.statValue,
-                  {
-                    color: stat.positive ? accent : theme.text,
-                  },
-                ]}>
-                {stat.currency}
-                {stat.amount.toLocaleString('en-IN')}
-              </ThemedText>
-            </View>
-          ))}
-        </View>
-
-        <View
-          style={[
-            styles.categoryCard,
-            { backgroundColor: surfaceColor, borderColor },
-          ]}>
-          <ThemedText style={styles.sectionTitle}>
-            Spending by Category
-          </ThemedText>
-
-          <View
-            style={[
-              styles.chartPlaceholder,
-              { backgroundColor: colorScheme === 'light' ? '#E9EFEA' : '#2A2A2A' },
-            ]}>
-            <MaterialCommunityIcons
-              name="chart-donut"
-              size={140}
-              color={accent}
-            />
-          </View>
-
-          <View style={styles.legend}>
-            {categories.map((category) => (
-              <View key={category.id} style={styles.legendRow}>
-                <View style={styles.legendLabel}>
-                  <View
-                    style={[styles.legendDot, { backgroundColor: category.color }]}
-                  />
-                  <ThemedText style={styles.legendText}>
-                    {category.label}
-                  </ThemedText>
+                {/* Header */}
+                <View className="flex-row items-center justify-between px-6 py-4">
+                    <View className="flex-row items-center gap-3">
+                        <View className="h-10 w-10 rounded-full bg-yellow-200 items-center justify-center border-2 border-white">
+                            {/* Avatar Placeholder */}
+                            <Image
+                                source={{ uri: 'https://i.pravatar.cc/100?img=12' }}
+                                className="h-full w-full rounded-full"
+                                style={{ opacity: 0.8 }}
+                            />
+                            <View className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
+                        </View>
+                        <View>
+                            <ThemedText className="text-xs text-gray-500">Welcome back,</ThemedText>
+                            <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>Alex!</ThemedText>
+                        </View>
+                    </View>
+                    <MaterialCommunityIcons name="bell" size={24} color={theme.text} style={{ opacity: 0.8 }} />
                 </View>
-                <ThemedText style={styles.legendAmount}>
-                  ₹{category.amount.toLocaleString('en-IN')}
-                </ThemedText>
-              </View>
-            ))}
-          </View>
-        </View>
 
-        <View style={styles.insightsStack}>
-          {insights.map((insight) => (
-            <View
-              key={insight.id}
-              style={[
-                styles.insightCard,
-                { backgroundColor: surfaceColor, borderColor },
-              ]}>
-              <View style={styles.insightHeader}>
-                <ThemedText
-                  style={styles.insightLabel}
-                  lightColor="rgba(26,26,26,0.6)"
-                  darkColor="rgba(250,250,250,0.6)">
-                  Your Insights
-                </ThemedText>
+                {/* Title Section */}
+                <View className="items-center mt-4 mb-8 px-6">
+                    <View className="bg-yellow-100 h-10 w-10 rounded-full items-center justify-center mb-2">
+                        <MaterialCommunityIcons name="lightning-bolt" size={20} color="#F59E0B" />
+                    </View>
+                    <ThemedText className="text-3xl font-black text-center mb-2" style={{ color: theme.text }}>
+                        Your Financial{'\n'}Superpowers!
+                    </ThemedText>
+                    <ThemedText className="text-center text-gray-500 px-6">
+                        Here's the scoop on how you're mastering your money this month.
+                    </ThemedText>
+                </View>
+
+                {/* Money Check-up Card */}
+                <View className="mx-6 bg-white dark:bg-gray-800 rounded-[32px] p-6 shadow-sm mb-8">
+                    <View className="flex-row justify-between items-start mb-4">
+                        <View className="flex-row gap-3 flex-1 pr-4">
+                            <MaterialCommunityIcons name="stethoscope" size={24} color={theme.accent} />
+                            <ThemedText className="text-lg font-bold flex-1" style={{ color: theme.text }}>
+                                Your Money Check-up
+                            </ThemedText>
+                        </View>
+                        <View className="bg-green-100 px-3 py-1 rounded-full">
+                            <ThemedText className="text-xs font-bold text-green-700 uppercase">HEALHTY</ThemedText>
+                        </View>
+                    </View>
+
+                    <ThemedText className="text-gray-500 mb-1">Safe to spend this week</ThemedText>
+                    <ThemedText className="text-4xl font-black mb-6" style={{ color: theme.text }}>
+                        {CURRENCY_SYMBOL}245<ThemedText className="text-xl text-gray-400">.00</ThemedText>
+                    </ThemedText>
+
+                    <View className="flex-row justify-between mb-2">
+                        <ThemedText className="text-xs text-gray-400">Spent: {CURRENCY_SYMBOL}1,250</ThemedText>
+                        <ThemedText className="text-xs text-gray-400">Goal: {CURRENCY_SYMBOL}2,000</ThemedText>
+                    </View>
+
+                    {/* Progress Bar */}
+                    <View className="h-3 bg-gray-100 rounded-full w-full overflow-hidden mb-4 flex-row">
+                        <View className="h-full bg-yellow-400 w-[60%] rounded-full" />
+                    </View>
+
+                    <View className="flex-row items-center gap-2">
+                        <TextEmoji>🎉</TextEmoji>
+                        <ThemedText className="text-xs text-orange-400 font-medium">
+                            You're doing amazing! Keeps you under budget.
+                        </ThemedText>
+                    </View>
+                </View>
+
+                {/* Spending Vibes */}
+                <View className="mx-6 mb-8">
+                    <View className="flex-row justify-between items-center mb-4">
+                        <View className="flex-row items-center gap-2">
+                            <ThemedText className="text-lg font-bold" style={{ color: theme.text }}>Spending Vibes</ThemedText>
+                            <TextEmoji>🌊</TextEmoji>
+                        </View>
+                        <View className="flex-row items-center">
+                            <ThemedText className="text-orange-400 font-bold mr-1">This Week</ThemedText>
+                            <MaterialCommunityIcons name="chevron-down" size={20} color={theme.text} />
+                        </View>
+                    </View>
+
+                    <View className="bg-white dark:bg-gray-800 rounded-[32px] p-6 shadow-sm flex-row justify-between items-end h-48">
+                        {weeklyData.map((d, i) => (
+                            <View key={i} className="items-center gap-2 w-8">
+                                <View className="w-full bg-gray-100 rounded-t-full rounded-b-lg overflow-hidden flex-col-reverse h-32 relative">
+                                    <View
+                                        style={{ height: `${d.value * 100}%` }}
+                                        className={`w-full ${d.active ? 'bg-orange-400' : 'bg-orange-200'}`} // Simplified colors
+                                    />
+                                </View>
+                                <ThemedText className="text-xs text-gray-400 font-bold">{d.day}</ThemedText>
+                            </View>
+                        ))}
+                    </View>
+                </View>
+
+                {/* Categories Grid */}
+                <View className="mx-6 mb-8">
+                    <View className="flex-row items-center gap-2 mb-4">
+                        <ThemedText className="text-lg font-bold" style={{ color: theme.text }}>Where the magic happens</ThemedText>
+                        <TextEmoji>✨</TextEmoji>
+                    </View>
+
+                    <View className="flex-row gap-4 mb-4">
+                        <CategoryCard
+                            label="TREATS"
+                            amount="124"
+                            icon="ice-cream"
+                            iconColor="#F97316"
+                            bg="#FFFAF0"
+                        />
+                        <CategoryCard
+                            label="FUN STUFF"
+                            amount="85"
+                            icon="party-popper"
+                            iconColor="#A855F7"
+                            bg="#F3E8FF"
+                        />
+                    </View>
+                    <View className="flex-row gap-4">
+                        <CategoryCard
+                            label="TRANSPORT"
+                            amount="45"
+                            icon="rocket-launch"
+                            iconColor="#10B981"
+                            bg="#ECFDF5"
+                        />
+                        <View className="flex-1 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-[24px] items-center justify-center p-4 h-32">
+                            <View className="h-8 w-8 rounded-full bg-gray-400 items-center justify-center mb-2">
+                                <MaterialCommunityIcons name="plus" size={20} color="#FFF" />
+                            </View>
+                            <ThemedText className="text-xs text-gray-500 font-bold text-center">Add a new adventure</ThemedText>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Smart Tip */}
                 <View
-                  style={[
-                    styles.insightIcon,
-                    {
-                      backgroundColor: `${insight.iconColor}22`,
-                    },
-                  ]}>
-                  <MaterialCommunityIcons
-                    name={insight.icon}
-                    size={20}
-                    color={insight.iconColor}
-                  />
+                    className="mx-6 rounded-[32px] p-6 shadow-lg relative overflow-hidden"
+                    style={{ backgroundColor: theme.accent }}
+                >
+                    {/* Gradient Overlay Mock */}
+                    <View className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10" />
+                    <View className="absolute -left-10 -bottom-10 h-32 w-32 rounded-full bg-white/10" />
+
+                    <View className="flex-row gap-4">
+                        <View className="h-12 w-12 rounded-2xl bg-yellow-200 items-center justify-center">
+                            <MaterialCommunityIcons name="star-face" size={24} color="#FFF" />
+                        </View>
+                        <View className="flex-1">
+                            <ThemedText className="text-white font-bold text-lg mb-1">Smart Tip!</ThemedText>
+                            <ThemedText className="text-white/90 text-sm leading-5">
+                                Looks like you spent <ThemedText className="font-bold bg-white/20 px-1 rounded">20% less</ThemedText> on coffee
+                                this week compared to last. That's almost enough for a movie ticket! 🎬
+                            </ThemedText>
+                        </View>
+                    </View>
                 </View>
-              </View>
-              <ThemedText style={styles.insightTitle}>{insight.title}</ThemedText>
-              <ThemedText
-                style={styles.insightBody}
-                lightColor="rgba(26,26,26,0.6)"
-                darkColor="rgba(250,250,250,0.7)">
-                {insight.body}
-              </ThemedText>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    </ThemedView>
-  );
+
+            </ScrollView>
+        </SafeAreaView>
+    );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg * 2,
-    paddingTop: spacing.lg,
-    gap: spacing.lg,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  topIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topTitle: {
-    fontSize: 20,
-    fontFamily: Fonts.title,
-  },
-  monthSelector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  monthPill: {
-    flex: 1,
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  monthLabel: {
-    fontSize: 14,
-    fontFamily: Fonts.title,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    gap: spacing.xs,
-  },
-  statLabel: {
-    fontSize: 14,
-    fontFamily: Fonts.body,
-  },
-  statValue: {
-    fontSize: 28,
-    fontFamily: Fonts.title,
-  },
-  categoryCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: spacing.lg,
-    gap: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: Fonts.title,
-  },
-  chartPlaceholder: {
-    borderRadius: 24,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  legend: {
-    gap: spacing.sm,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  legendLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendText: {
-    fontSize: 14,
-    fontFamily: Fonts.body,
-  },
-  legendAmount: {
-    fontSize: 14,
-    fontFamily: Fonts.title,
-  },
-  insightsStack: {
-    gap: spacing.sm,
-  },
-  insightCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  insightHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  insightLabel: {
-    fontSize: 14,
-    fontFamily: Fonts.body,
-  },
-  insightIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  insightTitle: {
-    fontSize: 16,
-    fontFamily: Fonts.title,
-  },
-  insightBody: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: Fonts.body,
-  },
-});
+// Simple Helper for Emoji text (since NativeWind might need text styling wrapper)
+function TextEmoji({ children }: { children: string }) {
+    return <ThemedText style={{ fontSize: 20 }}>{children}</ThemedText>;
+}
+
+function CategoryCard({ label, amount, icon, iconColor, bg }: any) {
+    const theme = Colors.light; // Force light for these pastel cards or adjust logic
+    return (
+        <View className="flex-1 rounded-[24px] p-4 h-32 justify-between" style={{ backgroundColor: bg }}>
+            <View className="h-8 w-8 rounded-full bg-white items-center justify-center shadow-sm">
+                <MaterialCommunityIcons name={icon} size={16} color={iconColor} />
+            </View>
+            <View>
+                <ThemedText className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-1">{label}</ThemedText>
+                <ThemedText className="text-xl font-black text-gray-800">{CURRENCY_SYMBOL}{amount}</ThemedText>
+            </View>
+        </View>
+    )
+}

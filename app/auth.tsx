@@ -1,0 +1,241 @@
+import { OnboardingScreenWrapper } from '@/components/onboarding/OnboardingScreenWrapper';
+import { useAuthStore } from '@/hooks/use-auth-store';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import Animated, {
+  SlideInLeft,
+  SlideInRight,
+  SlideOutLeft,
+  SlideOutRight
+} from 'react-native-reanimated';
+
+import {
+  AuthOTPVerificationScreen,
+  AuthPinLoginScreen,
+  AuthScreen1,
+  AuthScreen2,
+  AuthScreen3,
+  AuthScreen4,
+  AuthSecuritySetupScreen
+} from '@/components/auth';
+import { guestCheckin, identifyUser, loginUser, registerUser } from '@/lib/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const DEVICE_ID_KEY = 'ez_money_device_id';
+
+const getDeviceId = async () => {
+  let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+};
+
+export default function AuthFlow() {
+  const router = useRouter();
+  const { user, setAuth } = useAuthStore();
+  const [step, setStep] = useState(1);
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward');
+  const [identifier, setIdentifier] = useState('');
+  const [claimToken, setClaimToken] = useState<string | null>(null);
+  const [identifyError, setIdentifyError] = useState<string | null>(null);
+  const [isIdentifying, setIsIdentifying] = useState(false);
+  const [guestError, setGuestError] = useState<string | null>(null);
+  const [isGuestChecking, setIsGuestChecking] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  const handleFinish = () => {
+    router.replace('/(tabs)');
+  };
+
+  const changeStep = (newStep: number, transitionDirection: 'forward' | 'back' = 'forward') => {
+    setDirection(transitionDirection);
+    setTimeout(() => setStep(newStep), 0);
+  };
+
+  const handleGuestContinue = async () => {
+    setGuestError(null);
+    setIdentifyError(null);
+    setIsGuestChecking(true);
+    try {
+      const deviceId = await getDeviceId();
+      const response = await guestCheckin({
+        device_id: deviceId,
+      });
+      if (response?.user) {
+        setAuth(response.user, response.token);
+      }
+      router.replace('/(tabs)');
+    } catch (error) {
+      setGuestError(error instanceof Error ? error.message : 'Unable to continue as guest.');
+    } finally {
+      setIsGuestChecking(false);
+    }
+  };
+
+  const handleRegister = async (data: { pin: string; biometricsEnabled: boolean }) => {
+    if (!claimToken) return;
+    setIsRegistering(true);
+    try {
+      const deviceId = await getDeviceId();
+      const response = await registerUser({
+        claim_token: claimToken,
+        pin: data.pin,
+        guest_uuid: user?.is_guest ? user.uuid : undefined,
+        device_id: deviceId,
+        biometrics_enabled: data.biometricsEnabled,
+      });
+      setAuth(response.user, response.token);
+      changeStep(6, 'forward');
+    } catch (error) {
+      setIdentifyError(error instanceof Error ? error.message : 'Registration failed.');
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
+  const handleLogin = async (pin: string) => {
+    if (pin === 'biometric_success') {
+      handleFinish();
+      return;
+    }
+    setLoginError(null);
+    setIsLoggingIn(true);
+    try {
+      const deviceId = await getDeviceId();
+      const response = await loginUser({
+        identifier: identifier,
+        pin: pin,
+        device_id: deviceId,
+      });
+      setAuth(response.user, response.token);
+      handleFinish();
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Login failed.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleIdentify = async (id: string) => {
+    setIdentifyError(null);
+    setIsIdentifying(true);
+    try {
+      const result = await identifyUser(id);
+      setIdentifier(id);
+      changeStep(result.exists ? 7 : 3, 'forward');
+    } catch (error) {
+      setIdentifyError(error instanceof Error ? error.message : 'Unable to verify that identifier.');
+    } finally {
+      setIsIdentifying(false);
+    }
+  };
+
+  const renderScreen = () => {
+    switch (step) {
+      case 1:
+        return (
+          <AuthScreen1
+            onContinue={() => {
+              setGuestError(null);
+              changeStep(5, 'forward');
+            }}
+            onSecondary={() => {
+              changeStep(2, 'forward');
+            }}
+          />
+        );
+      case 2:
+        return (
+          <AuthScreen2
+            onContinue={handleIdentify}
+            onSecondary={() => {
+              setGuestError(null);
+              changeStep(5, 'forward');
+            }}
+            onInputChange={() => setIdentifyError(null)}
+            errorMessage={identifyError}
+            isLoading={isIdentifying}
+          />
+        );
+      case 7:
+        return (
+          <AuthPinLoginScreen
+            onContinue={handleLogin}
+            onSecondary={() => changeStep(2, 'back')}
+            errorMessage={loginError}
+            isLoading={isLoggingIn}
+          />
+        );
+      case 3:
+        return (
+          <AuthOTPVerificationScreen
+            data={identifier}
+            onContinue={(token: string) => {
+              setClaimToken(token);
+              changeStep(4, 'forward');
+            }}
+            onSecondary={() => changeStep(2, 'back')}
+          />
+        );
+      case 4:
+        return (
+          <AuthSecuritySetupScreen
+            onContinue={handleRegister}
+            onSecondary={() => changeStep(3, 'back')}
+            isLoading={isRegistering}
+            errorMessage={identifyError}
+          />
+        );
+      case 5:
+        return (
+          <AuthScreen3
+            onContinue={handleGuestContinue}
+            onSecondary={() => {
+              setGuestError(null);
+              changeStep(2, 'back');
+            }}
+            errorMessage={guestError}
+            isLoading={isGuestChecking}
+          />
+        );
+      case 6:
+        return (
+          <AuthScreen4 onContinue={handleFinish} />
+        );
+      default:
+        return null;
+    }
+  };
+
+  const enteringAnimation = direction === 'forward' ? SlideInRight.duration(400) : SlideInLeft.duration(400);
+  const exitingAnimation = direction === 'forward' ? SlideOutLeft.duration(400) : SlideOutRight.duration(400);
+
+  return (
+    <OnboardingScreenWrapper>
+      <View style={styles.container}>
+        <Animated.View
+          key={step}
+          entering={enteringAnimation}
+          exiting={exitingAnimation}
+          style={styles.screenContainer}
+        >
+          {renderScreen()}
+        </Animated.View>
+      </View>
+    </OnboardingScreenWrapper>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  screenContainer: {
+    flex: 1,
+  }
+});

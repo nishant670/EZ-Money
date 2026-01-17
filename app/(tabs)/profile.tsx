@@ -1,343 +1,232 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { cssInterop } from 'nativewind';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Image, Pressable, ScrollView, Switch, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useRouter } from 'expo-router';
+import { useAuthStore } from '@/hooks/use-auth-store';
 
-const spacing = {
-  xs: 8,
-  sm: 12,
-  md: 16,
-  lg: 24,
-};
-
-const sections = [
-  {
-    id: 'account',
-    title: 'Account',
-    items: [
-      {
-        id: 'backup',
-        title: 'Backup & Sync',
-        subtitle: 'Last synced: Today at 10:45 AM',
-        icon: 'cloud-upload-outline',
-        toggle: true,
-      },
-      {
-        id: 'security',
-        title: 'Security',
-        icon: 'lock-outline',
-        chevron: true,
-      },
-      {
-        id: 'export',
-        title: 'Export Data',
-        icon: 'download-outline',
-        chevron: true,
-      },
-    ],
-  },
-  {
-    id: 'preferences',
-    title: 'Preferences',
-    items: [
-      {
-        id: 'nudges',
-        title: 'Nudges & Reminders',
-        icon: 'bell-outline',
-        chevron: true,
-      },
-    ],
-  },
-  {
-    id: 'support',
-    title: 'Support',
-    items: [
-      {
-        id: 'about',
-        title: 'About Finance Minister',
-        icon: 'information-outline',
-        chevron: true,
-      },
-      {
-        id: 'help',
-        title: 'Help & Support',
-        icon: 'help-circle-outline',
-        chevron: true,
-      },
-      {
-        id: 'privacy',
-        title: 'Privacy & Terms',
-        icon: 'shield-outline',
-        chevron: true,
-      },
-    ],
-  },
-];
+const TView = cssInterop(ThemedView, { className: 'style' });
+const TText = cssInterop(ThemedText, { className: 'style' });
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
-  const [syncEnabled, setSyncEnabled] = useState(true);
+  const router = useRouter();
+  const { user } = useAuthStore();
+  const [smartSorting, setSmartSorting] = useState(true);
 
-  const surfaceColor = useMemo(
-    () => (colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E'),
-    [colorScheme]
-  );
-  const borderColor = useMemo(
-    () => (colorScheme === 'light' ? theme.border : '#2E2E2E'),
-    [colorScheme, theme.border]
-  );
+  const handleLogout = () => {
+    router.replace('/onboarding');
+  };
+
+  const backgroundColor = colorScheme === 'light' ? '#F9F7FB' : theme.background;
+  const cardColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
+  const borderColor = colorScheme === 'light' ? 'rgba(0,0,0,0.05)' : '#2E2E2E';
 
   return (
-    <ThemedView style={[styles.screen, { backgroundColor: theme.background }]}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Pressable accessibilityRole="button">
-            <MaterialCommunityIcons
-              name='arrow-left'
-              size={22}
-              color={theme.text}
-            />
-          </Pressable>
-          <ThemedText style={styles.headerTitle}>Profile</ThemedText>
-          <View style={{ width: 22 }} />
-        </View>
-
-        <View style={styles.profile}>
-          <ThemedText type='title' style={styles.profileName}>
-            Andi Rose
-          </ThemedText>
-          <ThemedText
-            style={styles.profileEmail}
-            lightColor='rgba(26,26,26,0.6)'
-            darkColor='rgba(250,250,250,0.7)'>
-            andi.rose@email.com
-          </ThemedText>
-        </View>
-
-        <Pressable
-          accessibilityRole='button'
-          style={[
-            styles.editButton,
-            {
-              backgroundColor:
-                colorScheme === 'light'
-                  ? 'rgba(217,217,217,0.4)'
-                  : 'rgba(60,60,60,0.4)',
-            },
-          ]}>
-          <ThemedText style={styles.editButtonText}>Edit Profile</ThemedText>
+    <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
+      {/* Header */}
+      <View className="flex-row items-center justify-between px-6 py-4">
+        <Pressable hitSlop={20}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.text} />
         </Pressable>
+        <TText className="text-lg font-bold" style={{ fontFamily: Fonts.title }}>
+          Your Playbook
+        </TText>
+        <Pressable hitSlop={20}>
+          <MaterialCommunityIcons name="pencil-outline" size={24} color={theme.text} />
+        </Pressable>
+      </View>
 
-        {sections.map((section) => (
-          <View key={section.id} style={styles.section}>
-            <ThemedText
-              style={styles.sectionLabel}
-              lightColor='rgba(26,26,26,0.65)'
-              darkColor='rgba(250,250,250,0.65)'>
-              {section.title.toUpperCase()}
-            </ThemedText>
-            <View
-              style={[
-                styles.sectionCard,
-                {
-                  backgroundColor: surfaceColor,
-                  borderColor,
-                },
-              ]}>
-              {section.items.map((item, index) => (
-                <View key={item.id}>
-                  <View style={styles.row}>
-                    <View
-                      style={[
-                        styles.rowIcon,
-                        {
-                          backgroundColor:
-                            colorScheme === 'light'
-                              ? 'rgba(83, 120, 107, 0.12)'
-                              : 'rgba(163, 184, 162, 0.15)',
-                        },
-                      ]}>
-                      <MaterialCommunityIcons
-                        name={item.icon as keyof typeof MaterialCommunityIcons.glyphMap}
-                        size={22}
-                        color={theme.accent}
-                      />
-                    </View>
-                    <View style={styles.rowContent}>
-                      <ThemedText style={styles.rowTitle}>{item.title}</ThemedText>
-                      {item.subtitle ? (
-                        <ThemedText
-                          style={styles.rowSubtitle}
-                          lightColor='rgba(26,26,26,0.6)'
-                          darkColor='rgba(250,250,250,0.7)'>
-                          {item.subtitle}
-                        </ThemedText>
-                      ) : null}
-                    </View>
-                    {item.toggle ? (
-                      <Switch
-                        value={syncEnabled}
-                        onValueChange={setSyncEnabled}
-                        trackColor={{ false: 'rgba(26,26,26,0.2)', true: theme.accent }}
-                        thumbColor='#FFFFFF'
-                      />
-                    ) : item.chevron ? (
-                      <MaterialCommunityIcons
-                        name='chevron-right'
-                        size={22}
-                        color='rgba(26,26,26,0.4)'
-                      />
-                    ) : null}
-                  </View>
-                  {index < section.items.length - 1 ? (
-                    <View
-                      style={[styles.divider, { backgroundColor: borderColor }]}
-                    />
-                  ) : null}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View className="px-6 gap-6">
+          {/* Hero Text */}
+          <TText className="text-3xl font-black leading-tight mt-2" style={{ fontFamily: Fonts.title }}>
+            Your Financial{"\n"}Adventure Starts Here!
+          </TText>
+
+          {/* Finnri Profile Card */}
+          <View
+            className="rounded-[40px] items-center py-10 overflow-hidden"
+            style={{ backgroundColor: cardColor, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 }}
+          >
+            <View className="absolute top-0 left-0 right-0 h-24" style={{ backgroundColor: '#FFF5F2', opacity: 0.5 }} />
+
+            <View className="relative">
+              <View className="w-28 h-28 rounded-full border-4 border-white overflow-hidden shadow-sm">
+                <Image
+                  source={require('@/assets/images/finnri_avatar.png')}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                />
+              </View>
+              <View
+                className="absolute bottom-1 right-1 w-7 h-7 rounded-full border-2 border-white items-center justify-center"
+                style={{ backgroundColor: '#FF8A65' }}
+              >
+                <MaterialCommunityIcons name="robot" size={14} color="white" />
+              </View>
+            </View>
+
+            <TText className="text-2xl mt-4 font-bold text-center px-4" style={{ fontFamily: Fonts.title }}>
+              {user?.username || 'Guest User'}
+            </TText>
+            <TText className="text-sm italic opacity-60 mb-1" style={{ fontFamily: Fonts.body }}>
+              {user?.email || 'No email linked'}
+            </TText>
+            <TText className="text-sm italic opacity-60 mb-6" style={{ fontFamily: Fonts.body }}>
+              {user?.phone || 'No phone linked'}
+            </TText>
+
+            <Pressable
+              onPress={() => router.push('/edit-profile')}
+              className="flex-row items-center px-8 py-3 rounded-full"
+              style={{ backgroundColor: '#F0EAF5' }}
+            >
+              <MaterialCommunityIcons name="pencil" size={18} color="#4A148C" style={{ marginRight: 8 }} />
+              <TText className="font-bold text-base" style={{ color: '#4A148C', fontFamily: Fonts.title }}>
+                Edit My Profile
+              </TText>
+            </Pressable>
+          </View>
+
+          {/* Features Grid */}
+          <View className="flex-row flex-wrap justify-between gap-y-4">
+            {/* My AI Voice */}
+            <View className="w-[48%] p-5 rounded-[32px]" style={{ backgroundColor: cardColor }}>
+              <View className="w-10 h-10 rounded-2xl items-center justify-center mb-4" style={{ backgroundColor: '#F3E5F5' }}>
+                <MaterialCommunityIcons name="account-voice" size={20} color="#7B1FA2" />
+              </View>
+              <TText className="text-lg font-bold leading-tight" style={{ fontFamily: Fonts.title }}>
+                My AI Voice
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Choose Your{"\n"}Companion's Tone
+              </TText>
+            </View>
+
+            {/* App Mood */}
+            <View className="w-[48%] p-5 rounded-[32px]" style={{ backgroundColor: cardColor }}>
+              <View className="w-10 h-10 rounded-2xl items-center justify-center mb-4" style={{ backgroundColor: '#FFF9C4' }}>
+                <MaterialCommunityIcons name="palette" size={20} color="#FBC02D" />
+              </View>
+              <TText className="text-lg font-bold leading-tight" style={{ fontFamily: Fonts.title }}>
+                App Mood
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Personalize Your Look
+              </TText>
+            </View>
+
+            {/* Sync My World */}
+            <View className="w-[48%] p-5 rounded-[32px]" style={{ backgroundColor: cardColor }}>
+              <View className="w-10 h-10 rounded-2xl items-center justify-center mb-4" style={{ backgroundColor: '#E1F5FE' }}>
+                <MaterialCommunityIcons name="sync" size={20} color="#0288D1" />
+              </View>
+              <TText className="text-lg font-bold leading-tight" style={{ fontFamily: Fonts.title }}>
+                Sync My World
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Backup & Keep{"\n"}Everything Updated
+              </TText>
+            </View>
+
+            {/* Keep it Safe */}
+            <Pressable
+              onPress={() => router.push('/security')}
+              className="w-[48%] p-5 rounded-[32px]"
+              style={{ backgroundColor: cardColor }}
+            >
+              <View className="w-10 h-10 rounded-2xl items-center justify-center mb-4" style={{ backgroundColor: '#E8F5E9' }}>
+                <MaterialCommunityIcons name="shield-check" size={20} color="#388E3C" />
+              </View>
+              <TText className="text-lg font-bold leading-tight" style={{ fontFamily: Fonts.title }}>
+                Keep it Safe
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Security & Privacy{"\n"}Control
+              </TText>
+            </Pressable>
+          </View>
+
+          {/* Smart Sorting */}
+          <View className="p-6 rounded-[32px] flex-row items-center justify-between" style={{ backgroundColor: cardColor }}>
+            <View className="flex-1 mr-4">
+              <View className="flex-row items-center mb-4">
+                <View className="w-10 h-10 rounded-2xl items-center justify-center mr-3" style={{ backgroundColor: '#FFEBEE' }}>
+                  <MaterialCommunityIcons name="creation" size={20} color="#D32F2F" />
                 </View>
-              ))}
+                <TText className="text-xl font-bold" style={{ fontFamily: Fonts.title }}>
+                  Smart Sorting
+                </TText>
+              </View>
+              <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+                Let AI Auto-Categorize Your Spending
+              </TText>
+            </View>
+            <Switch
+              value={smartSorting}
+              onValueChange={setSmartSorting}
+              trackColor={{ false: '#E0E0E0', true: '#FF8A65' }}
+              thumbColor="white"
+            />
+          </View>
+
+          {/* Business Section Info */}
+          <View className="mt-4">
+            <TText className="text-xs tracking-widest font-bold opacity-40 mb-4 ml-2" style={{ fontFamily: Fonts.body }}>
+              THE FINNRI CIRCLE
+            </TText>
+
+            <View className="bg-white rounded-[32px] overflow-hidden" style={{ backgroundColor: cardColor }}>
+              <Pressable className="flex-row items-center p-5 border-b" style={{ borderColor }}>
+                <View className="w-10 h-10 rounded-2xl items-center justify-center mr-4" style={{ backgroundColor: '#FFF3E0' }}>
+                  <MaterialCommunityIcons name="information" size={20} color="#EF6C00" />
+                </View>
+                <View className="flex-1">
+                  <TText className="text-lg font-bold" style={{ fontFamily: Fonts.title }}>About Finnri</TText>
+                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>Our Story & Values</TText>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={theme.text} style={{ opacity: 0.3 }} />
+              </Pressable>
+
+              <Pressable className="flex-row items-center p-5">
+                <View className="w-10 h-10 rounded-2xl items-center justify-center mr-4" style={{ backgroundColor: '#F3E5F5' }}>
+                  <MaterialCommunityIcons name="help-circle" size={20} color="#7B1FA2" />
+                </View>
+                <View className="flex-1">
+                  <TText className="text-lg font-bold" style={{ fontFamily: Fonts.title }}>Help & Support</TText>
+                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>Get Answers & Talk to Us</TText>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={theme.text} style={{ opacity: 0.3 }} />
+              </Pressable>
             </View>
           </View>
-        ))}
-      </ScrollView>
 
-      <View style={styles.footer}>
-        <Pressable
-          accessibilityRole='button'
-          style={[
-            styles.signOutButton,
-            {
-              backgroundColor: 'rgba(255, 99, 99, 0.15)',
-              borderColor: 'rgba(255, 99, 99, 0.3)',
-            },
-          ]}>
-          <MaterialCommunityIcons name='logout' size={20} color='#C0392B' />
-          <ThemedText style={styles.signOutText} lightColor='#C0392B' darkColor='#FF6B6B'>
-            Sign Out
-          </ThemedText>
-        </Pressable>
-        <ThemedText
-          style={styles.version}
-          lightColor='rgba(26,26,26,0.4)'
-          darkColor='rgba(250,250,250,0.4)'>
-          App Version 1.0.0
-        </ThemedText>
-      </View>
-    </ThemedView>
+          {/* Logout */}
+          <Pressable
+            onPress={handleLogout}
+            className="flex-row items-center justify-center h-16 rounded-[24px] mt-2 mb-2"
+            style={{ backgroundColor: '#FFF5F2' }}
+          >
+            <MaterialCommunityIcons name="logout" size={20} color="#D32F2F" style={{ marginRight: 10 }} />
+            <TText className="text-lg font-bold" style={{ color: '#D32F2F', fontFamily: Fonts.title }}>
+              Time to Log Out?
+            </TText>
+          </Pressable>
+
+          {/* Footer */}
+          <TText className="text-center text-[10px] tracking-widest opacity-30 mt-2 mb-4 uppercase" style={{ fontFamily: Fonts.body }}>
+            FINNRI PLAYBOOK V3.1.2 • HANDMADE WITH LOVE
+          </TText>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    justifyContent: 'space-between',
-  },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
-    gap: spacing.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontFamily: Fonts.title,
-  },
-  profile: {
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  profileName: {
-    fontSize: 24,
-  },
-  profileEmail: {
-    fontSize: 14,
-    fontFamily: Fonts.body,
-  },
-  editButton: {
-    borderRadius: 20,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-  },
-  editButtonText: {
-    fontSize: 16,
-    fontFamily: Fonts.title,
-  },
-  section: {
-    gap: spacing.sm,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    letterSpacing: 1,
-  },
-  sectionCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: spacing.sm,
-    gap: spacing.sm,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-  },
-  rowIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowContent: {
-    flex: 1,
-    gap: spacing.xs / 2,
-  },
-  rowTitle: {
-    fontSize: 16,
-    fontFamily: Fonts.title,
-  },
-  rowSubtitle: {
-    fontSize: 13,
-    fontFamily: Fonts.body,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: spacing.xs,
-    marginHorizontal: spacing.sm,
-  },
-  footer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg * 1.5,
-    gap: spacing.sm,
-  },
-  signOutButton: {
-    borderRadius: 20,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: spacing.xs,
-    borderWidth: 1,
-  },
-  signOutText: {
-    fontSize: 16,
-    fontFamily: Fonts.title,
-  },
-  version: {
-    textAlign: 'center',
-    fontSize: 12,
-    fontFamily: Fonts.body,
-  },
-});

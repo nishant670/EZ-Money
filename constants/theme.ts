@@ -6,12 +6,14 @@
 import { Platform } from 'react-native';
 
 const palette = {
-  backgroundLight: '#FAFAFA',
+  backgroundLight: '#FDF5F7', // Light pinkish background
   backgroundDark: '#1A1A1A',
-  textLight: '#1A1A1A',
+  textLight: '#2D2D2D',
   textDark: '#FAFAFA',
-  accent: '#A3B8A2',
-  borderLight: '#D9D9D9',
+  accent: '#FF8865', // Orange primary
+  accentSecondary: '#FFE8E5', // Light orange/pink card bg
+  cardLight: '#FFFFFF',
+  borderLight: '#F0E5E7',
   borderDark: '#3C3C3C',
 };
 
@@ -21,20 +23,24 @@ export const Colors = {
     background: palette.backgroundLight,
     tint: palette.accent,
     accent: palette.accent,
+    secondary: palette.accentSecondary,
+    card: palette.cardLight,
     icon: palette.textLight,
     border: palette.borderLight,
-    tabIconDefault: palette.accent,
-    tabIconSelected: palette.textLight,
+    tabIconDefault: '#9BA1A6',
+    tabIconSelected: palette.accent,
   },
   dark: {
     text: palette.textDark,
     background: palette.backgroundDark,
     tint: palette.accent,
     accent: palette.accent,
+    secondary: '#2C2C2C',
+    card: '#242424',
     icon: palette.textDark,
     border: palette.borderDark,
-    tabIconDefault: palette.accent,
-    tabIconSelected: palette.textDark,
+    tabIconDefault: '#9BA1A6',
+    tabIconSelected: palette.accent,
   },
 };
 

@@ -1,0 +1,208 @@
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { API_BASE_URL } from '@/lib/transactions';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+
+import { styles } from './styles';
+import { ScreenProps } from './types';
+
+type AuthOtpProps = ScreenProps & { data?: string };
+
+export const AuthOTPVerificationScreen = ({
+  onContinue,
+  onSecondary,
+  data,
+}: AuthOtpProps) => {
+  const colorScheme = useColorScheme() ?? 'light';
+  const theme = Colors[colorScheme];
+  const [otp, setOtp] = React.useState(['', '', '', '', '', '']);
+  const [timer, setTimer] = React.useState(45);
+  const [isVerifying, setIsVerifying] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+
+  const inputRefs = React.useRef<(TextInput | null)[]>([]);
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setTimer((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleOtpChange = (text: string, index: number) => {
+    setErrorMessage(null);
+    const newOtp = [...otp];
+    newOtp[index] = text.slice(-1);
+    setOtp(newOtp);
+
+    if (text.length > 0 && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === 'Backspace' && otp[index] === '' && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerify = async () => {
+    if (!data) {
+      setErrorMessage('Missing email or phone number.');
+      return;
+    }
+    if (!otp.every((digit) => digit !== '')) {
+      setErrorMessage('Enter the 6-digit code.');
+      return;
+    }
+    setIsVerifying(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/v1/auth/otp/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ identifier: data, otp: otp.join('') }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Unable to verify code right now.');
+      }
+      const result = await response.json();
+      onContinue(result.claim_token);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to verify code.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView
+        contentContainerStyle={[styles.authScrollContent, { flexGrow: 1, justifyContent: 'center' }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.topSection}>
+          <View style={styles.imageContainer}>
+            <View style={styles.glowCircle} />
+            <View style={[styles.mainCircle, { borderColor: theme.border }]}>
+              <View style={[styles.iconBox, { backgroundColor: '#FFCCBC' }]}>
+                <MaterialCommunityIcons name="email" size={30} color="#E64A19" />
+              </View>
+              <View style={[styles.smallIcon, styles.pos1, { backgroundColor: '#BBDEFB' }]}>
+                <MaterialCommunityIcons name="tag" size={12} color="#1976D2" />
+              </View>
+              <View style={[styles.smallIcon, styles.pos2, { backgroundColor: '#C8E6C9' }]}>
+                <MaterialCommunityIcons name="lock-clock" size={12} color="#43A047" />
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.textSection}>
+          <Text style={[styles.title, { color: theme.text }]}>A quick check!</Text>
+          <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6 }]}>
+            We've sent a 6-digit code to
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.text, fontWeight: 'bold' }]}>
+            {data || '+91 98XXX XXXXX'}
+          </Text>
+        </View>
+
+        <View style={styles.otpSection}>
+          {otp.map((digit, index) => (
+            <View
+              key={index}
+              style={[styles.otpInput, { backgroundColor: 'white', borderColor: theme.border }]}
+            >
+              <TextInput
+                ref={(ref) => {
+                  inputRefs.current[index] = ref;
+                }}
+                style={[styles.otpText, { color: theme.text }]}
+                keyboardType="number-pad"
+                maxLength={1}
+                value={digit}
+                onChangeText={(text) => handleOtpChange(text, index)}
+                onKeyPress={(e) => handleKeyPress(e, index)}
+                selectTextOnFocus
+              />
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.resendSection}>
+          <View style={styles.resendRow}>
+            <Text style={[styles.footerText, { color: theme.text, opacity: 0.6 }]}>
+              Didn't get the code?
+            </Text>
+            <TouchableOpacity onPress={() => timer === 0 && setTimer(60)}>
+              <Text style={[styles.resendText, { color: theme.accent }]}>
+                {timer > 0 ? `Resend in ${formatTime(timer)}` : 'Resend now'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        {errorMessage ? (
+          <View style={styles.smartErrorContainer}>
+            <View style={styles.errorIconBox}>
+              <MaterialCommunityIcons name="alert-circle" size={18} color="#D32F2F" />
+            </View>
+            <Text style={styles.smartErrorText} numberOfLines={2}>
+              {errorMessage}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={styles.buttonSection}>
+          <TouchableOpacity
+            style={[
+              styles.primaryButton,
+              {
+                backgroundColor: theme.accent,
+                opacity: otp.every((d) => d !== '') && !isVerifying ? 1 : 0.6,
+              },
+            ]}
+            disabled={!otp.every((d) => d !== '') || isVerifying}
+            onPress={handleVerify}
+          >
+            {isVerifying ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Verify</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.textButton} onPress={() => onSecondary?.()}>
+            <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.6 }]}>
+              Change Number/Email
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
