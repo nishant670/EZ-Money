@@ -1,6 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, ScrollView, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import React, { useState, useEffect } from 'react';
+import { Pressable, ScrollView, View, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -8,6 +10,9 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
+import { TransactionFormModal, type EntryForm } from '@/components/transactions/TransactionFormModal';
+import { useAuthStore } from '@/hooks/use-auth-store';
+import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase } from '@/lib/transactions';
 
 export default function TransactionDetailsScreen() {
     const router = useRouter();
@@ -25,18 +30,194 @@ export default function TransactionDetailsScreen() {
         tag?: string;
     }>();
 
+    const { token } = useAuthStore();
+    const [transaction, setTransaction] = useState<any>(null); // Using any to be flexible with API response initially
+    const [isLoading, setIsLoading] = useState(true);
+    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const [isExpanded, setIsExpanded] = useState(true);
+    const [attachment, setAttachment] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+
     const colorScheme = useColorScheme() ?? 'light';
     const theme = Colors[colorScheme];
-    const surfaceColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
-    const cardBorder = theme.border;
 
-    const entryType = params.entryType === 'income' ? 'income' : 'expense';
-    const amountValue = Number(params.amount ?? 0);
-    // Design uses black/dark text for amount, icon color varies. 
-    // Let's stick to standard dark text for Hero amount unless specific color requested, but design shows black.
+    // Hydrate state from params initially, then update with API data
+    const displayData = transaction || {
+        id: params.id,
+        title: params.name,
+        category: params.category,
+        amount: Number(params.amount ?? 0),
+        type: params.entryType,
+        mode: params.mode,
+        notes: params.notes,
+        merchant: params.merchant,
+        date: params.dateLabel, // formatted date label
+        tag: params.tag,
+        // missing fields from params will be undefined
+    };
 
-    const icon = entryType === 'income' ? 'cash-multiple' : 'coffee'; // Placeholder if no category icon logic
+    useEffect(() => {
+        fetchTransactionDetails();
+    }, [params.id, token]);
+
+    const fetchTransactionDetails = async () => {
+        if (!token || !params.id) return;
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/entries/${params.id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                // Normalize API data to match display structure
+                const normalized = {
+                    ...data,
+                    // Ensure consistency in naming
+                    title: data.title,
+                    type: data.type,
+                    amount: Number(data.amount),
+                    date: data.date ? formatDateLabel(new Date(data.date)) : params.dateLabel,
+                    rawDate: data.date,
+                    time: data.time,
+                    tag: data.tag ? toTitleCase(data.tag) : data.tag,
+                };
+                setTransaction(normalized);
+
+                // If attachment exists in data (as url string), set it
+                // Note: handling remote attachment display might need update if logic differs
+            }
+        } catch (error) {
+            console.error('Failed to fetch transaction details', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const entryType = (displayData.type || 'expense').toLowerCase() === 'income' ? 'income' : 'expense';
+    const amountValue = Math.abs(Number(displayData.amount || 0));
+
+    const icon = entryType === 'income' ? 'cash-multiple' : 'coffee';
     const iconColor = theme.accent;
+
+    const pickReceipt = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['image/*', 'application/pdf'],
+                copyToCacheDirectory: true,
+            });
+            if (!result.canceled) {
+                setAttachment(result.assets[0]);
+                // TODO: Upload attachment to backend immediately or on save? 
+                // For now, let's assume this is just local preview until 'Tweak this' saves it or separate upload
+            }
+        } catch (err) {
+            console.warn('Document picker error:', err);
+        }
+    };
+
+    const handleEdit = () => {
+        setIsEditModalVisible(true);
+    };
+
+    const handleDelete = () => {
+        Alert.alert(
+            "Forget this transaction?",
+            "This cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Forget it",
+                    style: "destructive",
+                    onPress: async () => {
+                        setIsDeleting(true);
+                        try {
+                            const response = await fetch(`${API_BASE_URL}/v1/entries/${params.id}`, {
+                                method: 'DELETE',
+                                headers: { Authorization: `Bearer ${token}` }
+                            });
+                            if (response.ok) {
+                                router.back();
+                            } else {
+                                Alert.alert("Error", "Could not delete transaction.");
+                            }
+                        } catch (e) {
+                            Alert.alert("Error", "Network error.");
+                        } finally {
+                            setIsDeleting(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleSaveUpdate = async (formData: EntryForm) => {
+        try {
+            // Transform EntryForm back to backend payload
+            // Assuming we only update text fields here. File upload usually handled separately or multipart.
+            // For MVP, focus on data fields.
+
+            const payload: any = {
+                title: formData.title,
+                amount: Number(formData.amount),
+                type: formData.type.toLowerCase(),
+                mode: formData.mode,
+                category: formData.category,
+                notes: formData.notes,
+                merchant: formData.merchant,
+                tag: formData.tag,
+            };
+
+            // Date handling: EntryForm has "date" as label (e.g. 18 January 2026).
+            // Backend expects YYYY-MM-DD.
+            const parsedDate = parseDateLabel(formData.date);
+            if (parsedDate) {
+                payload.date = parsedDate.toISOString().split('T')[0];
+            }
+            if (formData.time) {
+                payload.time = formData.time; // "10:30 PM" - backend stores as string
+            }
+
+            const response = await fetch(`${API_BASE_URL}/v1/entries/${params.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error('Update failed');
+            }
+
+            // Refresh logic
+            await fetchTransactionDetails();
+            setIsEditModalVisible(false);
+        } catch (error) {
+            console.error(error);
+            throw new Error("Failed to update transaction");
+        }
+    };
+
+    const hasMerchant = displayData.merchant && displayData.merchant !== 'Unknown Location';
+
+    // Prepare initial form data for Modal
+    const editInitialData: EntryForm = {
+        title: displayData.title || '',
+        amount: amountValue.toString(),
+        type: displayData.type ? toTitleCase(displayData.type) : 'Expense',
+        mode: displayData.mode || 'Cash',
+        category: displayData.category || 'Food',
+        date: displayData.date || formatDateLabel(new Date()),
+        time: displayData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+        notes: displayData.notes || '',
+        tag: displayData.tag || 'General',
+        currency: 'USD',
+        account: 'Main Account',
+        merchant: displayData.merchant || '',
+        attachment: null
+    };
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -53,108 +234,210 @@ export default function TransactionDetailsScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }}>
-
                 {/* HERO SECTION */}
-                <View className="items-center mb-8">
-                    <View className="h-24 w-24 rounded-[30px] bg-white dark:bg-gray-800 items-center justify-center shadow-sm mb-4">
-                        <MaterialCommunityIcons name={icon} size={48} color={iconColor} />
+                <View className="items-center mb-10">
+                    <View
+                        className="h-28 w-28 rounded-[32px] bg-white dark:bg-gray-800 items-center justify-center shadow-lg mb-6"
+                        style={{ shadowColor: theme.accent, shadowOpacity: 0.1, shadowRadius: 15 }}
+                    >
+                        <MaterialCommunityIcons name={icon} size={52} color={iconColor} />
+                        {/* Little yellow "AI" badge or similar if needed as per mockup */}
+                        <View className="absolute -bottom-2 -right-2 bg-yellow-400 rounded-full px-2 py-0.5 border-2 border-white">
+                            <ThemedText className="text-[8px] font-black text-white">AI!</ThemedText>
+                        </View>
                     </View>
-                    <ThemedText className="text-4xl font-black mb-1" style={{ color: theme.text }}>
-                        {entryType === 'expense' ? '-' : '+'}{CURRENCY_SYMBOL}{amountValue.toFixed(2)}
+
+                    <ThemedText className="text-5xl font-black mb-2 tracking-tight" style={{ color: theme.text }}>
+                        {CURRENCY_SYMBOL}{amountValue.toFixed(2)}
                     </ThemedText>
 
-                    <View className="flex-row items-center bg-white dark:bg-gray-800 rounded-full px-4 py-1.5 shadow-sm mt-2">
-                        <ThemedText className="text-sm font-bold mr-1">{params.merchant || params.name || 'Unknown'}</ThemedText>
-                        <MaterialCommunityIcons name="check-decagram" size={14} color="#27AE60" />
-                    </View>
+                    <ThemedText className="text-xl font-black mb-3" style={{ color: '#1E293B' }}>
+                        {displayData.title || 'Untitled Transaction'}
+                    </ThemedText>
+
+                    {hasMerchant && (
+                        <View className="flex-row items-center bg-white dark:bg-gray-800 rounded-full px-4 py-1.5 shadow-sm border border-gray-100">
+                            <ThemedText className="text-sm font-bold text-gray-600 mr-2">{displayData.merchant}</ThemedText>
+                            <MaterialCommunityIcons name="check-circle" size={16} color="#10B981" />
+                        </View>
+                    )}
                 </View>
 
                 {/* DETAILS CARD */}
-                <View className="bg-white dark:bg-gray-800 rounded-[32px] p-6 shadow-sm mb-6">
+                <View className="bg-white dark:bg-gray-800 rounded-[40px] p-8 shadow-sm mb-8">
 
                     {/* Date */}
-                    <View className="flex-row gap-4 mb-6">
-                        <View className="h-10 w-10 rounded-full bg-pink-50 items-center justify-center">
-                            <MaterialCommunityIcons name="calendar" size={20} color={theme.accent} />
+                    <View className="flex-row gap-5 mb-8">
+                        <View className="h-12 w-12 rounded-full bg-pink-50 items-center justify-center">
+                            <MaterialCommunityIcons name="calendar-blank" size={24} color="#F97316" />
                         </View>
                         <View>
-                            <ThemedText className="text-xs uppercase font-bold text-gray-400 mb-1">WHEN WAS THIS?</ThemedText>
-                            <ThemedText className="text-base font-bold text-gray-800 dark:text-gray-100">
-                                {params.dateLabel || 'Today'}
+                            <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">WHEN WAS THIS?</ThemedText>
+                            <ThemedText className="text-lg font-black text-slate-800 dark:text-gray-100">
+                                {displayData.date || 'Yesterday, Oct 24'}
                             </ThemedText>
-                            <ThemedText className="text-xs text-gray-500">
-                                {/* Placeholder time */} 10:42 AM
+                            <ThemedText className="text-xs font-bold text-gray-400">
+                                {displayData.time ? `At ${displayData.time}` : 'Earlier today'}
                             </ThemedText>
                         </View>
                     </View>
 
                     {/* Category */}
-                    <View className="flex-row gap-4 mb-6">
-                        <View className="h-10 w-10 rounded-full bg-orange-50 items-center justify-center">
-                            <MaterialCommunityIcons name="chart-pie" size={20} color={theme.accent} />
+                    <View className="flex-row gap-5 mb-8">
+                        <View className="h-12 w-12 rounded-full bg-orange-50 items-center justify-center">
+                            <MaterialCommunityIcons name="molecule" size={24} color="#F97316" />
                         </View>
                         <View>
-                            <ThemedText className="text-xs uppercase font-bold text-gray-400 mb-1">WHAT KIND OF SPEND?</ThemedText>
-                            <ThemedText className="text-base font-bold text-gray-800 dark:text-gray-100">
-                                {params.category}
+                            <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">WHAT KIND OF SPEND?</ThemedText>
+                            <ThemedText className="text-lg font-black text-slate-800 dark:text-gray-100">
+                                {displayData.category || 'Food & Drink'}
                             </ThemedText>
-                            <ThemedText className="text-xs text-gray-500">
+                            <ThemedText className="text-xs font-bold text-gray-400">
                                 Treat yourself category
                             </ThemedText>
                         </View>
                     </View>
 
-                    {/* Notes */}
-                    {params.notes && (
-                        <View className="flex-row gap-4">
-                            <View className="h-10 w-10 rounded-full bg-yellow-50 items-center justify-center">
-                                <MaterialCommunityIcons name="pencil" size={20} color={theme.accent} />
+                    {/* Separator */}
+                    <View className="h-[1px] bg-gray-50 mb-8 border-b border-dashed border-gray-100" />
+
+                    {/* More Details Header - Collapsible */}
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => setIsExpanded(!isExpanded)}
+                        className="flex-row items-center justify-between mb-6"
+                    >
+                        <ThemedText className="text-[10px] uppercase font-black text-orange-400 tracking-widest">MORE DETAILS</ThemedText>
+                        <MaterialCommunityIcons
+                            name={isExpanded ? "chevron-up" : "chevron-down"}
+                            size={18}
+                            color="#FB923C"
+                        />
+                    </TouchableOpacity>
+
+                    {isExpanded && (
+                        <View>
+                            <View className="flex-row mb-8">
+                                {/* Payment Method */}
+                                <View className="flex-1 flex-row items-center gap-3">
+                                    <View className="h-10 w-10 rounded-xl bg-gray-50 items-center justify-center border border-gray-100">
+                                        <MaterialCommunityIcons name="wallet-outline" size={20} color="#64748B" />
+                                    </View>
+                                    <View>
+                                        <ThemedText className="text-[9px] uppercase font-black text-gray-300">PAYMENT METHOD</ThemedText>
+                                        <ThemedText className="text-sm font-black text-slate-700">{displayData.mode || 'UPI'}</ThemedText>
+                                    </View>
+                                </View>
+
+                                {/* Account */}
+                                <View className="flex-1 flex-row items-center gap-3">
+                                    <View className="h-10 w-10 rounded-xl bg-gray-50 items-center justify-center border border-gray-100">
+                                        <MaterialCommunityIcons name="bank-outline" size={20} color="#64748B" />
+                                    </View>
+                                    <View>
+                                        <ThemedText className="text-[9px] uppercase font-black text-gray-300">ACCOUNT</ThemedText>
+                                        <ThemedText className="text-sm font-black text-slate-700">HDFC Savings</ThemedText>
+                                    </View>
+                                </View>
                             </View>
-                            <View className="flex-1">
-                                <ThemedText className="text-xs uppercase font-bold text-gray-400 mb-1">YOUR NOTES</ThemedText>
-                                <ThemedText className="text-base italic text-gray-600 dark:text-gray-300">
-                                    "{params.notes}"
-                                </ThemedText>
+
+                            {/* Tags */}
+                            <View className="flex-row items-start gap-3 mb-8">
+                                <View className="h-10 w-10 rounded-xl bg-gray-50 items-center justify-center border border-gray-100">
+                                    <MaterialCommunityIcons name="tag-outline" size={20} color="#64748B" />
+                                </View>
+                                <View className="flex-1">
+                                    <ThemedText className="text-[9px] uppercase font-black text-gray-300 mb-2">TAGS</ThemedText>
+                                    <View className="flex-row gap-2">
+                                        <View className="bg-orange-50 px-3 py-1 rounded-full border border-orange-100">
+                                            <ThemedText className="text-[10px] font-black text-orange-400">{displayData.tag || 'Personal'}</ThemedText>
+                                        </View>
+                                    </View>
+                                </View>
                             </View>
                         </View>
                     )}
 
+                    {/* Separator */}
+                    <View className="h-[1px] bg-gray-50 mb-8 border-b border-dashed border-gray-100" />
+
+                    {/* Notes Inside Card */}
+                    <View className="flex-row gap-5">
+                        <View className="h-12 w-12 rounded-full bg-orange-50 items-center justify-center">
+                            <MaterialCommunityIcons name="comment-text-outline" size={24} color="#F97316" />
+                        </View>
+                        <View className="flex-1">
+                            <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">YOUR NOTES</ThemedText>
+                            <ThemedText className="text-base font-bold italic text-slate-500 leading-relaxed">
+                                {displayData.notes ? `"${displayData.notes}"` : '"No notes added."'}
+                            </ThemedText>
+                        </View>
+                    </View>
+
                 </View>
 
                 {/* PAPER TRAIL */}
-                <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 ml-4">THE PAPER TRAIL</ThemedText>
-                <View className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-[28px] p-4 flex-row items-center justify-between mb-8 bg-white/50">
-                    <View className="flex-row items-center gap-4">
-                        <View className="h-12 w-12 rounded-full bg-white dark:bg-gray-800 items-center justify-center shadow-sm">
-                            <MaterialCommunityIcons name="receipt" size={24} color="#A0A0A0" />
+                <ThemedText className="text-[10px] font-black uppercase tracking-[2px] text-gray-300 mb-4 ml-6">THE PAPER TRAIL</ThemedText>
+                <TouchableOpacity
+                    onPress={pickReceipt}
+                    className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-[32px] p-6 flex-row items-center justify-between mb-10 bg-white/40"
+                >
+                    <View className="flex-row items-center gap-5">
+                        <View className="h-14 w-14 rounded-full bg-white dark:bg-gray-800 items-center justify-center shadow-sm">
+                            {attachment ? (
+                                <Image
+                                    source={{ uri: attachment.uri }}
+                                    style={{ width: 40, height: 40, borderRadius: 8 }}
+                                />
+                            ) : (
+                                <MaterialCommunityIcons name="file-document-outline" size={28} color="#94A3B8" />
+                            )}
                         </View>
                         <View>
-                            <ThemedText className="text-sm font-bold text-gray-700 dark:text-gray-200">Attach receipt</ThemedText>
-                            <ThemedText className="text-xs text-gray-400">Snap a photo or upload file</ThemedText>
+                            <ThemedText className="text-base font-black text-slate-700 dark:text-gray-200">
+                                {attachment ? attachment.name : 'Attach receipt'}
+                            </ThemedText>
+                            <ThemedText className="text-xs font-bold text-gray-400">
+                                {attachment ? 'Tap to change' : 'Snap a photo or upload file'}
+                            </ThemedText>
                         </View>
                     </View>
-                    <MaterialCommunityIcons name="plus-circle" size={24} color="#D0D0D0" />
-                </View>
+                    <MaterialCommunityIcons
+                        name={attachment ? "eye-outline" : "plus-circle"}
+                        size={28}
+                        color={attachment ? theme.accent : "#E2E8F0"}
+                    />
+                </TouchableOpacity>
 
                 {/* ACTIONS */}
                 <Pressable
-                    className="w-full py-4 rounded-full items-center justify-center shadow-lg mb-4"
-                    style={{ backgroundColor: theme.accent }}
+                    onPress={handleEdit}
+                    className="w-full py-5 rounded-full items-center justify-center shadow-xl mb-6 active:opacity-90"
+                    style={{ backgroundColor: '#FF8A65' }}
                 >
-                    <View className="flex-row items-center gap-2">
-                        <MaterialCommunityIcons name="tune" size={20} color="#FFF" />
-                        <ThemedText className="text-white font-bold text-lg">Tweak this</ThemedText>
+                    <View className="flex-row items-center gap-3">
+                        <MaterialCommunityIcons name="tune-variant" size={24} color="#FFF" />
+                        <ThemedText className="text-white font-black text-xl">Tweak this</ThemedText>
                     </View>
                 </Pressable>
 
-                <Pressable className="items-center py-2">
+                <Pressable onPress={handleDelete} className="items-center py-2 mb-10 active:opacity-50">
                     <View className="flex-row items-center gap-2">
-                        <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
-                        <ThemedText className="font-bold text-[#FF6B6B]">Forget this transaction</ThemedText>
+                        {isDeleting ? <ActivityIndicator color="#FF6B6B" /> : <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />}
+                        <ThemedText className="font-bold text-[#FF6B6B]">{isDeleting ? 'Forgetting...' : 'Forget this transaction'}</ThemedText>
                     </View>
                 </Pressable>
 
             </ScrollView>
+
+            <TransactionFormModal
+                visible={isEditModalVisible}
+                onClose={() => setIsEditModalVisible(false)}
+                initialData={editInitialData}
+                onSave={handleSaveUpdate}
+                isEdit={true}
+            />
+
         </SafeAreaView>
     );
 }

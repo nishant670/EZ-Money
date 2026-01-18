@@ -12,11 +12,22 @@ export type ApiEntry = {
   date?: string;
   notes?: string;
   merchant?: string;
+  title?: string;
   tag?: string;
   created_at?: string;
   createdAt?: string;
   updated_at?: string;
 };
+
+export interface TransactionFilters {
+  type?: string;
+  category?: string;
+  mode?: string;
+  min_amount?: number;
+  max_amount?: number;
+  start_date?: string;
+  end_date?: string;
+}
 
 const monthLookup: Record<string, number> = {
   january: 0,
@@ -159,7 +170,7 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   const normalizedType: 'income' | 'expense' = type === 'income' ? 'income' : 'expense';
   const signedAmount = normalizedType === 'income' ? Math.abs(amountValue) : -Math.abs(amountValue);
   const label =
-    entry.notes?.trim() || entry.merchant?.trim() || entry.category?.trim() || entry.mode || 'Transaction';
+    entry.title?.trim() || entry.merchant?.trim() || entry.category?.trim() || entry.notes?.trim() || entry.mode || 'Transaction';
   const category = entry.category ?? (normalizedType === 'income' ? 'Income' : 'Expense');
   const dateSource =
     entry.date ?? entry.created_at ?? entry.createdAt ?? entry.updated_at ?? null;
@@ -170,6 +181,7 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   return {
     id: entry.id ? String(entry.id) : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     name: label,
+    title: entry.title ?? null,
     category,
     amount: signedAmount,
     icon: resolveIconForEntry(category, entry.type),
@@ -209,11 +221,27 @@ const resolveApiBaseUrl = () => {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
-export const loadTransactions = async (token?: string | null): Promise<Transaction[]> => {
+export const loadTransactions = async (
+  token?: string | null,
+  filters?: TransactionFilters
+): Promise<Transaction[]> => {
   if (!token) {
     return [];
   }
-  const response = await fetch(`${API_BASE_URL}/v1/entries`, {
+
+  const queryParams = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value != null && value !== '' && value !== 'All') {
+        queryParams.append(key, String(value));
+      }
+    });
+  }
+
+  const queryString = queryParams.toString();
+  const url = `${API_BASE_URL}/v1/entries${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -225,6 +253,7 @@ export const loadTransactions = async (token?: string | null): Promise<Transacti
   const payload = await response.json();
   const mapped = normalizeEntriesResponse(payload).map(mapEntryToTransaction);
   mapped.sort((a, b) => (b.occurredAt ?? 0) - (a.occurredAt ?? 0));
+  console.log('mapped', mapped);
   return mapped;
 };
 

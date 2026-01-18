@@ -3,6 +3,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 export type Transaction = {
   id: string;
   name: string;
+  title?: string | null;
   category: string;
   amount: number;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
