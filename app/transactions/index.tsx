@@ -1,7 +1,7 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { router, Stack } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TransactionItem } from '@/components/home/TransactionItem';
@@ -28,49 +28,70 @@ export default function TransactionsScreen() {
 
   // Filter States
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filterType, setFilterType] = useState<'Expense' | 'Income' | 'Transfer' | 'All'>('All');
-  const [amountRange, setAmountRange] = useState({ min: 50, max: 2500 });
+  const [filterType, setFilterType] = useState<'Expense' | 'Income' | 'All'>('All');
+  const [minAmount, setMinAmount] = useState(0);
+  const [maxAmount, setMaxAmount] = useState(10000);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [activeDatePill, setActiveDatePill] = useState('This Month');
 
 
-  // Initial Load
-  useEffect(() => {
-    const load = async () => {
-      if (!token) {
-        return;
-      }
-      setIsLoading(true);
-      setError(null);
-      try {
-        const mapped = await loadTransactions(token);
-        setTransactions(mapped);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unable to load transactions.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
-  }, [token]);
+  // Initial Load & Filtered Load
+  const load = useCallback(async () => {
+    if (!token) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const filters = {
+        type: filterType === 'All' ? undefined : filterType,
+        category: selectedCategory ?? undefined,
+        mode: selectedMethod ?? undefined,
+        // Only send amount filter if it differs from default range
+        min_amount: minAmount > 0 ? minAmount : undefined,
+        max_amount: maxAmount < 10000 ? maxAmount : undefined,
+        start_date: startDate ?? undefined,
+        end_date: endDate ?? undefined,
+      };
+      const mapped = await loadTransactions(token, filters);
+      setTransactions(mapped);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load transactions.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token, filterType, selectedCategory, selectedMethod, minAmount, maxAmount, startDate, endDate]);
 
-  // Filter Logic (Simplified for Visuals, can extend later)
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Filter Logic (Search remains FE only for speed)
   const filteredTransactions = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return transactions.filter((txn) => {
       const matchesQuery = !query || (
         txn.name.toLowerCase().includes(query) ||
         txn.category.toLowerCase().includes(query) ||
+        txn.amount.toString().includes(query) ||
         (txn.notes && txn.notes.toLowerCase().includes(query))
       );
-
-      const matchesType = filterType === 'All' || txn.entryType?.toLowerCase() === filterType.toLowerCase();
-      const matchesCategory = !selectedCategory || txn.category.toLowerCase() === selectedCategory.toLowerCase();
-
-      return matchesQuery && matchesType && matchesCategory;
+      return matchesQuery;
     });
-  }, [transactions, searchQuery, filterType, selectedCategory]);
+  }, [transactions, searchQuery]);
+
+  const isFilterActive = useMemo(() => {
+    return (
+      filterType !== 'All' ||
+      selectedCategory !== null ||
+      selectedMethod !== null ||
+      minAmount > 0 ||
+      maxAmount < 10000 ||
+      startDate !== null ||
+      endDate !== null
+    );
+  }, [filterType, selectedCategory, selectedMethod, minAmount, maxAmount, startDate, endDate]);
 
   const sections = useMemo(
     () => groupTransactionsBySection(filteredTransactions),
@@ -138,27 +159,37 @@ export default function TransactionsScreen() {
         <View></View>
       </View>
 
-      {/* Search Bar */}
-      <View className="px-6 pb-6 flex-row gap-3">
-        <View className="flex-1 flex-row items-center bg-white dark:bg-gray-800 rounded-full px-4 py-1 shadow-sm">
-          <MaterialCommunityIcons name="magnify" size={20} color="#A0A0A0" />
-          <TextInput
-            placeholder="Search your story..."
-            placeholderTextColor="#A0A0A0"
-            className="flex-1 ml-2 text-base"
-            style={{ color: theme.text }}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+      {/* Header and Search */}
+      <View className="px-5 mb-4">
+        <View className="flex-row items-center gap-3">
+          <View className="flex-1 flex-row items-center bg-white border border-gray-100 rounded-2xl px-4 py-3 shadow-sm">
+            <Ionicons name="search" size={20} color="#9CA3AF" />
+            <TextInput
+              placeholder="Search transactions..."
+              placeholderTextColor="#9CA3AF"
+              className="flex-1 ml-3 text-base text-gray-900 font-medium"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
+          <TouchableOpacity
+            onPress={() => setIsFilterOpen(true)}
+            className={`w-12 h-12 rounded-2xl items-center justify-center shadow-sm ${isFilterActive ? 'bg-orange-50 border border-orange-100' : 'bg-white border border-gray-100'
+              }`}
+          >
+            <View>
+              <Ionicons
+                name="options-outline"
+                size={22}
+                color={isFilterActive ? '#F97316' : '#6B7280'}
+              />
+              {isFilterActive && (
+                <View className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-orange-500 rounded-full border-2 border-white" />
+              )}
+            </View>
+          </TouchableOpacity>
         </View>
-        <Pressable
-          onPress={() => setIsFilterOpen(true)}
-          className="h-12 w-12 rounded-full bg-white dark:bg-gray-800 items-center justify-center shadow-sm active:scale-95"
-        >
-          <MaterialCommunityIcons name="tune-variant" size={20} color={theme.text} />
-        </Pressable>
       </View>
-
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         {/* Dynamic Sections */}
         {sections.map((section) => {
@@ -205,17 +236,21 @@ export default function TransactionsScreen() {
             onClose={() => setIsFilterOpen(false)}
             count={filteredTransactions.length}
             onApply={(newFilters: any) => {
-              setFilterType(newFilters.type as any);
+              setFilterType(newFilters.type);
               setSelectedCategory(newFilters.category);
-              setSelectedMethod(newFilters.paymentMethod);
+              setSelectedMethod(newFilters.mode);
+              setMinAmount(newFilters.min_amount);
+              setMaxAmount(newFilters.max_amount);
+              setStartDate(newFilters.start_date);
+              setEndDate(newFilters.end_date);
               setIsFilterOpen(false);
             }}
             currentFilters={{
               type: filterType,
-              dateRange: { from: 'Jun 10', to: 'Jul 10' }, // Placeholder for now
-              amountRange: amountRange,
+              dateRange: { from: startDate, to: endDate },
+              amountRange: { min: minAmount, max: maxAmount },
               category: selectedCategory,
-              account: null, // Mapping these as needed
+              account: null,
               paymentMethod: selectedMethod,
             }}
           />

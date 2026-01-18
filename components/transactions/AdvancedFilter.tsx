@@ -1,8 +1,13 @@
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React from 'react';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import React, { useState } from 'react';
 import {
+    Dimensions,
+    PanResponder,
+    Platform,
+    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -12,11 +17,19 @@ import {
 
 interface AdvancedFilterProps {
     onClose: () => void;
-    onApply: (filters: any) => void;
+    onApply: (filters: {
+        type: string;
+        category: string | null;
+        mode: string | null;
+        min_amount: number;
+        max_amount: number;
+        start_date: string | null;
+        end_date: string | null;
+    }) => void;
     count?: number;
     currentFilters: {
         type: string;
-        dateRange: { from: string; to: string };
+        dateRange: { from: string | null; to: string | null };
         amountRange: { min: number; max: number };
         category: string | null;
         account: string | null;
@@ -33,6 +46,91 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
     const [account, setAccount] = React.useState(currentFilters.account);
     const [paymentMethod, setPaymentMethod] = React.useState(currentFilters.paymentMethod);
 
+    // Date Picker States
+    const [startDate, setStartDate] = React.useState<Date | null>(
+        currentFilters.dateRange.from ? new Date(currentFilters.dateRange.from) : null
+    );
+    const [endDate, setEndDate] = React.useState<Date | null>(
+        currentFilters.dateRange.to ? new Date(currentFilters.dateRange.to) : null
+    );
+    const [showPicker, setShowPicker] = React.useState<'start' | 'end' | null>(null);
+
+    // Amount Slider States
+    const [minAmount, setMinAmount] = React.useState(currentFilters.amountRange.min);
+    const [maxAmount, setMaxAmount] = React.useState(currentFilters.amountRange.max);
+
+    const sliderWidth = Dimensions.get('window').width - 48; // Horizontal padding
+
+    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+        const currentDate = selectedDate || (showPicker === 'start' ? startDate : endDate);
+        setShowPicker(null);
+        if (showPicker === 'start') {
+            setStartDate(currentDate);
+        } else {
+            setEndDate(currentDate);
+        }
+    };
+
+    const formatDate = (date: Date | null) => {
+        if (!date) return 'Select Date';
+        return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+
+    const formatToApiDate = (date: Date | null) => {
+        if (!date) return null;
+        return date.toISOString().split('T')[0];
+    };
+
+    // Slider PanResponder Logic
+    const maxPossibleAmount = 10000;
+    const sliderContainerWidth = Dimensions.get('window').width - 48; // Total padding
+
+    const minPanResponder = React.useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onPanResponderGrant: () => {
+                // Optional: Provide visual feedback
+            },
+            onPanResponderTerminationRequest: () => false, // Critical: stops ScrollView from stealing touch
+            onPanResponderMove: (evt, gestureState) => {
+                const newX = Math.max(0, Math.min(gestureState.moveX - 24, sliderContainerWidth));
+                const newValue = Math.round((newX / sliderContainerWidth) * maxPossibleAmount);
+                const steppedValue = Math.round(newValue / 100) * 100;
+
+                if (steppedValue < maxAmount) {
+                    setMinAmount(steppedValue);
+                }
+            },
+            onPanResponderRelease: () => {
+                // Cleanup if needed
+            }
+        })
+    ).current;
+
+    const maxPanResponder = React.useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onPanResponderGrant: () => {
+                // Optional: Provide visual feedback
+            },
+            onPanResponderTerminationRequest: () => false, // Critical: stops ScrollView from stealing touch
+            onPanResponderMove: (evt, gestureState) => {
+                const newX = Math.max(0, Math.min(gestureState.moveX - 24, sliderContainerWidth));
+                const newValue = Math.round((newX / sliderContainerWidth) * maxPossibleAmount);
+                const steppedValue = Math.round(newValue / 100) * 100;
+
+                if (steppedValue > minAmount) {
+                    setMaxAmount(steppedValue);
+                }
+            },
+            onPanResponderRelease: () => {
+                // Cleanup if needed
+            }
+        })
+    ).current;
+
     return (
         <View style={[styles.container, { backgroundColor: 'white' }]}>
             {/* Header */}
@@ -46,7 +144,7 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                
+
                 {/* When did this happen? */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
@@ -54,22 +152,37 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                         <Text style={styles.sectionLabel}>WHEN DID THIS HAPPEN?</Text>
                     </View>
                     <View style={styles.dateContainer}>
-                        <View style={styles.dateCard}>
+                        <TouchableOpacity
+                            onPress={() => setShowPicker('start')}
+                            style={styles.dateCard}
+                        >
                             <View>
                                 <Text style={styles.dateHeader}>FROM</Text>
-                                <Text style={[styles.dateValue, { color: theme.text }]}>Jun 10, 2023</Text>
+                                <Text style={[styles.dateValue, { color: theme.text }]}>{formatDate(startDate)}</Text>
                             </View>
                             <MaterialCommunityIcons name="calendar-outline" size={20} color="#FFAB91" />
-                        </View>
-                        <View style={styles.dateCard}>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setShowPicker('end')}
+                            style={styles.dateCard}
+                        >
                             <View>
                                 <Text style={styles.dateHeader}>TO</Text>
-                                <Text style={[styles.dateValue, { color: theme.text }]}>Jul 10, 2023</Text>
+                                <Text style={[styles.dateValue, { color: theme.text }]}>{formatDate(endDate)}</Text>
                             </View>
                             <MaterialCommunityIcons name="calendar-outline" size={20} color="#FFAB91" />
-                        </View>
+                        </TouchableOpacity>
                     </View>
                 </View>
+
+                {showPicker && (
+                    <DateTimePicker
+                        value={showPicker === 'start' ? (startDate || new Date()) : (endDate || new Date())}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        onChange={onDateChange}
+                    />
+                )}
 
                 {/* What kind of money? */}
                 <View style={styles.section}>
@@ -78,9 +191,9 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                         <Text style={styles.sectionLabel}>WHAT KIND OF MONEY?</Text>
                     </View>
                     <View style={styles.tabContainer}>
-                        {['Expense', 'Income', 'Transfer'].map((t) => (
-                            <TouchableOpacity 
-                                key={t} 
+                        {['Expense', 'Income'].map((t) => (
+                            <TouchableOpacity
+                                key={t}
                                 style={[styles.tab, type === t && styles.activeTab]}
                                 onPress={() => setType(t)}
                             >
@@ -96,18 +209,46 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                         <MaterialCommunityIcons name="cash-multiple" size={18} color="#90A4AE" />
                         <Text style={styles.sectionLabel}>HOW MUCH WAS IT?</Text>
                         <View style={styles.amountBadge}>
-                            <Text style={styles.amountBadgeText}>$0 - $500</Text>
+                            <Text style={styles.amountBadgeText}>₹{minAmount} - ₹{maxAmount === maxPossibleAmount ? '10k+' : maxAmount}</Text>
                         </View>
                     </View>
-                    
+
                     <View style={styles.sliderContainer}>
                         <View style={styles.sliderTrack}>
-                            <View style={styles.sliderFill} />
-                            <View style={styles.sliderThumb} />
+                            {/* Track Fill */}
+                            <View
+                                style={[
+                                    styles.sliderFill,
+                                    {
+                                        left: `${(minAmount / maxPossibleAmount) * 100}%`,
+                                        width: `${((maxAmount - minAmount) / maxPossibleAmount) * 100}%`
+                                    }
+                                ]}
+                            />
+
+                            {/* Min Thumb */}
+                            <View
+                                style={[
+                                    styles.sliderThumb,
+                                    { left: `${(minAmount / maxPossibleAmount) * 100}%` }
+                                ]}
+                                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                                {...minPanResponder.panHandlers}
+                            />
+
+                            {/* Max Thumb */}
+                            <View
+                                style={[
+                                    styles.sliderThumb,
+                                    { left: `${(maxAmount / maxPossibleAmount) * 100}%`, transform: [{ translateX: -24 }] }
+                                ]}
+                                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                                {...maxPanResponder.panHandlers}
+                            />
                         </View>
                         <View style={styles.sliderLabels}>
-                            <Text style={styles.sliderLabelText}>$0</Text>
-                            <Text style={styles.sliderLabelText}>$1000+</Text>
+                            <Text style={styles.sliderLabelText}>₹0</Text>
+                            <Text style={styles.sliderLabelText}>₹10k+</Text>
                         </View>
                     </View>
                 </View>
@@ -126,8 +267,8 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                             { name: 'Fun', icon: 'movie' },
                             { name: 'Home', icon: 'home' },
                         ].map((cat) => (
-                            <TouchableOpacity 
-                                key={cat.name} 
+                            <TouchableOpacity
+                                key={cat.name}
                                 style={[styles.chip, category === cat.name && styles.activeChip]}
                                 onPress={() => setCategory(cat.name)}
                             >
@@ -153,8 +294,8 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                             { name: 'Checking' },
                             { name: 'Savings' },
                         ].map((acc) => (
-                            <TouchableOpacity 
-                                key={acc.name} 
+                            <TouchableOpacity
+                                key={acc.name}
                                 style={[styles.accountChip, account === acc.name && styles.activeAccountChip]}
                                 onPress={() => setAccount(acc.name)}
                             >
@@ -172,14 +313,20 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                         <MaterialCommunityIcons name="wallet-outline" size={18} color="#90A4AE" />
                         <Text style={styles.sectionLabel}>HOW DID YOU PAY?</Text>
                     </View>
-                    <View style={styles.radioContainer}>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.scrollableRadioContainer}
+                    >
                         {[
-                            { name: 'Credit Card', value: 'credit' },
-                            { name: 'Debit Card', value: 'debit' },
-                            { name: 'Cash', value: 'cash' },
+                            { name: 'Credit Card', value: 'Credit Card' },
+                            { name: 'Debit Card', value: 'Debit Card' },
+                            { name: 'Cash', value: 'Cash' },
+                            { name: 'UPI', value: 'UPI' },
+                            { name: 'Wallets', value: 'Wallets' },
                         ].map((pm) => (
-                            <TouchableOpacity 
-                                key={pm.value} 
+                            <TouchableOpacity
+                                key={pm.value}
                                 style={[styles.radioButton, paymentMethod === pm.value && styles.activeRadioButton]}
                                 onPress={() => setPaymentMethod(pm.value)}
                             >
@@ -189,24 +336,36 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                                 <Text style={[styles.radioText, paymentMethod === pm.value && styles.activeRadioText]}>{pm.name}</Text>
                             </TouchableOpacity>
                         ))}
-                    </View>
+                    </ScrollView>
                 </View>
 
                 <View style={styles.footer}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         onPress={() => {
-                            setType('Expense');
+                            setType('All');
                             setCategory(null);
                             setAccount(null);
                             setPaymentMethod(null);
+                            setStartDate(null);
+                            setEndDate(null);
+                            setMinAmount(0);
+                            setMaxAmount(10000);
                         }}
                     >
                         <Text style={styles.clearAllText}>Clear All</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={[styles.applyButton, { backgroundColor: theme.accent }]}
-                        onPress={() => onApply({ type, category, account, paymentMethod })}
+                        onPress={() => onApply({
+                            type,
+                            category,
+                            mode: paymentMethod,
+                            min_amount: minAmount,
+                            max_amount: maxAmount,
+                            start_date: formatToApiDate(startDate),
+                            end_date: formatToApiDate(endDate)
+                        })}
                     >
                         <View style={styles.showMeContent}>
                             <Text style={styles.applyButtonText}>Show Me!</Text>
@@ -228,7 +387,7 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 30,
         borderTopRightRadius: 30,
         paddingTop: 8,
-        marginTop:60
+        marginTop: 60
     },
     header: {
         flexDirection: 'row',
@@ -481,6 +640,11 @@ const styles = StyleSheet.create({
     },
     activeRadioText: {
         color: '#673AB7',
+    },
+    scrollableRadioContainer: {
+        flexDirection: 'row',
+        gap: 12,
+        paddingRight: 24,
     },
     applyButton: {
         height: 60,

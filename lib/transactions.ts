@@ -19,6 +19,16 @@ export type ApiEntry = {
   updated_at?: string;
 };
 
+export interface TransactionFilters {
+  type?: string;
+  category?: string;
+  mode?: string;
+  min_amount?: number;
+  max_amount?: number;
+  start_date?: string;
+  end_date?: string;
+}
+
 const monthLookup: Record<string, number> = {
   january: 0,
   february: 1,
@@ -211,11 +221,27 @@ const resolveApiBaseUrl = () => {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
-export const loadTransactions = async (token?: string | null): Promise<Transaction[]> => {
+export const loadTransactions = async (
+  token?: string | null,
+  filters?: TransactionFilters
+): Promise<Transaction[]> => {
   if (!token) {
     return [];
   }
-  const response = await fetch(`${API_BASE_URL}/v1/entries`, {
+
+  const queryParams = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value != null && value !== '' && value !== 'All') {
+        queryParams.append(key, String(value));
+      }
+    });
+  }
+
+  const queryString = queryParams.toString();
+  const url = `${API_BASE_URL}/v1/entries${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -227,6 +253,7 @@ export const loadTransactions = async (token?: string | null): Promise<Transacti
   const payload = await response.json();
   const mapped = normalizeEntriesResponse(payload).map(mapEntryToTransaction);
   mapped.sort((a, b) => (b.occurredAt ?? 0) - (a.occurredAt ?? 0));
+  console.log('mapped', mapped);
   return mapped;
 };
 
