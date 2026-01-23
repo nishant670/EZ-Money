@@ -1,195 +1,802 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { cssInterop } from 'nativewind';
-import { useState } from 'react';
-import { Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
+import { useState, useMemo } from 'react';
+import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-const TView = cssInterop(ThemedView, { className: 'style' });
-const TText = cssInterop(ThemedText, { className: 'style' });
+import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 
 type AccountTypeOption = {
-  key: 'credit' | 'bank' | 'wallet' | 'upi';
+  key: string;
   label: string;
-  description: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  color: string;
+  bgColor: string;
 };
 
 const typeOptions: AccountTypeOption[] = [
-  { key: 'credit', label: 'Credit Card', description: 'Card limits & spends', icon: 'credit-card-outline' },
-  { key: 'bank', label: 'Bank Account', description: 'Primary salary or savings', icon: 'bank-outline' },
-  { key: 'wallet', label: 'Wallet', description: 'Paytm, Amazon Pay, etc.', icon: 'wallet-outline' },
-  { key: 'upi', label: 'UPI', description: 'Handles like name@bank', icon: 'cellphone-nfc' },
+  { key: 'credit', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
+  { key: 'debit', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
+  { key: 'wallet', label: 'Wallet', icon: 'wallet', color: '#FF9F43', bgColor: '#FFF4EB' },
+  { key: 'upi', label: 'UPI', icon: 'qrcode-scan', color: '#00D2B4', bgColor: '#E6FBFA' },
+  { key: 'bank', label: 'Bank', icon: 'bank', color: '#3B5998', bgColor: '#EBF0FF' },
+  { key: 'other', label: 'Other', icon: 'dots-horizontal', color: '#546E7A', bgColor: '#F0F4F7' },
 ];
 
+const COLORS = [
+  '#FF7A7A', '#FF9F43', '#FFD32D', '#2ECC71', '#54A0FF', '#8190FF', '#B57AFF', '#FF79B0'
+];
+
+const CARD_ISSUERS = [
+  { id: '1', name: 'HDFC Bank', icon: 'bank' },
+  { id: '2', name: 'ICICI Bank', icon: 'bank' },
+  { id: '3', name: 'SBI (State Bank of India)', icon: 'bank' },
+  { id: '4', name: 'Axis Bank', icon: 'bank' },
+  { id: '5', name: 'American Express', icon: 'credit-card' },
+  { id: '6', name: 'HSBC', icon: 'bank' },
+  { id: '7', name: 'Standard Chartered', icon: 'bank' },
+  { id: '8', name: 'Kotak Mahindra Bank', icon: 'bank' },
+  { id: '9', name: 'Citibank', icon: 'bank' },
+];
+
+const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 export default function ManageAccountScreen() {
-  const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
-  const [isDefault, setIsDefault] = useState(false);
-  const [form, setForm] = useState({
-    type: 'credit' as AccountTypeOption['key'],
-    name: '',
-    provider: '',
-    identifier: '',
-  });
 
-  return (
-    <SafeAreaView className="flex-1" edges={['bottom']}>
-      <TView className="flex-1" style={{ backgroundColor: theme.background }}>
-        <ScrollView contentContainerStyle={{ padding: 24, gap: 20 }}>
-          <View className="flex-row items-center justify-between">
-            <Pressable accessibilityRole="button" onPress={() => router.back()}>
-              <MaterialCommunityIcons name="close" size={22} color={theme.text} />
-            </Pressable>
-            <TText className="text-lg" style={{ fontFamily: Fonts.title }}>
-              Add Account
-            </TText>
-            <View style={{ width: 22 }} />
+  // Step navigation
+  const [step, setStep] = useState(1);
+
+  // Step 1 States
+  const [selectedType, setSelectedType] = useState('bank');
+  const [selectedColor, setSelectedColor] = useState('#54A0FF');
+  const [name, setName] = useState('');
+
+  // Step 2 States
+  const [issuerQuery, setIssuerQuery] = useState('');
+  const [selectedIssuer, setSelectedIssuer] = useState<typeof CARD_ISSUERS[0] | null>(null);
+  const [showIssuerResults, setShowIssuerResults] = useState(false);
+
+  const [last4, setLast4] = useState('');
+  const [creditLimit, setCreditLimit] = useState('');
+  const [dueDay, setDueDay] = useState('');
+  const [feeMonth, setFeeMonth] = useState('');
+
+  // Modal States
+  const [showDayModal, setShowDayModal] = useState(false);
+  const [showMonthModal, setShowMonthModal] = useState(false);
+
+  const filteredIssuers = useMemo(() => {
+    if (!issuerQuery) return [];
+    return CARD_ISSUERS.filter(i =>
+      i.name.toLowerCase().includes(issuerQuery.toLowerCase())
+    );
+  }, [issuerQuery]);
+
+  const renderSelectionModal = (
+    visible: boolean,
+    onClose: () => void,
+    data: string[],
+    onSelect: (item: string) => void,
+    title: string
+  ) => (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+            <TouchableOpacity onPress={onClose}>
+              <MaterialCommunityIcons name="close" size={24} color="#1A1A1A" />
+            </TouchableOpacity>
           </View>
+          <ScrollView style={styles.modalList}>
+            {data.map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={styles.modalItem}
+                onPress={() => {
+                  onSelect(item);
+                  onClose();
+                }}
+              >
+                <ThemedText style={styles.modalItemText}>{item}</ThemedText>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Pressable>
+    </Modal>
+  );
 
-          <View className="gap-1">
-            <TText className="text-2xl" style={{ fontFamily: Fonts.title }}>
-              Where does this sit?
-            </TText>
-            <TText className="text-sm text-black/60 dark:text-white/60" style={{ fontFamily: Fonts.body }}>
-              Categorize the account so we can show insights tailor-made for you.
-            </TText>
+  const renderStep1 = () => (
+    <>
+      <ScreenHeader
+        subtitle="STEP 1 OF 2"
+        onBack={() => router.back()}
+        rightIcon="help-circle-outline"
+      />
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Mascot & Message */}
+        <View style={styles.mascotSection}>
+          <View style={styles.bubbleContainer}>
+            <ThemedText style={styles.bubbleText}>
+              Let's set up your new account!
+            </ThemedText>
+            <View style={styles.bubbleTriangle} />
           </View>
-
-          <View className="gap-3">
-            {typeOptions.map((option) => {
-              const isActive = form.type === option.key;
-              return (
-                <Pressable
-                  key={option.key}
-                  accessibilityRole="button"
-                  onPress={() => setForm((prev) => ({ ...prev, type: option.key }))}
-                  className="flex-row items-center gap-4 rounded-3xl border px-4 py-4"
-                  style={{
-                    borderColor: isActive ? theme.accent : 'rgba(120,120,120,0.3)',
-                    backgroundColor: isActive
-                      ? colorScheme === 'light'
-                        ? 'rgba(137,207,151,0.15)'
-                        : 'rgba(137,207,151,0.08)'
-                      : 'transparent',
-                  }}
-                >
-                  <View
-                    className="h-11 w-11 items-center justify-center rounded-full"
-                    style={{ backgroundColor: colorScheme === 'light' ? '#F3F4F6' : '#2C2C2C' }}
-                  >
-                    <MaterialCommunityIcons name={option.icon} size={20} color={theme.text} />
-                  </View>
-                  <View className="flex-1">
-                    <TText className="text-base" style={{ fontFamily: Fonts.title }}>
-                      {option.label}
-                    </TText>
-                    <TText className="text-sm text-black/60 dark:text-white/60" style={{ fontFamily: Fonts.body }}>
-                      {option.description}
-                    </TText>
-                  </View>
-                  {isActive && <MaterialCommunityIcons name="check-circle" size={22} color={theme.accent} />}
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View className="gap-3">
-            <Field label="Name">
-              <TextInput
-                value={form.name}
-                onChangeText={(text) => setForm((prev) => ({ ...prev, name: text }))}
-                placeholder="Personal HDFC Credit Card"
-                placeholderTextColor={colorScheme === 'light' ? 'rgba(26,26,26,0.4)' : 'rgba(250,250,250,0.4)'}
-                className="text-base"
-                style={{ fontFamily: Fonts.body, color: theme.text }}
-              />
-            </Field>
-            <Field label="Provider">
-              <TextInput
-                value={form.provider}
-                onChangeText={(text) => setForm((prev) => ({ ...prev, provider: text }))}
-                placeholder="HDFC Bank"
-                placeholderTextColor={colorScheme === 'light' ? 'rgba(26,26,26,0.4)' : 'rgba(250,250,250,0.4)'}
-                className="text-base"
-                style={{ fontFamily: Fonts.body, color: theme.text }}
-              />
-            </Field>
-            <Field label="Identifier">
-              <TextInput
-                value={form.identifier}
-                onChangeText={(text) => setForm((prev) => ({ ...prev, identifier: text }))}
-                placeholder="**** 1234 or nishant@oksbi"
-                placeholderTextColor={colorScheme === 'light' ? 'rgba(26,26,26,0.4)' : 'rgba(250,250,250,0.4)'}
-                className="text-base"
-                style={{ fontFamily: Fonts.body, color: theme.text }}
-              />
-            </Field>
-          </View>
-
-          <View
-            className="flex-row items-center justify-between rounded-3xl border px-4 py-3"
-            style={{ borderColor: 'rgba(120,120,120,0.3)' }}
-          >
-            <View className="flex-1 pr-4">
-              <TText className="text-base" style={{ fontFamily: Fonts.title }}>
-                Set as default account
-              </TText>
-              <TText className="text-sm text-black/60 dark:text-white/60" style={{ fontFamily: Fonts.body }}>
-                New entries will auto-select this source.
-              </TText>
+          <View style={styles.mascotRow}>
+            <View style={styles.mascotAvatar}>
+              <MaterialCommunityIcons name="face-woman-outline" size={24} color="#FF8A65" />
             </View>
-            <Switch
-              value={isDefault}
-              onValueChange={setIsDefault}
-              thumbColor={isDefault ? theme.accent : undefined}
-              trackColor={{ true: colorScheme === 'light' ? 'rgba(137,207,151,0.4)' : 'rgba(137,207,151,0.3)', false: 'rgba(120,120,120,0.3)' }}
+            <ThemedText style={styles.mascotCaption}>
+              "I'll help you organize your cash flow."
+            </ThemedText>
+          </View>
+        </View>
+
+        {/* Account Type Selection */}
+        <ThemedText style={styles.sectionTitle}>
+          What kind of account is this?
+        </ThemedText>
+        <View style={styles.gridContainer}>
+          {typeOptions.map((option) => {
+            const isSelected = selectedType === option.key;
+            return (
+              <TouchableOpacity
+                key={option.key}
+                onPress={() => setSelectedType(option.key)}
+                style={[
+                  styles.gridItem,
+                  isSelected ? styles.gridItemSelected : styles.gridItemUnselected
+                ]}
+              >
+                <View style={[styles.gridIconContainer, { backgroundColor: option.bgColor }]}>
+                  <MaterialCommunityIcons name={option.icon} size={24} color={option.color} />
+                </View>
+                <View style={styles.gridLabelContainer}>
+                  <ThemedText style={[styles.gridLabel, isSelected ? styles.textSelected : styles.textUnselected]}>
+                    {option.label}
+                  </ThemedText>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Name Input */}
+        <ThemedText style={styles.sectionTitle}>
+          What should we call it?
+        </ThemedText>
+        <View style={styles.inputContainer}>
+          <MaterialCommunityIcons name="tag-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="My Spending Account"
+            placeholderTextColor="#AAB7C6"
+            style={styles.textInput}
+          />
+        </View>
+
+        {/* Color Picker */}
+        <ThemedText style={styles.sectionTitle}>
+          Pick a happy color!
+        </ThemedText>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.colorScroll}>
+          {COLORS.map((color) => {
+            const isSelected = selectedColor === color;
+            return (
+              <TouchableOpacity
+                key={color}
+                onPress={() => setSelectedColor(color)}
+                style={[styles.colorItem, { backgroundColor: color }, isSelected && styles.colorItemSelected]}
+              >
+                {isSelected && (
+                  <View style={[styles.colorRing, { borderColor: '#FFAD91' }]} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </ScrollView>
+
+      {/* Footer Step 1 */}
+      <View style={styles.footer}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.cancelButton}>
+          <ThemedText style={styles.cancelText}>Cancel</ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setStep(2)}
+          style={styles.saveButton}
+        >
+          <ThemedText style={styles.saveButtonText}>Looks Good! Save</ThemedText>
+          <MaterialCommunityIcons name="thumb-up-outline" size={20} color="white" />
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
+  const renderStep2 = () => {
+    if (selectedType === 'credit') {
+      return (
+        <View style={{ flex: 1 }}>
+          <ScreenHeader
+            subtitle="STEP 2 OF 2"
+            onBack={() => setStep(1)}
+            rightText="Skip"
+            onRightPress={() => router.back()}
+          />
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            {/* Mascot & Message Step 2 */}
+            <View style={styles.mascotSection}>
+              <View style={[styles.bubbleContainer, { backgroundColor: '#F4F1FE' }]}>
+                <ThemedText style={styles.bubbleText}>
+                  Yay! Let's set up your plastic power.
+                </ThemedText>
+                <View style={[styles.bubbleTriangle, { backgroundColor: '#F4F1FE' }]} />
+              </View>
+              <View style={styles.mascotRowCenter}>
+                <View style={[styles.mascotAvatar, { backgroundColor: '#FFEEED', width: 56, height: 56, borderRadius: 28 }]}>
+                  <MaterialCommunityIcons name="face-woman-outline" size={32} color="#FF8A65" />
+                </View>
+              </View>
+            </View>
+
+            <ThemedText style={styles.sectionHeaderLabel}>VISUALS</ThemedText>
+
+            <ThemedText style={styles.labelSmall}>Choose your card</ThemedText>
+            <View style={styles.searchWrapper}>
+              <View style={styles.dropdownContainer}>
+                <MaterialCommunityIcons name="credit-card-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.textInputSmall}
+                  value={issuerQuery}
+                  onChangeText={(text) => {
+                    setIssuerQuery(text);
+                    setShowIssuerResults(true);
+                  }}
+                  onFocus={() => setShowIssuerResults(true)}
+                  placeholder="Search issuer (e.g. HDFC, A)"
+                  placeholderTextColor="#AAB7C6"
+                />
+                <MaterialCommunityIcons name="chevron-down" size={24} color="#AAB7C6" />
+              </View>
+
+              {showIssuerResults && filteredIssuers.length > 0 && (
+                <View style={styles.resultsList}>
+                  {filteredIssuers.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.resultItem}
+                      onPress={() => {
+                        setSelectedIssuer(item);
+                        setIssuerQuery(item.name);
+                        setShowIssuerResults(false);
+                      }}
+                    >
+                      <MaterialCommunityIcons name={item.icon as any} size={20} color="#FFAD91" style={{ marginRight: 10 }} />
+                      <ThemedText style={styles.resultItemText}>{item.name}</ThemedText>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <ThemedText style={styles.labelSmall}>Last 4 digits</ThemedText>
+            <View style={styles.inputContainerSmall}>
+              <MaterialCommunityIcons name="numeric-4-box-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+              <TextInput
+                value={last4}
+                onChangeText={(val) => setLast4(val.replace(/[^0-9]/g, '').slice(0, 4))}
+                placeholder="••••"
+                placeholderTextColor="#AAB7C6"
+                keyboardType="number-pad"
+                style={styles.textInputSmall}
+              />
+            </View>
+
+            <View style={{ height: 24 }} />
+
+            <ThemedText style={styles.sectionHeaderLabel}>ALERTS & LIMITS</ThemedText>
+
+            <ThemedText style={styles.labelSmall}>Credit Limit</ThemedText>
+            <View style={styles.inputContainerSmall}>
+              <MaterialCommunityIcons name="currency-inr" size={24} color="#FFAD91" style={styles.inputIcon} />
+              <TextInput
+                value={creditLimit}
+                onChangeText={(val) => setCreditLimit(val.replace(/[^0-9]/g, ''))}
+                placeholder="1,00,000"
+                placeholderTextColor="#AAB7C6"
+                keyboardType="number-pad"
+                style={styles.textInputSmall}
+              />
+            </View>
+
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.labelSmall}>Due Day</ThemedText>
+                <TouchableOpacity
+                  style={styles.dropdownContainerSmall}
+                  onPress={() => setShowDayModal(true)}
+                >
+                  <MaterialCommunityIcons name="calendar-outline" size={20} color="#FFAD91" style={styles.inputIcon} />
+                  <ThemedText style={[styles.dropdownTextSmall, !dueDay && { color: '#AAB7C6' }]}>
+                    {dueDay || 'Day'}
+                  </ThemedText>
+                  <MaterialCommunityIcons name="chevron-down" size={20} color="#AAB7C6" />
+                </TouchableOpacity>
+              </View>
+              <View style={{ width: 16 }} />
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.labelSmall}>Fee Month</ThemedText>
+                <TouchableOpacity
+                  style={styles.dropdownContainerSmall}
+                  onPress={() => setShowMonthModal(true)}
+                >
+                  <MaterialCommunityIcons name="calendar-refresh-outline" size={20} color="#FFAD91" style={styles.inputIcon} />
+                  <ThemedText style={[styles.dropdownTextSmall, !feeMonth && { color: '#AAB7C6' }]}>
+                    {feeMonth || 'Month'}
+                  </ThemedText>
+                  <MaterialCommunityIcons name="chevron-down" size={20} color="#AAB7C6" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* Footer Step 2 */}
+          <View style={styles.footer}>
+            <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
+              <ThemedText style={styles.cancelText}>Back</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={[styles.saveButton, { backgroundColor: '#FF8A65' }]}
+            >
+              <ThemedText style={styles.saveButtonText}>Done 🎉</ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {renderSelectionModal(showDayModal, () => setShowDayModal(false), DAYS, setDueDay, 'Select Due Day')}
+          {renderSelectionModal(showMonthModal, () => setShowMonthModal(false), MONTHS, setFeeMonth, 'Select Fee Month')}
+        </View>
+      );
+    }
+
+    // Generic Step 2 for other account types
+    return (
+      <>
+        <ScreenHeader
+          subtitle="STEP 2 OF 2"
+          onBack={() => setStep(1)}
+          rightText="Skip"
+          onRightPress={() => router.back()}
+        />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.mascotSection}>
+            <View style={styles.bubbleContainer}>
+              <ThemedText style={styles.bubbleText}>
+                Almost there! Adding some finishing touches.
+              </ThemedText>
+              <View style={styles.bubbleTriangle} />
+            </View>
+          </View>
+
+          <ThemedText style={styles.sectionTitle}>Initial Balance</ThemedText>
+          <View style={styles.inputContainer}>
+            <MaterialCommunityIcons name="scale-balance" size={24} color="#FFAD91" style={styles.inputIcon} />
+            <TextInput
+              placeholder="0.00"
+              placeholderTextColor="#AAB7C6"
+              keyboardType="decimal-pad"
+              style={styles.textInput}
             />
           </View>
 
-          <View className="flex-row gap-3 pt-4">
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.back()}
-              className="flex-1 items-center justify-center rounded-3xl border py-3"
-              style={{ borderColor: 'rgba(120,120,120,0.4)' }}
-            >
-              <TText className="text-base" style={{ fontFamily: Fonts.title }}>
-                Cancel
-              </TText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.back()}
-              className="flex-1 items-center justify-center rounded-3xl py-3"
-              style={{ backgroundColor: theme.accent }}
-            >
-              <TText className="text-base text-white" style={{ fontFamily: Fonts.title }}>
-                Save
-              </TText>
-            </Pressable>
+          <ThemedText style={styles.sectionTitle}>Account Number (Optional)</ThemedText>
+          <View style={styles.inputContainer}>
+            <MaterialCommunityIcons name="card-text-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+            <TextInput
+              placeholder="1234 5678 9012"
+              placeholderTextColor="#AAB7C6"
+              keyboardType="number-pad"
+              style={styles.textInput}
+            />
           </View>
         </ScrollView>
-      </TView>
+
+        <View style={styles.footer}>
+          <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
+            <ThemedText style={styles.cancelText}>Back</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.saveButton}
+          >
+            <ThemedText style={styles.saveButtonText}>Finish Setup</ThemedText>
+            <MaterialCommunityIcons name="check-all" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+      </>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <View style={styles.container}>
+        {step === 1 ? renderStep1() : renderStep2()}
+      </View>
     </SafeAreaView>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View className="gap-2">
-      <TText className="text-sm text-black/65 dark:text-white/65" style={{ fontFamily: Fonts.body }}>
-        {label}
-      </TText>
-      <View className="rounded-3xl border px-4 py-3" style={{ borderColor: 'rgba(120,120,120,0.3)' }}>
-        {children}
-      </View>
-    </View>
-  );
-}
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F9F7FC',
+  },
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 100,
+  },
+  mascotSection: {
+    marginBottom: 40,
+  },
+  bubbleContainer: {
+    backgroundColor: '#EFEAFF',
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 16,
+    position: 'relative',
+  },
+  bubbleText: {
+    fontSize: 20,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    textAlign: 'center',
+    color: '#1A1A1A',
+  },
+  bubbleTriangle: {
+    position: 'absolute',
+    bottom: -8,
+    left: 24,
+    width: 16,
+    height: 16,
+    backgroundColor: '#EFEAFF',
+    transform: [{ rotate: '45deg' }],
+  },
+  mascotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  mascotRowCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mascotAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFDED6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'white',
+  },
+  mascotCaption: {
+    fontSize: 14,
+    fontFamily: Fonts.body,
+    fontStyle: 'italic',
+    color: '#9E9E9E',
+    fontWeight: '500',
+  },
+  sectionHeaderLabel: {
+    fontSize: 12,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#AAB7C6',
+    letterSpacing: 1.5,
+    marginBottom: 20,
+    marginTop: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    marginBottom: 16,
+    color: '#2D3436',
+  },
+  labelSmall: {
+    fontSize: 14,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#2D3436',
+    marginBottom: 10,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 32,
+  },
+  gridItem: {
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    paddingVertical: 24,
+  },
+  gridItemSelected: {
+    borderColor: '#FFAD91',
+    backgroundColor: 'white',
+  },
+  gridItemUnselected: {
+    borderColor: 'transparent',
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  gridIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  gridLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gridLabel: {
+    fontSize: 12,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+  },
+  textSelected: {
+    color: '#1A1A1A',
+  },
+  textUnselected: {
+    color: '#BDBDBD',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 100,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    marginBottom: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  inputContainerSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  searchWrapper: {
+    zIndex: 1000,
+    position: 'relative',
+  },
+  dropdownContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  resultsList: {
+    position: 'absolute',
+    top: 60,
+    left: 0,
+    right: 0,
+    backgroundColor: 'white',
+    borderRadius: 24,
+    maxHeight: 200,
+    zIndex: 1001,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
+    paddingVertical: 8,
+  },
+  resultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F0F0F0',
+  },
+  resultItemText: {
+    fontSize: 16,
+    fontFamily: Fonts.title,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 18,
+    fontFamily: Fonts.title,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+  },
+  textInputSmall: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: Fonts.title,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  dropdownContainerSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  dropdownTextSmall: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#1A1A1A',
+  },
+  colorScroll: {
+    gap: 12,
+    paddingRight: 24,
+  },
+  colorItem: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 4,
+    borderColor: 'transparent',
+  },
+  colorItemSelected: {
+    borderColor: 'white',
+  },
+  colorRing: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    right: -6,
+    bottom: -6,
+    borderRadius: 30,
+    borderWidth: 2,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    backgroundColor: '#F9F7FC',
+  },
+  cancelButton: {
+    paddingHorizontal: 24,
+  },
+  cancelText: {
+    fontSize: 16,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#BDBDBD',
+  },
+  saveButton: {
+    backgroundColor: '#FFAD91',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 20,
+    borderRadius: 32,
+    shadowColor: '#FFAD91',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    marginRight: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingBottom: 40,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 24,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F0F0F0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#1A1A1A',
+  },
+  modalList: {
+    paddingHorizontal: 24,
+  },
+  modalItem: {
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F0F0F0',
+  },
+  modalItemText: {
+    fontSize: 16,
+    fontFamily: Fonts.title,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+});
