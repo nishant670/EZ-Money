@@ -4,7 +4,7 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { Audio } from 'expo-av';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -127,20 +127,126 @@ export default function HomeScreen() {
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const handleQuickPromptSelect = useCallback((label: string) => {
+  const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<import('@/components/home/QuickPrompts').QuickPrompt | null>(null);
+  const [modalMode, setModalMode] = useState<'audio' | 'manual' | 'quick-prompt'>('manual');
+
+  const onMicStop = useCallback((data: { title?: string; amount?: string; category?: string; date?: string; type?: string; mode?: string }) => {
+    const blank = createBlankForm();
+    setForm({
+      ...blank,
+      ...data,
+      amount: data.amount ? parseFloat(data.amount).toFixed(2) : '',
+    });
+    setModalMode('audio');
+    setIsEditOpen(true);
+  }, [createBlankForm]);
+
+  const handleQuickPromptSelect = useCallback((prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
     const blank = createBlankForm();
     const now = new Date();
     setForm({
       ...blank,
-      title: label,
-      amount: '50.00',
+      title: prompt.title,
+      amount: prompt.amount.toFixed(2),
       date: formatDateLabel(now),
       time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-      mode: 'Cash',
+      mode: prompt.mode,
+      category: prompt.category,
       account: 'Main Account',
     });
+    setModalMode('manual');
     setIsEditOpen(true);
   }, [createBlankForm]);
+
+  const handleAddPrompt = useCallback(() => {
+    setEditingPrompt(null);
+    setIsPromptModalOpen(true);
+  }, []);
+
+  const handleLongPressPrompt = useCallback((prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
+    setEditingPrompt(prompt);
+    setIsPromptModalOpen(true);
+  }, []);
+
+  const handleSavePrompt = async (formData: import('@/components/transactions/TransactionFormModal').EntryForm) => {
+    const id = editingPrompt?.id;
+    const url = id ? `${API_BASE_URL}/v1/quick-prompts/${id}` : `${API_BASE_URL}/v1/quick-prompts`;
+    const method = id ? 'PUT' : 'POST';
+
+    const getIconForCategory = (cat: string) => {
+      switch (cat.toLowerCase()) {
+        case 'food & drinks': return 'coffee-outline';
+        case 'travel': return 'train';
+        case 'transport': return 'gas-station-outline';
+        case 'shopping': return 'cart-outline';
+        case 'bills': return 'file-document-outline';
+        default: return 'lightning-bolt';
+      }
+    };
+
+    const payload = {
+      title: formData.title,
+      amount: parseFloat(formData.amount),
+      mode: formData.mode,
+      category: formData.category,
+      icon: getIconForCategory(formData.category)
+    };
+
+    const resp = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (resp.ok) {
+      setIsPromptModalOpen(false);
+      // We need to trigger a re-fetch in the QuickPrompts component. 
+      // In a real app we might use a global store or a key to force re-render.
+      // For now, let's just use a simple key state.
+      setQuickPromptKey(prev => prev + 1);
+    } else {
+      throw new Error('Failed to save prompt');
+    }
+  };
+
+  const handleDeletePrompt = async () => {
+    if (!editingPrompt) return;
+    const id = editingPrompt.id;
+    const resp = await fetch(`${API_BASE_URL}/v1/quick-prompts/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (resp.ok) {
+      setIsPromptModalOpen(false);
+      setQuickPromptKey(prev => prev + 1);
+    } else {
+      throw new Error('Failed to delete prompt');
+    }
+  };
+
+  const [quickPromptKey, setQuickPromptKey] = useState(0);
+
+  const getInitialPromptData = (): Partial<import('@/components/transactions/TransactionFormModal').EntryForm> => {
+    if (!editingPrompt) return {
+      category: 'Food & Drinks',
+      mode: 'Cash',
+      type: 'Expense',
+      date: formatDateLabel(new Date()),
+    };
+    return {
+      title: editingPrompt.title,
+      amount: editingPrompt.amount.toString(),
+      mode: editingPrompt.mode,
+      category: editingPrompt.category,
+      type: 'Expense',
+      date: formatDateLabel(new Date()),
+    };
+  };
 
   const fetchEntries = useCallback(async () => {
     if (!token) return;
@@ -156,9 +262,11 @@ export default function HomeScreen() {
     }
   }, [token]);
 
-  useEffect(() => {
-    fetchEntries();
-  }, [fetchEntries]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchEntries();
+    }, [fetchEntries])
+  );
 
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
   const visibleSections = useMemo(() => sections.slice(0, 3), [sections]);
@@ -241,6 +349,7 @@ export default function HomeScreen() {
 
   const handleOpenManualEntry = useCallback(() => {
     setForm(createBlankForm());
+    setModalMode('manual');
     setIsEditOpen(true);
   }, [createBlankForm]);
 
@@ -371,6 +480,7 @@ export default function HomeScreen() {
       });
       setInputText('');
       setRecordedUri(null);
+      setModalMode('audio');
       setIsEditOpen(true);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Something went wrong while parsing.');
@@ -395,6 +505,8 @@ export default function HomeScreen() {
         subtitle={`${item.category} • ${item.mode}`}
         amount={displayAmount}
         date={dateStr}
+        color={item.color}
+        bgColor={item.bgColor}
         isIncome={isIncome}
         onPress={() => {
           router.push({
@@ -438,6 +550,8 @@ export default function HomeScreen() {
       );
     }
 
+    const recentTransactions = transactions.slice(0, 5);
+
     return (
       <View>
         <View className="flex-row items-center justify-between px-6 mb-4">
@@ -447,14 +561,41 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {visibleSections.map((section) => (
-          <View key={section.title} className="mb-6">
-            <ThemedText className="px-6 text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">{section.title}</ThemedText>
-            <View className="px-6 gap-3">
-              {section.data.map((item) => renderTransactionItem(item))}
-            </View>
-          </View>
-        ))}
+        <View className="px-6">
+          {recentTransactions.map((item) => (
+            <TransactionItem
+              key={item.id}
+              title={item.name}
+              icon={item.icon}
+              category={item.category}
+              subtitle={item.mode ?? ''}
+              amount={Math.abs(item.amount).toFixed(2)}
+              date={item.section}
+              color={item.color}
+              bgColor={item.bgColor}
+              isIncome={item.entryType === 'income'}
+              onPress={() => {
+                router.push({
+                  pathname: '/entry/[id]',
+                  params: {
+                    id: item.id,
+                    name: item.name,
+                    category: item.category,
+                    amount: Math.abs(item.amount).toFixed(2),
+                    entryType: item.entryType ?? 'expense',
+                    section: item.section,
+                    mode: item.mode ?? '',
+                    notes: item.notes ?? '',
+                    merchant: item.merchant ?? '',
+                    dateLabel: item.dateLabel ?? '',
+                    rawDate: item.rawDate ?? '',
+                    tag: item.tag ?? '',
+                  },
+                });
+              }}
+            />
+          ))}
+        </View>
       </View>
     );
   };
@@ -481,8 +622,10 @@ export default function HomeScreen() {
         />
 
         <QuickPrompts
+          key={`quick-prompts-${quickPromptKey}`}
           onSelect={handleQuickPromptSelect}
-          onAdd={() => console.log('Add quick prompt pressed')}
+          onAdd={handleAddPrompt}
+          onLongPress={handleLongPressPrompt}
         />
 
         {errorMessage && (
@@ -510,6 +653,16 @@ export default function HomeScreen() {
         onClose={() => setIsEditOpen(false)}
         initialData={form}
         onSave={handleConfirmEntry}
+        mode={modalMode}
+      />
+      <TransactionFormModal
+        visible={isPromptModalOpen}
+        onClose={() => setIsPromptModalOpen(false)}
+        initialData={getInitialPromptData()}
+        onSave={handleSavePrompt}
+        onDelete={editingPrompt ? handleDeletePrompt : undefined}
+        isEdit={!!editingPrompt}
+        mode="quick-prompt"
       />
     </SafeAreaView>
   );

@@ -90,26 +90,42 @@ export const normalizeDateLabel = (value?: string | null, fallback?: string) => 
   return value ?? fallback ?? formatDateLabel(new Date());
 };
 
-const categoryIconMap: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
-  food: 'coffee-outline',
-  travel: 'airplane',
-  shopping: 'cart-outline',
-  bills: 'file-document-outline',
-  'family/gifts': 'gift-outline',
-  misc: 'dots-horizontal',
-  income: 'cash-multiple',
-  entertainment: 'play-box-multiple-outline',
+export type CategoryMetadata = {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  color: string;
+  bgColor: string;
 };
 
-export const resolveIconForEntry = (category?: string | null, type?: string | null) => {
+const categoryMetadataMap: Record<string, CategoryMetadata> = {
+  'food & drinks': { icon: 'coffee-outline', color: '#D4A017', bgColor: '#FFF9C4' },
+  'food & drink': { icon: 'coffee-outline', color: '#D4A017', bgColor: '#FFF9C4' },
+  food: { icon: 'coffee-outline', color: '#D4A017', bgColor: '#FFF9C4' },
+  travel: { icon: 'airplane', color: '#E57373', bgColor: '#FFEBEE' },
+  transport: { icon: 'gas-station-outline', color: '#E57373', bgColor: '#FFEBEE' },
+  shopping: { icon: 'cart-outline', color: '#42A5F5', bgColor: '#E3F2FD' },
+  bills: { icon: 'file-document-outline', color: '#26A69A', bgColor: '#E0F2F1' },
+  'family/gifts': { icon: 'gift-outline', color: '#EC407A', bgColor: '#FCE4EC' },
+  income: { icon: 'briefcase-outline', color: '#FF7043', bgColor: '#F3E5F5' },
+  entertainment: { icon: 'play-box-multiple-outline', color: '#7E57C2', bgColor: '#EDE7F6' },
+  misc: { icon: 'dots-horizontal', color: '#90A4AE', bgColor: '#F5F5F5' },
+};
+
+export const resolveCategoryMetadata = (category?: string | null, type?: string | null): CategoryMetadata => {
   const normalizedCategory = category?.toLowerCase().trim();
-  if (normalizedCategory && categoryIconMap[normalizedCategory]) {
-    return categoryIconMap[normalizedCategory];
+  if (normalizedCategory && categoryMetadataMap[normalizedCategory]) {
+    return categoryMetadataMap[normalizedCategory];
   }
+
   if (type?.toLowerCase() === 'income') {
-    return 'cash-multiple';
+    return categoryMetadataMap.income;
   }
-  return 'swap-horizontal';
+
+  // Fallback for expense
+  return {
+    icon: 'swap-horizontal',
+    color: '#90A4AE',
+    bgColor: '#F5F5F5',
+  };
 };
 
 const deriveSectionMeta = (value?: string | null) => {
@@ -131,6 +147,9 @@ const deriveSectionMeta = (value?: string | null) => {
     }
     if (diffDays === 1) {
       return { section: 'Yesterday', timestamp: entryDay.getTime() };
+    }
+    if (diffDays > 1 && diffDays < 7) {
+      return { section: `${diffDays} days ago`, timestamp: entryDay.getTime() };
     }
     return { section: formatDateLabel(entryDay), timestamp: entryDay.getTime() };
   }
@@ -171,7 +190,10 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   const signedAmount = normalizedType === 'income' ? Math.abs(amountValue) : -Math.abs(amountValue);
   const label =
     entry.title?.trim() || entry.merchant?.trim() || entry.category?.trim() || entry.notes?.trim() || entry.mode || 'Transaction';
-  const category = entry.category ?? (normalizedType === 'income' ? 'Income' : 'Expense');
+  let category = entry.category ?? (normalizedType === 'income' ? 'Income' : 'Expense');
+  if (category.toLowerCase().trim() === 'food') {
+    category = 'Food & Drinks';
+  }
   const dateSource =
     entry.date ?? entry.created_at ?? entry.createdAt ?? entry.updated_at ?? null;
   const formattedDate = dateSource ? normalizeDateLabel(dateSource) : null;
@@ -184,7 +206,7 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
     title: entry.title ?? null,
     category,
     amount: signedAmount,
-    icon: resolveIconForEntry(category, entry.type),
+    ...resolveCategoryMetadata(category, entry.type),
     section,
     occurredAt: timestamp,
     entryType: normalizedType,

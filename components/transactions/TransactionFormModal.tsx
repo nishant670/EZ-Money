@@ -47,7 +47,9 @@ interface TransactionFormModalProps {
     onClose: () => void;
     initialData?: Partial<EntryForm>;
     onSave: (data: EntryForm) => Promise<void>;
+    onDelete?: () => Promise<void>;
     isEdit?: boolean;
+    mode?: 'audio' | 'manual' | 'quick-prompt';
 }
 
 const requiredFields: (keyof EntryForm)[] = ['title', 'amount', 'type', 'mode', 'category', 'date'];
@@ -68,11 +70,11 @@ const fieldLabels: Record<keyof EntryForm, string> = {
 };
 
 const modeOptions = ['Cash', 'UPI', 'Credit Card', 'Wallets'];
-const categoryOptions = ['Food', 'Travel', 'Shopping', 'Bills', 'Family/Gifts', 'Misc'];
+const categoryOptions = ['Food & Drinks', 'Travel', 'Shopping', 'Bills', 'Transport', 'Family/Gifts', 'Misc'];
 const tagOptions = ['Investment', 'Lending', 'EMI', 'Subscription', 'General'];
 const accountOptions = ['Main Account', 'Savings', 'ICICI Bank', 'HDFC Credit', 'Cash Wallet'];
 
-export function TransactionFormModal({ visible, onClose, initialData, onSave, isEdit }: TransactionFormModalProps) {
+export function TransactionFormModal({ visible, onClose, initialData, onSave, onDelete, isEdit, mode = 'manual' }: TransactionFormModalProps) {
     const colorScheme = useColorScheme() ?? 'light';
     const theme = Colors[colorScheme];
     const accent = theme.accent;
@@ -118,7 +120,7 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, is
                 amount: '',
                 type: 'Expense',
                 mode: 'Cash',
-                category: 'Food',
+                category: 'Food & Drinks',
                 date: formatDateLabel(new Date()),
                 time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
                 notes: '',
@@ -262,307 +264,331 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, is
     if (!showModal) return null;
 
     return (
-        <View className="absolute inset-0 z-50 justify-end">
-            <Animated.View
-                className="absolute inset-0 bg-black/40"
-                style={{ opacity: backdropAnim }}
-            >
-                <Pressable style={{ flex: 1 }} onPress={onClose} />
-            </Animated.View>
-            <Animated.View
-                style={{
-                    transform: [{ translateY: panelAnim }],
-                    height: '92%',
-                    width: '100%',
-                }}
-            >
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-                    <View className="flex-1 rounded-t-[40px] shadow-2xl relative overflow-hidden" style={{ backgroundColor: theme.background }}>
-                        <View className="items-center pt-8 pb-2 relative">
-                            <View className="h-1.5 w-12 rounded-full absolute top-3 bg-gray-200" />
-                            <Pressable onPress={onClose} className="absolute right-6 top-6 h-10 w-10 rounded-full bg-gray-100 items-center justify-center z-10">
-                                <MaterialCommunityIcons name="close" size={20} color={theme.text} />
-                            </Pressable>
-                        </View>
-
-                        <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '90%' }} contentContainerStyle={{ paddingBottom: 40 }}>
-                            <View className="items-center px-6 mb-8">
-                                <ThemedText className="text-2xl font-black mt-6 mb-2" style={{ color: theme.text }}>
-                                    {isEdit ? 'Update Details' : "I've sorted the details!"}
-                                </ThemedText>
-                                <ThemedText className="text-center text-gray-500 text-sm leading-5 px-4">
-                                    {isEdit ? 'Make your changes and confirm below.' : "Here's what I understood. Just confirm the bits before you save."}
-                                </ThemedText>
+        <Modal
+            transparent
+            visible={visible}
+            animationType="none" // we handle animations manually for better control
+            onRequestClose={onClose}
+        >
+            <View className="flex-1 justify-end">
+                <Animated.View
+                    className="absolute inset-0 bg-black/40"
+                    style={{ opacity: backdropAnim }}
+                >
+                    <Pressable style={{ flex: 1 }} onPress={onClose} />
+                </Animated.View>
+                <Animated.View
+                    style={{
+                        transform: [{ translateY: panelAnim }],
+                        height: '92%',
+                        width: '100%',
+                    }}
+                >
+                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
+                        <View className="flex-1 rounded-t-[40px] shadow-2xl relative overflow-hidden" style={{ backgroundColor: theme.background }}>
+                            <View className="items-center pt-8 pb-2 relative">
+                                <View className="h-1.5 w-12 rounded-full absolute top-3 bg-gray-200" />
+                                <Pressable onPress={onClose} className="absolute right-6 top-6 h-10 w-10 rounded-full bg-gray-100 items-center justify-center z-10">
+                                    <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                                </Pressable>
                             </View>
 
-                            <View className="px-6 mb-8">
-                                <View className="flex-row justify-between items-center mb-4">
-                                    <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic">Confirmed by AI</ThemedText>
-                                    <View className="flex-row items-center bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
-                                        <MaterialCommunityIcons name="check-decagram-outline" size={12} color="#10B981" />
-                                        <ThemedText className="text-[9px] font-black text-emerald-600 ml-1 uppercase">Confidence: High</ThemedText>
-                                    </View>
+                            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '90%' }} contentContainerStyle={{ paddingBottom: 40 }}>
+                                <View className="items-center px-6 mb-8">
+                                    <ThemedText className="text-2xl font-black mt-6 mb-2" style={{ color: theme.text }}>
+                                        {isEdit ? (mode === 'quick-prompt' ? 'Edit Quick Prompt' : 'Update Details') :
+                                            mode === 'audio' ? "I've sorted the details!" :
+                                                mode === 'quick-prompt' ? 'New Quick Prompt' : 'New Transaction'}
+                                    </ThemedText>
+                                    <ThemedText className="text-center text-gray-500 text-sm leading-5 px-4">
+                                        {isEdit ? 'Make your changes and confirm below.' :
+                                            mode === 'audio' ? "Here's what I understood. Just confirm the bits before you save." :
+                                                mode === 'quick-prompt' ? 'These details will be used for your shortcut.' : 'Fill in the transaction details below.'}
+                                    </ThemedText>
                                 </View>
 
-                                <View className='mb-6'>
-                                    <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Transaction Type</ThemedText>
-                                    <View className="flex-row bg-gray-100 dark:bg-gray-800 rounded-[24px] p-1.5 relative overflow-hidden">
-                                        <Animated.View
-                                            style={{
-                                                position: 'absolute',
-                                                top: 6,
-                                                bottom: 6,
-                                                left: 6,
-                                                width: '48%',
-                                                backgroundColor: form.type === 'Expense' ? '#F97316' : '#10B981',
-                                                borderRadius: 20,
-                                                transform: [{
-                                                    translateX: typeSwitchAnim.interpolate({
-                                                        inputRange: [0, 1],
-                                                        outputRange: [0, (Dimensions.get('window').width - 60) * 0.5]
-                                                    })
-                                                }]
-                                            }}
-                                            className="shadow-sm"
-                                        />
-                                        <Pressable onPress={() => { setForm(p => ({ ...p, type: 'Expense' })); animateTypeSwitch(false); }} className="flex-1 py-4 items-center justify-center z-10">
-                                            <ThemedText className={`text-sm font-black tracking-tight ${form.type === 'Expense' ? 'text-white' : 'text-gray-400'}`}>EXPENSE</ThemedText>
-                                        </Pressable>
-                                        <Pressable onPress={() => { setForm(p => ({ ...p, type: 'Income' })); animateTypeSwitch(true); }} className="flex-1 py-4 items-center justify-center z-10">
-                                            <ThemedText className={`text-sm font-black tracking-tight ${form.type === 'Income' ? 'text-white' : 'text-gray-400'}`}>INCOME</ThemedText>
-                                        </Pressable>
-                                    </View>
-                                </View>
+                                <View className="px-6 mb-8">
+                                    {mode === 'audio' && (
+                                        <View className="flex-row justify-between items-center mb-4">
+                                            <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic">Confirmed by AI</ThemedText>
+                                            <View className="flex-row items-center bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
+                                                <MaterialCommunityIcons name="check-decagram-outline" size={12} color="#10B981" />
+                                                <ThemedText className="text-[9px] font-black text-emerald-600 ml-1 uppercase">Confidence: High</ThemedText>
+                                            </View>
+                                        </View>
+                                    )}
 
-                                <View className="bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm mb-4">
-                                    <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">Transaction Title</ThemedText>
-                                    <View className="flex-row items-center gap-3">
-                                        <MaterialCommunityIcons name="label-variant-outline" size={24} color="#F97316" />
-                                        <TextInput
-                                            value={form.title}
-                                            onChangeText={(t) => setForm(p => ({ ...p, title: t }))}
-                                            className="text-lg font-black flex-1 p-0"
-                                            style={{ color: theme.text, height: 28 }}
-                                            placeholder="Short title"
-                                            placeholderTextColor="#9CA3AF"
-                                        />
+                                    <View className='mb-6'>
+                                        <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Transaction Type</ThemedText>
+                                        <View className="flex-row bg-gray-100 dark:bg-gray-800 rounded-[24px] p-1.5 relative overflow-hidden">
+                                            <Animated.View
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 6,
+                                                    bottom: 6,
+                                                    left: 6,
+                                                    width: '48%',
+                                                    backgroundColor: form.type === 'Expense' ? '#F97316' : '#10B981',
+                                                    borderRadius: 20,
+                                                    transform: [{
+                                                        translateX: typeSwitchAnim.interpolate({
+                                                            inputRange: [0, 1],
+                                                            outputRange: [0, (Dimensions.get('window').width - 60) * 0.5]
+                                                        })
+                                                    }]
+                                                }}
+                                                className="shadow-sm"
+                                            />
+                                            <Pressable onPress={() => { setForm(p => ({ ...p, type: 'Expense' })); animateTypeSwitch(false); }} className="flex-1 py-4 items-center justify-center z-10">
+                                                <ThemedText className={`text-sm font-black tracking-tight ${form.type === 'Expense' ? 'text-white' : 'text-gray-400'}`}>EXPENSE</ThemedText>
+                                            </Pressable>
+                                            <Pressable onPress={() => { setForm(p => ({ ...p, type: 'Income' })); animateTypeSwitch(true); }} className="flex-1 py-4 items-center justify-center z-10">
+                                                <ThemedText className={`text-sm font-black tracking-tight ${form.type === 'Income' ? 'text-white' : 'text-gray-400'}`}>INCOME</ThemedText>
+                                            </Pressable>
+                                        </View>
                                     </View>
-                                </View>
 
-                                <View className="flex-row gap-4 mb-4">
-                                    <View className="flex-1 bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm h-32 justify-between">
-                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Amount</ThemedText>
-                                        <View className="flex-row items-center gap-1">
-                                            <ThemedText className="text-2xl font-black text-orange-400">{CURRENCY_SYMBOL}</ThemedText>
+                                    <View className="bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm mb-4">
+                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">Transaction Title</ThemedText>
+                                        <View className="flex-row items-center gap-3">
+                                            <MaterialCommunityIcons name="label-variant-outline" size={24} color="#F97316" />
                                             <TextInput
-                                                value={form.amount}
-                                                onChangeText={(text) => setForm(p => ({ ...p, amount: text }))}
-                                                className="text-3xl font-black p-0 flex-1"
-                                                style={{ color: theme.text, height: 40 }}
-                                                keyboardType="decimal-pad"
+                                                value={form.title}
+                                                onChangeText={(t) => setForm(p => ({ ...p, title: t }))}
+                                                className="text-lg font-black flex-1 p-0"
+                                                style={{ color: theme.text, height: 28 }}
+                                                placeholder="Short title"
+                                                placeholderTextColor="#9CA3AF"
                                             />
                                         </View>
                                     </View>
-                                    <Pressable onPress={() => setIsModePickerVisible(true)} className="flex-1 bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm h-32 justify-between">
-                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid Via</ThemedText>
-                                        <View className="flex-row items-center gap-2">
-                                            <MaterialCommunityIcons name="cash-multiple" size={24} color="#8B5CF6" />
-                                            <ThemedText className="text-xl font-black" style={{ color: theme.text }}>{form.mode}</ThemedText>
-                                        </View>
-                                    </Pressable>
-                                </View>
 
-                                <Pressable onPress={handleOpenDatePicker} className="w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
-                                    <View>
-                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">Date & Time</ThemedText>
-                                        <View className="flex-row items-center gap-3">
-                                            <View className="h-10 w-10 rounded-xl bg-purple-50 items-center justify-center">
-                                                <MaterialCommunityIcons name="calendar-multiselect" size={20} color="#8B5CF6" />
+                                    <View className="flex-row gap-4 mb-4">
+                                        <View className="flex-1 bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm h-32 justify-between">
+                                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Amount</ThemedText>
+                                            <View className="flex-row items-center gap-1">
+                                                <ThemedText className="text-2xl font-black text-orange-400">{CURRENCY_SYMBOL}</ThemedText>
+                                                <TextInput
+                                                    value={form.amount}
+                                                    onChangeText={(text) => setForm(p => ({ ...p, amount: text }))}
+                                                    className="text-3xl font-black p-0 flex-1"
+                                                    style={{ color: theme.text, height: 40 }}
+                                                    keyboardType="decimal-pad"
+                                                />
                                             </View>
-                                            <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.date}, {form.time}</ThemedText>
                                         </View>
-                                    </View>
-                                    <MaterialCommunityIcons name="pencil-outline" size={18} color="#D1D5DB" />
-                                </Pressable>
-                            </View>
-
-                            <View className="px-6 mb-8">
-                                <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">Needs Attention</ThemedText>
-                                <View className="relative mb-4">
-                                    <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
-                                        <ThemedText className="text-[8px] font-black text-black">Check this?</ThemedText>
-                                    </View>
-                                    <Pressable onPress={() => setIsCategoryPickerVisible(true)} className="w-full bg-[#FFFCF0] dark:bg-gray-800/50 rounded-[28px] p-4 border border-yellow-100 flex-row items-center justify-between">
-                                        <View className="flex-row items-center gap-4">
-                                            <View className="h-12 w-12 rounded-2xl bg-orange-100 items-center justify-center">
-                                                <MaterialCommunityIcons name="car-outline" size={24} color="#F59E0B" />
+                                        <Pressable onPress={() => setIsModePickerVisible(true)} className="flex-1 bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm h-32 justify-between">
+                                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid Via</ThemedText>
+                                            <View className="flex-row items-center gap-2">
+                                                <MaterialCommunityIcons name="cash-multiple" size={24} color="#8B5CF6" />
+                                                <ThemedText className="text-xl font-black" style={{ color: theme.text }}>{form.mode}</ThemedText>
                                             </View>
+                                        </Pressable>
+                                    </View>
+
+                                    {mode !== 'quick-prompt' && (
+                                        <Pressable onPress={handleOpenDatePicker} className="w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
                                             <View>
-                                                <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Category</ThemedText>
-                                                <ThemedText className="text-lg font-black" style={{ color: theme.text }}>{form.category}</ThemedText>
+                                                <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">Date & Time</ThemedText>
+                                                <View className="flex-row items-center gap-3">
+                                                    <View className="h-10 w-10 rounded-xl bg-purple-50 items-center justify-center">
+                                                        <MaterialCommunityIcons name="calendar-multiselect" size={20} color="#8B5CF6" />
+                                                    </View>
+                                                    <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.date}, {form.time}</ThemedText>
+                                                </View>
+                                            </View>
+                                            <MaterialCommunityIcons name="pencil-outline" size={18} color="#D1D5DB" />
+                                        </Pressable>
+                                    )}
+                                </View>
+
+                                <View className="px-6 mb-8">
+                                    <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">Needs Attention</ThemedText>
+                                    <View className="relative mb-4">
+                                        <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
+                                            <ThemedText className="text-[8px] font-black text-black">Check this?</ThemedText>
+                                        </View>
+                                        <Pressable onPress={() => setIsCategoryPickerVisible(true)} className="w-full bg-[#FFFCF0] dark:bg-gray-800/50 rounded-[28px] p-4 border border-yellow-100 flex-row items-center justify-between">
+                                            <View className="flex-row items-center gap-4">
+                                                <View className="h-12 w-12 rounded-2xl bg-orange-100 items-center justify-center">
+                                                    <MaterialCommunityIcons name="car-outline" size={24} color="#F59E0B" />
+                                                </View>
+                                                <View>
+                                                    <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Category</ThemedText>
+                                                    <ThemedText className="text-lg font-black" style={{ color: theme.text }}>{form.category}</ThemedText>
+                                                </View>
+                                            </View>
+                                            <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
+                                        </Pressable>
+                                    </View>
+                                </View>
+
+                                <View className="px-6 mb-6">
+                                    <Pressable onPress={() => setIsMoreDetailsExpanded(!isMoreDetailsExpanded)} className="flex-row items-center justify-between py-4 border-b border-gray-50">
+                                        <View className="flex-row items-center gap-2">
+                                            <MaterialCommunityIcons name="tune-variant" size={20} color={theme.text} />
+                                            <ThemedText className="text-sm font-black opacity-60">More details</ThemedText>
+                                        </View>
+                                        <MaterialCommunityIcons name={isMoreDetailsExpanded ? "chevron-up" : "chevron-down"} size={24} color={theme.text} className="opacity-40" />
+                                    </Pressable>
+
+                                    {isMoreDetailsExpanded && (
+                                        <View className="mt-6 gap-6">
+                                            <View className="flex-row gap-4">
+                                                <View className="flex-1">
+                                                    <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Merchant</ThemedText>
+                                                    <View className="bg-gray-50 dark:bg-gray-800/50 rounded-[24px] p-4 flex-row items-center gap-2">
+                                                        <View className="h-6 w-6 rounded-lg bg-red-100 items-center justify-center">
+                                                            <MaterialCommunityIcons name="storefront-outline" size={14} color="#EF4444" />
+                                                        </View>
+                                                        <TextInput value={form.merchant} onChangeText={(t) => setForm(p => ({ ...p, merchant: t }))} className="text-sm font-black flex-1 p-0" placeholder="Store Name" style={{ color: theme.text }} />
+                                                    </View>
+                                                </View>
+                                            </View>
+
+                                            <View className="relative mb-4">
+                                                <Pressable onPress={() => setIsAccountPickerVisible(true)} className="w-full bg-white dark:bg-gray-800 rounded-[28px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
+                                                    <View className="flex-row items-center gap-4">
+                                                        <View className="h-12 w-12 rounded-2xl bg-blue-50 items-center justify-center">
+                                                            <MaterialCommunityIcons name="wallet-outline" size={24} color="#3B82F6" />
+                                                        </View>
+                                                        <View>
+                                                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account</ThemedText>
+                                                            <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.account || 'Select account'}</ThemedText>
+                                                        </View>
+                                                    </View>
+                                                    <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
+                                                </Pressable>
+                                            </View>
+
+                                            <View>
+                                                <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Tags</ThemedText>
+                                                <View className="flex-row flex-wrap gap-2">
+                                                    {tagOptions.map((tag) => (
+                                                        <Pressable key={tag} onPress={() => setForm(p => ({ ...p, tag }))} className={`px-4 py-2 rounded-full border ${form.tag === tag ? 'border-orange-200 bg-orange-50' : 'border-gray-100 bg-white'}`}>
+                                                            <ThemedText className={`text-xs font-bold ${form.tag === tag ? 'text-orange-400' : 'text-gray-500'}`}>{tag}</ThemedText>
+                                                        </Pressable>
+                                                    ))}
+                                                </View>
+                                            </View>
+
+                                            <View>
+                                                <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Notes</ThemedText>
+                                                <TextInput multiline placeholder="Add a note..." placeholderTextColor="#D1D5DB" value={form.notes} onChangeText={(t) => setForm(p => ({ ...p, notes: t }))} className="bg-gray-50 dark:bg-gray-800/50 rounded-[24px] p-5 text-sm min-h-[100px]" textAlignVertical="top" style={{ color: theme.text }} />
+                                            </View>
+
+                                            <View>
+                                                <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Attach Document</ThemedText>
+                                                <Pressable onPress={handlePickDocument} className="w-full h-16 border-2 border-dashed border-gray-100 rounded-[24px] items-center justify-center flex-row gap-2 bg-gray-50/50">
+                                                    {form.attachment ? (
+                                                        <>
+                                                            <MaterialCommunityIcons name="file-check-outline" size={20} color="#10B981" />
+                                                            <ThemedText className="text-sm font-bold text-gray-600" numberOfLines={1}>{form.attachment.split('/').pop()}</ThemedText>
+                                                            <Pressable onPress={() => setForm(prev => ({ ...prev, attachment: null }))} hitSlop={10}><MaterialCommunityIcons name="close-circle" size={16} color="#EF4444" /></Pressable>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <MaterialCommunityIcons name="file-upload-outline" size={20} color="#6B7280" /><ThemedText className="text-sm font-bold text-gray-400">Upload receipt</ThemedText>
+                                                        </>
+                                                    )}
+                                                </Pressable>
                                             </View>
                                         </View>
-                                        <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
+                                    )}
+                                </View>
+
+                                <View className="px-6 gap-4">
+                                    <Pressable onPress={handleConfirmEntry} disabled={isSaving} style={{ backgroundColor: accent }} className="w-full py-5 rounded-[24px] flex-row items-center justify-center gap-2 shadow-lg">
+                                        {isSaving ? <ActivityIndicator color="white" /> :
+                                            <><ThemedText className="text-lg font-black text-white">
+                                                {isEdit ? (mode === 'quick-prompt' ? 'Save Prompt' : 'Update Details') :
+                                                    mode === 'quick-prompt' ? 'Create Prompt' : 'Confirm & Save'}
+                                            </ThemedText><MaterialCommunityIcons name="check-circle-outline" size={24} color="white" /></>}
                                     </Pressable>
+                                    {onDelete && (
+                                        <Pressable onPress={onDelete} className="w-full py-4 items-center justify-center active:opacity-50">
+                                            <ThemedText className="font-bold text-red-500">Forget this prompt</ThemedText>
+                                        </Pressable>
+                                    )}
+                                    {formError && <ThemedText className="text-center text-red-500 text-xs mt-2">{formError}</ThemedText>}
+                                </View>
+                            </ScrollView>
+                        </View>
+                    </KeyboardAvoidingView>
+                </Animated.View>
+
+                {/* Date Picker Modal (iOS) */}
+                {Platform.OS === 'ios' && isDatePickerVisible && (
+                    <Modal transparent animationType="fade" visible={isDatePickerVisible}>
+                        <View className="flex-1 justify-end bg-black/30">
+                            <Pressable className="flex-1" onPress={() => setIsDatePickerVisible(false)} />
+                            <View className="rounded-t-3xl px-4 pb-6 pt-4" style={{ backgroundColor: theme.background }}>
+                                <ThemedText className="text-center text-base font-bold">Select Date & Time</ThemedText>
+                                <DateTimePicker value={pendingDate} mode="datetime" display="spinner" onChange={(_e, d) => d && setPendingDate(d)} style={{ width: '100%' }} />
+                                <View className="mt-4 flex-row gap-3">
+                                    <Pressable className="flex-1 items-center rounded-2xl border py-3 border-gray-100" onPress={() => setIsDatePickerVisible(false)}><ThemedText>Cancel</ThemedText></Pressable>
+                                    <Pressable className="flex-1 items-center rounded-2xl py-3" style={{ backgroundColor: accent }} onPress={handleConfirmDatePicker}><ThemedText className="text-white font-bold">Set Date</ThemedText></Pressable>
                                 </View>
                             </View>
+                        </View>
+                    </Modal>
+                )}
 
-                            <View className="px-6 mb-6">
-                                <Pressable onPress={() => setIsMoreDetailsExpanded(!isMoreDetailsExpanded)} className="flex-row items-center justify-between py-4 border-b border-gray-50">
-                                    <View className="flex-row items-center gap-2">
-                                        <MaterialCommunityIcons name="tune-variant" size={20} color={theme.text} />
-                                        <ThemedText className="text-sm font-black opacity-60">More details</ThemedText>
-                                    </View>
-                                    <MaterialCommunityIcons name={isMoreDetailsExpanded ? "chevron-up" : "chevron-down"} size={24} color={theme.text} className="opacity-40" />
-                                </Pressable>
-
-                                {isMoreDetailsExpanded && (
-                                    <View className="mt-6 gap-6">
-                                        <View className="flex-row gap-4">
-                                            <View className="flex-1">
-                                                <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Merchant</ThemedText>
-                                                <View className="bg-gray-50 dark:bg-gray-800/50 rounded-[24px] p-4 flex-row items-center gap-2">
-                                                    <View className="h-6 w-6 rounded-lg bg-red-100 items-center justify-center">
-                                                        <MaterialCommunityIcons name="storefront-outline" size={14} color="#EF4444" />
-                                                    </View>
-                                                    <TextInput value={form.merchant} onChangeText={(t) => setForm(p => ({ ...p, merchant: t }))} className="text-sm font-black flex-1 p-0" placeholder="Store Name" style={{ color: theme.text }} />
-                                                </View>
-                                            </View>
-                                        </View>
-
-                                        <View className="relative mb-4">
-                                            <Pressable onPress={() => setIsAccountPickerVisible(true)} className="w-full bg-white dark:bg-gray-800 rounded-[28px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
-                                                <View className="flex-row items-center gap-4">
-                                                    <View className="h-12 w-12 rounded-2xl bg-blue-50 items-center justify-center">
-                                                        <MaterialCommunityIcons name="wallet-outline" size={24} color="#3B82F6" />
-                                                    </View>
-                                                    <View>
-                                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account</ThemedText>
-                                                        <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.account || 'Select account'}</ThemedText>
-                                                    </View>
-                                                </View>
-                                                <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
-                                            </Pressable>
-                                        </View>
-
-                                        <View>
-                                            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Tags</ThemedText>
-                                            <View className="flex-row flex-wrap gap-2">
-                                                {tagOptions.map((tag) => (
-                                                    <Pressable key={tag} onPress={() => setForm(p => ({ ...p, tag }))} className={`px-4 py-2 rounded-full border ${form.tag === tag ? 'border-orange-200 bg-orange-50' : 'border-gray-100 bg-white'}`}>
-                                                        <ThemedText className={`text-xs font-bold ${form.tag === tag ? 'text-orange-400' : 'text-gray-500'}`}>{tag}</ThemedText>
-                                                    </Pressable>
-                                                ))}
-                                            </View>
-                                        </View>
-
-                                        <View>
-                                            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Notes</ThemedText>
-                                            <TextInput multiline placeholder="Add a note..." placeholderTextColor="#D1D5DB" value={form.notes} onChangeText={(t) => setForm(p => ({ ...p, notes: t }))} className="bg-gray-50 dark:bg-gray-800/50 rounded-[24px] p-5 text-sm min-h-[100px]" textAlignVertical="top" style={{ color: theme.text }} />
-                                        </View>
-
-                                        <View>
-                                            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Attach Document</ThemedText>
-                                            <Pressable onPress={handlePickDocument} className="w-full h-16 border-2 border-dashed border-gray-100 rounded-[24px] items-center justify-center flex-row gap-2 bg-gray-50/50">
-                                                {form.attachment ? (
-                                                    <>
-                                                        <MaterialCommunityIcons name="file-check-outline" size={20} color="#10B981" />
-                                                        <ThemedText className="text-sm font-bold text-gray-600" numberOfLines={1}>{form.attachment.split('/').pop()}</ThemedText>
-                                                        <Pressable onPress={() => setForm(prev => ({ ...prev, attachment: null }))} hitSlop={10}><MaterialCommunityIcons name="close-circle" size={16} color="#EF4444" /></Pressable>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <MaterialCommunityIcons name="file-upload-outline" size={20} color="#6B7280" /><ThemedText className="text-sm font-bold text-gray-400">Upload receipt</ThemedText>
-                                                    </>
-                                                )}
-                                            </Pressable>
-                                        </View>
-                                    </View>
-                                )}
-                            </View>
-
-                            <View className="px-6 gap-4">
-                                <Pressable onPress={handleConfirmEntry} disabled={isSaving} style={{ backgroundColor: accent }} className="w-full py-5 rounded-[24px] flex-row items-center justify-center gap-2 shadow-lg">
-                                    {isSaving ? <ActivityIndicator color="white" /> : <><ThemedText className="text-lg font-black text-white">{isEdit ? 'Update Transaction' : 'Confirm & Save'}</ThemedText><MaterialCommunityIcons name="check-circle-outline" size={24} color="white" /></>}
-                                </Pressable>
-                                {formError && <ThemedText className="text-center text-red-500 text-xs mt-2">{formError}</ThemedText>}
-                            </View>
-                        </ScrollView>
-                    </View>
-                </KeyboardAvoidingView>
-            </Animated.View>
-
-            {/* Date Picker Modal (iOS) */}
-            {Platform.OS === 'ios' && isDatePickerVisible && (
-                <Modal transparent animationType="fade" visible={isDatePickerVisible}>
+                {/* Mode Picker */}
+                <Modal transparent animationType="fade" visible={isModePickerVisible}>
                     <View className="flex-1 justify-end bg-black/30">
-                        <Pressable className="flex-1" onPress={() => setIsDatePickerVisible(false)} />
-                        <View className="rounded-t-3xl px-4 pb-6 pt-4" style={{ backgroundColor: theme.background }}>
-                            <ThemedText className="text-center text-base font-bold">Select Date & Time</ThemedText>
-                            <DateTimePicker value={pendingDate} mode="datetime" display="spinner" onChange={(_e, d) => d && setPendingDate(d)} style={{ width: '100%' }} />
-                            <View className="mt-4 flex-row gap-3">
-                                <Pressable className="flex-1 items-center rounded-2xl border py-3 border-gray-100" onPress={() => setIsDatePickerVisible(false)}><ThemedText>Cancel</ThemedText></Pressable>
-                                <Pressable className="flex-1 items-center rounded-2xl py-3" style={{ backgroundColor: accent }} onPress={handleConfirmDatePicker}><ThemedText className="text-white font-bold">Set Date</ThemedText></Pressable>
+                        <Pressable className="flex-1" onPress={() => setIsModePickerVisible(false)} />
+                        <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
+                            <ThemedText className="text-center text-lg font-bold mb-6">Select Payment Method</ThemedText>
+                            <View className="gap-2">
+                                {modeOptions.map(m => (
+                                    <Pressable key={m} onPress={() => { setForm(p => ({ ...p, mode: m })); setIsModePickerVisible(false); }} className={`p-4 rounded-2xl flex-row items-center justify-between ${form.mode === m ? 'bg-orange-50 border border-orange-100' : 'bg-gray-50'}`}>
+                                        <ThemedText className={`font-bold ${form.mode === m ? 'text-orange-500' : 'text-gray-700'}`}>{m}</ThemedText>
+                                        {form.mode === m && <MaterialCommunityIcons name="check" size={20} color="#F97316" />}
+                                    </Pressable>
+                                ))}
                             </View>
                         </View>
                     </View>
                 </Modal>
-            )}
 
-            {/* Mode Picker */}
-            <Modal transparent animationType="fade" visible={isModePickerVisible}>
-                <View className="flex-1 justify-end bg-black/30">
-                    <Pressable className="flex-1" onPress={() => setIsModePickerVisible(false)} />
-                    <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
-                        <ThemedText className="text-center text-lg font-bold mb-6">Select Payment Method</ThemedText>
-                        <View className="gap-2">
-                            {modeOptions.map(m => (
-                                <Pressable key={m} onPress={() => { setForm(p => ({ ...p, mode: m })); setIsModePickerVisible(false); }} className={`p-4 rounded-2xl flex-row items-center justify-between ${form.mode === m ? 'bg-orange-50 border border-orange-100' : 'bg-gray-50'}`}>
-                                    <ThemedText className={`font-bold ${form.mode === m ? 'text-orange-500' : 'text-gray-700'}`}>{m}</ThemedText>
-                                    {form.mode === m && <MaterialCommunityIcons name="check" size={20} color="#F97316" />}
-                                </Pressable>
-                            ))}
+                {/* Category Picker */}
+                <Modal transparent animationType="fade" visible={isCategoryPickerVisible}>
+                    <View className="flex-1 justify-end bg-black/30">
+                        <Pressable className="flex-1" onPress={() => setIsCategoryPickerVisible(false)} />
+                        <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
+                            <ThemedText className="text-center text-lg font-bold mb-6">Select Category</ThemedText>
+                            <ScrollView style={{ maxHeight: 400 }}>
+                                <View className="flex-row flex-wrap gap-4 justify-between">
+                                    {categoryOptions.map(c => (
+                                        <Pressable key={c} onPress={() => { setForm(p => ({ ...p, category: c })); setIsCategoryPickerVisible(false); }} className={`w-[47%] p-4 rounded-3xl items-center gap-2 border ${form.category === c ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
+                                            <ThemedText className={`text-xs font-bold ${form.category === c ? 'text-orange-500' : 'text-gray-700'}`}>{c}</ThemedText>
+                                        </Pressable>
+                                    ))}
+                                </View>
+                            </ScrollView>
                         </View>
                     </View>
-                </View>
-            </Modal>
+                </Modal>
 
-            {/* Category Picker */}
-            <Modal transparent animationType="fade" visible={isCategoryPickerVisible}>
-                <View className="flex-1 justify-end bg-black/30">
-                    <Pressable className="flex-1" onPress={() => setIsCategoryPickerVisible(false)} />
-                    <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
-                        <ThemedText className="text-center text-lg font-bold mb-6">Select Category</ThemedText>
-                        <ScrollView style={{ maxHeight: 400 }}>
-                            <View className="flex-row flex-wrap gap-4 justify-between">
-                                {categoryOptions.map(c => (
-                                    <Pressable key={c} onPress={() => { setForm(p => ({ ...p, category: c })); setIsCategoryPickerVisible(false); }} className={`w-[47%] p-4 rounded-3xl items-center gap-2 border ${form.category === c ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
-                                        <ThemedText className={`text-xs font-bold ${form.category === c ? 'text-orange-500' : 'text-gray-700'}`}>{c}</ThemedText>
+                {/* Account Picker */}
+                <Modal transparent animationType="fade" visible={isAccountPickerVisible}>
+                    <View className="flex-1 justify-end bg-black/30">
+                        <Pressable className="flex-1" onPress={() => setIsAccountPickerVisible(false)} />
+                        <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
+                            <ThemedText className="text-center text-lg font-bold mb-6">Select Account</ThemedText>
+                            <View className="gap-2">
+                                {accountOptions.map(a => (
+                                    <Pressable key={a} onPress={() => { setForm(p => ({ ...p, account: a })); setIsAccountPickerVisible(false); }} className={`p-4 rounded-2xl flex-row items-center justify-between ${form.account === a ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}>
+                                        <ThemedText className={`font-bold ${form.account === a ? 'text-blue-500' : 'text-gray-700'}`}>{a}</ThemedText>
+                                        {form.account === a && <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />}
                                     </Pressable>
                                 ))}
                             </View>
-                        </ScrollView>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Account Picker */}
-            <Modal transparent animationType="fade" visible={isAccountPickerVisible}>
-                <View className="flex-1 justify-end bg-black/30">
-                    <Pressable className="flex-1" onPress={() => setIsAccountPickerVisible(false)} />
-                    <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
-                        <ThemedText className="text-center text-lg font-bold mb-6">Select Account</ThemedText>
-                        <View className="gap-2">
-                            {accountOptions.map(a => (
-                                <Pressable key={a} onPress={() => { setForm(p => ({ ...p, account: a })); setIsAccountPickerVisible(false); }} className={`p-4 rounded-2xl flex-row items-center justify-between ${form.account === a ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}>
-                                    <ThemedText className={`font-bold ${form.account === a ? 'text-blue-500' : 'text-gray-700'}`}>{a}</ThemedText>
-                                    {form.account === a && <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />}
-                                </Pressable>
-                            ))}
                         </View>
                     </View>
-                </View>
-            </Modal>
-        </View>
+                </Modal>
+            </View>
+        </Modal>
     );
 }

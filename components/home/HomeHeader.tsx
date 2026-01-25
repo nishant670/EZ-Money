@@ -40,7 +40,7 @@ export function HomeHeader() {
       </View>
 
       <Pressable>
-        <MaterialCommunityIcons name="cog" size={24} color={theme.text} />
+        <MaterialCommunityIcons name="bell" size={24} color={theme.text} />
       </Pressable>
     </View>
   );

@@ -7,6 +7,8 @@ export type Transaction = {
   category: string;
   amount: number;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  color?: string;
+  bgColor?: string;
   section: string;
   occurredAt?: number;
   entryType?: 'income' | 'expense';
