@@ -1,13 +1,16 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState, useMemo } from 'react';
-import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Modal, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Modal, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
+import { useAuthStore } from '@/hooks/use-auth-store';
+import { saveAccount } from '@/lib/accounts';
+
 
 type AccountTypeOption = {
   key: string;
@@ -47,6 +50,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 export default function ManageAccountScreen() {
   const colorScheme = useColorScheme() ?? 'light';
+  const { token } = useAuthStore();
+  const [isSaving, setIsSaving] = useState(false);
 
   // Step navigation
   const [step, setStep] = useState(1);
@@ -69,6 +74,35 @@ export default function ManageAccountScreen() {
   // Modal States
   const [showDayModal, setShowDayModal] = useState(false);
   const [showMonthModal, setShowMonthModal] = useState(false);
+
+  const handleSave = async () => {
+    if (!token) return;
+    if (!name) {
+      alert('Please enter a name for the account');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const payload = {
+        type: selectedType,
+        name: name,
+        color: selectedColor,
+        provider: selectedIssuer?.name || '',
+        identifier: last4,
+        credit_limit: parseFloat(creditLimit) || 0,
+        due_day: parseInt(dueDay) || 0,
+        fee_month: feeMonth,
+        balance: 0, // Initial balance can be added later if needed
+      };
+      await saveAccount(token, payload);
+      router.back();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save account');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const filteredIssuers = useMemo(() => {
     if (!issuerQuery) return [];
@@ -218,9 +252,14 @@ export default function ManageAccountScreen() {
         <TouchableOpacity
           onPress={() => setStep(2)}
           style={styles.saveButton}
+          disabled={isSaving}
         >
           <ThemedText style={styles.saveButtonText}>Looks Good! Save</ThemedText>
-          <MaterialCommunityIcons name="thumb-up-outline" size={20} color="white" />
+          {isSaving ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <MaterialCommunityIcons name="thumb-up-outline" size={20} color="white" />
+          )}
         </TouchableOpacity>
       </View>
     </>
@@ -359,10 +398,12 @@ export default function ManageAccountScreen() {
               <ThemedText style={styles.cancelText}>Back</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={handleSave}
               style={[styles.saveButton, { backgroundColor: '#FF8A65' }]}
+              disabled={isSaving}
             >
-              <ThemedText style={styles.saveButtonText}>Done 🎉</ThemedText>
+              <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Done 🎉'}</ThemedText>
+              {isSaving && <ActivityIndicator size="small" color="white" className="ml-2" />}
             </TouchableOpacity>
           </View>
 
@@ -419,11 +460,16 @@ export default function ManageAccountScreen() {
             <ThemedText style={styles.cancelText}>Back</ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={handleSave}
             style={styles.saveButton}
+            disabled={isSaving}
           >
-            <ThemedText style={styles.saveButtonText}>Finish Setup</ThemedText>
-            <MaterialCommunityIcons name="check-all" size={20} color="white" />
+            <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Finish Setup'}</ThemedText>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <MaterialCommunityIcons name="check-all" size={20} color="white" />
+            )}
           </TouchableOpacity>
         </View>
       </>
