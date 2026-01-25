@@ -12,7 +12,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { TransactionFormModal, type EntryForm } from '@/components/transactions/TransactionFormModal';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase } from '@/lib/transactions';
+import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
 
 export default function TransactionDetailsScreen() {
     const router = useRouter();
@@ -96,8 +96,10 @@ export default function TransactionDetailsScreen() {
     const entryType = (displayData.type || 'expense').toLowerCase() === 'income' ? 'income' : 'expense';
     const amountValue = Math.abs(Number(displayData.amount || 0));
 
-    const icon = entryType === 'income' ? 'cash-multiple' : 'coffee';
-    const iconColor = theme.accent;
+    const meta = resolveCategoryMetadata(displayData.category, displayData.type);
+    const icon = meta.icon;
+    const iconColor = meta.color;
+    const bgColor = meta.bgColor;
 
     const pickReceipt = async () => {
         try {
@@ -237,14 +239,10 @@ export default function TransactionDetailsScreen() {
                 {/* HERO SECTION */}
                 <View className="items-center mb-10">
                     <View
-                        className="h-28 w-28 rounded-[32px] bg-white dark:bg-gray-800 items-center justify-center shadow-lg mb-6"
-                        style={{ shadowColor: theme.accent, shadowOpacity: 0.1, shadowRadius: 15 }}
+                        className="h-28 w-28 rounded-[32px] items-center justify-center shadow-lg mb-6"
+                        style={{ shadowColor: theme.accent, shadowOpacity: 0.1, shadowRadius: 15, backgroundColor: bgColor || 'white' }}
                     >
-                        <MaterialCommunityIcons name={icon} size={52} color={iconColor} />
-                        {/* Little yellow "AI" badge or similar if needed as per mockup */}
-                        <View className="absolute -bottom-2 -right-2 bg-yellow-400 rounded-full px-2 py-0.5 border-2 border-white">
-                            <ThemedText className="text-[8px] font-black text-white">AI!</ThemedText>
-                        </View>
+                        <MaterialCommunityIcons name={icon as any} size={52} color={iconColor} />
                     </View>
 
                     <ThemedText className="text-5xl font-black mb-2 tracking-tight" style={{ color: theme.text }}>
@@ -284,8 +282,8 @@ export default function TransactionDetailsScreen() {
 
                     {/* Category */}
                     <View className="flex-row gap-5 mb-8">
-                        <View className="h-12 w-12 rounded-full bg-orange-50 items-center justify-center">
-                            <MaterialCommunityIcons name="molecule" size={24} color="#F97316" />
+                        <View className="h-12 w-12 rounded-full items-center justify-center" style={{ backgroundColor: bgColor || '#F97316' }}>
+                            <MaterialCommunityIcons name={icon as any} size={24} color={iconColor} />
                         </View>
                         <View>
                             <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">WHAT KIND OF SPEND?</ThemedText>

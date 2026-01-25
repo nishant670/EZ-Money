@@ -100,7 +100,7 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="accounts/manage"
-          options={{ presentation: 'modal', title: 'Account' }}
+          options={{ presentation: 'modal', title: 'Account', headerShown: false }}
         />
         <Stack.Screen
           name="auth"

@@ -4,7 +4,7 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { Audio } from 'expo-av';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -88,6 +88,7 @@ export default function HomeScreen() {
   const accent = useThemeColor({}, 'accent');
   const router = useRouter();
   const { token } = useAuthStore();
+
   const defaultForm = useMemo(() => ({
     title: '',
     amount: '',
@@ -124,15 +125,129 @@ export default function HomeScreen() {
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
   const [isSavingEntry, setIsSavingEntry] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
-  const visibleSections = useMemo(() => sections.slice(0, 3), [sections]);
-  const hasTransactions = sections.length > 0;
+  const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<import('@/components/home/QuickPrompts').QuickPrompt | null>(null);
+  const [modalMode, setModalMode] = useState<'audio' | 'manual' | 'quick-prompt'>('manual');
 
-  const surfaceColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
-  const softBorder = colorScheme === 'light' ? theme.border : '#2E2E2E';
-  const fieldBackground =
-    colorScheme === 'light' ? 'rgba(217,217,217,0.35)' : 'rgba(60,60,60,0.45)';
+  const onMicStop = useCallback((data: { title?: string; amount?: string; category?: string; date?: string; type?: string; mode?: string }) => {
+    const blank = createBlankForm();
+    setForm({
+      ...blank,
+      ...data,
+      amount: data.amount ? parseFloat(data.amount).toFixed(2) : '',
+    });
+    setModalMode('audio');
+    setIsEditOpen(true);
+  }, [createBlankForm]);
+
+  const handleQuickPromptSelect = useCallback((prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
+    const blank = createBlankForm();
+    const now = new Date();
+    setForm({
+      ...blank,
+      title: prompt.title,
+      amount: prompt.amount.toFixed(2),
+      date: formatDateLabel(now),
+      time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      mode: prompt.mode,
+      category: prompt.category,
+      account: 'Main Account',
+    });
+    setModalMode('manual');
+    setIsEditOpen(true);
+  }, [createBlankForm]);
+
+  const handleAddPrompt = useCallback(() => {
+    setEditingPrompt(null);
+    setIsPromptModalOpen(true);
+  }, []);
+
+  const handleLongPressPrompt = useCallback((prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
+    setEditingPrompt(prompt);
+    setIsPromptModalOpen(true);
+  }, []);
+
+  const handleSavePrompt = async (formData: import('@/components/transactions/TransactionFormModal').EntryForm) => {
+    const id = editingPrompt?.id;
+    const url = id ? `${API_BASE_URL}/v1/quick-prompts/${id}` : `${API_BASE_URL}/v1/quick-prompts`;
+    const method = id ? 'PUT' : 'POST';
+
+    const getIconForCategory = (cat: string) => {
+      switch (cat.toLowerCase()) {
+        case 'food & drinks': return 'coffee-outline';
+        case 'travel': return 'train';
+        case 'transport': return 'gas-station-outline';
+        case 'shopping': return 'cart-outline';
+        case 'bills': return 'file-document-outline';
+        default: return 'lightning-bolt';
+      }
+    };
+
+    const payload = {
+      title: formData.title,
+      amount: parseFloat(formData.amount),
+      mode: formData.mode,
+      category: formData.category,
+      icon: getIconForCategory(formData.category)
+    };
+
+    const resp = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (resp.ok) {
+      setIsPromptModalOpen(false);
+      // We need to trigger a re-fetch in the QuickPrompts component. 
+      // In a real app we might use a global store or a key to force re-render.
+      // For now, let's just use a simple key state.
+      setQuickPromptKey(prev => prev + 1);
+    } else {
+      throw new Error('Failed to save prompt');
+    }
+  };
+
+  const handleDeletePrompt = async () => {
+    if (!editingPrompt) return;
+    const id = editingPrompt.id;
+    const resp = await fetch(`${API_BASE_URL}/v1/quick-prompts/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (resp.ok) {
+      setIsPromptModalOpen(false);
+      setQuickPromptKey(prev => prev + 1);
+    } else {
+      throw new Error('Failed to delete prompt');
+    }
+  };
+
+  const [quickPromptKey, setQuickPromptKey] = useState(0);
+
+  const getInitialPromptData = (): Partial<import('@/components/transactions/TransactionFormModal').EntryForm> => {
+    if (!editingPrompt) return {
+      category: 'Food & Drinks',
+      mode: 'Cash',
+      type: 'Expense',
+      date: formatDateLabel(new Date()),
+    };
+    return {
+      title: editingPrompt.title,
+      amount: editingPrompt.amount.toString(),
+      mode: editingPrompt.mode,
+      category: editingPrompt.category,
+      type: 'Expense',
+      date: formatDateLabel(new Date()),
+    };
+  };
+
   const fetchEntries = useCallback(async () => {
     if (!token) return;
     setIsEntriesLoading(true);
@@ -147,9 +262,15 @@ export default function HomeScreen() {
     }
   }, [token]);
 
-  useEffect(() => {
-    fetchEntries();
-  }, [fetchEntries]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchEntries();
+    }, [fetchEntries])
+  );
+
+  const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
+  const visibleSections = useMemo(() => sections.slice(0, 3), [sections]);
+  const hasTransactions = sections.length > 0;
 
   const ensureMicPermission = useCallback(async () => {
     if (permissionResponse?.status === 'granted') {
@@ -186,11 +307,8 @@ export default function HomeScreen() {
   }, [ensureMicPermission]);
 
   const stopRecording = useCallback(async () => {
-    if (!recording) {
-      return;
-    }
+    if (!recording) return;
     try {
-      console.log("stop pressed")
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       setRecordedUri(uri);
@@ -202,7 +320,7 @@ export default function HomeScreen() {
       try {
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
       } catch {
-        // Ignore - resetting audio mode is best-effort.
+        // Ignore
       }
     }
   }, [recording]);
@@ -229,17 +347,18 @@ export default function HomeScreen() {
     setErrorMessage(null);
   }, []);
 
-  /* 
-     handleConfirmEntry is now passed to TransactionFormModal.
-     The internal UI helpers like handleOpenDatePicker are also moved to the Modal.
-  */
+  const handleOpenManualEntry = useCallback(() => {
+    setForm(createBlankForm());
+    setModalMode('manual');
+    setIsEditOpen(true);
+  }, [createBlankForm]);
 
   const handleConfirmEntry = useCallback(async (formData: EntryForm) => {
+    setFormError(null);
     setIsSavingEntry(true);
     try {
       let attachmentUrl = formData.attachment;
 
-      // Upload attachment if it's a local file
       if (formData.attachment && (formData.attachment.startsWith('file://') || formData.attachment.startsWith('content://'))) {
         const uploadData = new FormData();
         const filename = formData.attachment.split('/').pop() || 'file';
@@ -290,6 +409,7 @@ export default function HomeScreen() {
           attachment: attachmentUrl,
         }),
       });
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(errorText || 'Unable to save the entry right now.');
@@ -298,16 +418,14 @@ export default function HomeScreen() {
       setForm(createBlankForm());
       setIsEditOpen(false);
     } catch (error) {
-      throw error; // Re-throw to be handled by the modal's internal error state if needed
+      setFormError(error instanceof Error ? error.message : 'Unable to save your entry. Please try again.');
     } finally {
       setIsSavingEntry(false);
     }
   }, [createBlankForm, fetchEntries, token]);
 
   const handleSubmitPrompt = useCallback(async () => {
-    if (isSubmitting) {
-      return;
-    }
+    if (isSubmitting) return;
     const trimmed = inputText.trim();
     if (!trimmed && !recordedUri) {
       setErrorMessage('Please type or record your expense first.');
@@ -342,7 +460,6 @@ export default function HomeScreen() {
         throw new Error(errorText || 'Unable to parse the entry right now.');
       }
       const data: ParseResponse = await response.json();
-      console.log('Parse response:', data);
       setForm((prev) => {
         const formattedDate = normalizeDateLabel(data.date, prev.date);
         const tagValue = data.tag ?? prev.tag;
@@ -363,41 +480,33 @@ export default function HomeScreen() {
       });
       setInputText('');
       setRecordedUri(null);
-      setIsTextInputVisible(false);
+      setModalMode('audio');
       setIsEditOpen(true);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Something went wrong while parsing.');
     } finally {
       setIsSubmitting(false);
     }
-  }, [inputText, isSubmitting, recordedUri, token]);
+  }, [inputText, recordedUri, token, normalizeDateLabel]);
 
-  const handleOpenManualEntry = useCallback(() => {
-    setForm(createBlankForm());
-    setIsEditOpen(true);
-  }, [createBlankForm]);
-
-  const canSubmit = useMemo(
-    () => !isRecording && (inputText.trim().length > 0 || !!recordedUri),
-    [inputText, isRecording, recordedUri],
-  );
-
-  const renderTransactionCard = (item: Transaction) => {
-    const isIncome = item.entryType === 'income' || item.amount >= 0;
+  const renderTransactionItem = (item: Transaction) => {
+    const isIncome = item.entryType === 'income';
     const displayAmount = Math.abs(item.amount).toFixed(2);
-    // Format date roughly for now, can be improved with date-fns or similar
-    const dateObj = item.rawDate ? new Date(item.rawDate) : new Date();
-    const dateStr = item.dateLabel || dateObj.toLocaleDateString();
+    const dateStr = item.dateLabel || 'Today';
 
     return (
       <TransactionItem
         key={item.id}
-        icon={item.icon as any} // Ensure icon compatibility
         title={item.name}
+        //@ts-ignore
+        icon={item.icon}
+        //@ts-ignore
         category={item.category}
-        subtitle={item.mode ?? undefined}
-        amount={`${CURRENCY_SYMBOL}${displayAmount}`}
+        subtitle={`${item.category} • ${item.mode}`}
+        amount={displayAmount}
         date={dateStr}
+        color={item.color}
+        bgColor={item.bgColor}
         isIncome={isIncome}
         onPress={() => {
           router.push({
@@ -422,11 +531,78 @@ export default function HomeScreen() {
     );
   };
 
+  const renderRecentActivity = () => {
+    if (isEntriesLoading) {
+      return (
+        <View className="items-center py-10">
+          <ActivityIndicator color={accent} />
+          <ThemedText className="mt-2 text-gray-400 font-medium">Loading activity...</ThemedText>
+        </View>
+      );
+    }
+
+    if (!hasTransactions) {
+      return (
+        <View className="items-center py-10 bg-white/40 dark:bg-gray-800/40 rounded-[32px] border border-dashed border-gray-200 dark:border-gray-700 mx-6">
+          <MaterialCommunityIcons name="receipt" size={48} color={theme.text} opacity={0.1} />
+          <ThemedText className="mt-4 text-gray-400 font-bold text-center">No activity yet.{"\n"}Try recording a spend!</ThemedText>
+        </View>
+      );
+    }
+
+    const recentTransactions = transactions.slice(0, 5);
+
+    return (
+      <View>
+        <View className="flex-row items-center justify-between px-6 mb-4">
+          <ThemedText className="text-xl font-black" style={{ color: theme.text }}>Recent Activity</ThemedText>
+          <Pressable onPress={() => router.push('/transactions')}>
+            <ThemedText className="font-bold" style={{ color: theme.accent }}>See All</ThemedText>
+          </Pressable>
+        </View>
+
+        <View className="px-6">
+          {recentTransactions.map((item) => (
+            <TransactionItem
+              key={item.id}
+              title={item.name}
+              icon={item.icon}
+              category={item.category}
+              subtitle={item.mode ?? ''}
+              amount={Math.abs(item.amount).toFixed(2)}
+              date={item.section}
+              color={item.color}
+              bgColor={item.bgColor}
+              isIncome={item.entryType === 'income'}
+              onPress={() => {
+                router.push({
+                  pathname: '/entry/[id]',
+                  params: {
+                    id: item.id,
+                    name: item.name,
+                    category: item.category,
+                    amount: Math.abs(item.amount).toFixed(2),
+                    entryType: item.entryType ?? 'expense',
+                    section: item.section,
+                    mode: item.mode ?? '',
+                    notes: item.notes ?? '',
+                    merchant: item.merchant ?? '',
+                    dateLabel: item.dateLabel ?? '',
+                    rawDate: item.rawDate ?? '',
+                    tag: item.tag ?? '',
+                  },
+                });
+              }}
+            />
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
       <ScrollView showsVerticalScrollIndicator={false}>
-
-        {/* Header */}
         <HomeHeader />
 
         <View className="px-6 pb-6">
@@ -434,7 +610,6 @@ export default function HomeScreen() {
           <ThemedText className="text-sm text-gray-500 mt-2 font-medium text-center">Let's track your ins and outs!</ThemedText>
         </View>
 
-        {/* Main Interaction Card */}
         <VoiceInputCard
           onMicPress={handleToggleRecording}
           isRecording={isRecording}
@@ -446,54 +621,31 @@ export default function HomeScreen() {
           isProcessing={isSubmitting}
         />
 
-        {/* Quick Prompts */}
-        <QuickPrompts />
+        <QuickPrompts
+          key={`quick-prompts-${quickPromptKey}`}
+          onSelect={handleQuickPromptSelect}
+          onAdd={handleAddPrompt}
+          onLongPress={handleLongPressPrompt}
+        />
 
-        {/* Recent Activity */}
-        <View className="px-6 pb-2 flex-row items-center justify-between">
-          <ThemedText className="text-lg font-bold" style={{ color: theme.text }}>Recent Activity</ThemedText>
-          <Pressable onPress={() => router.push('/transactions')}>
-            <ThemedText className="text-sm" style={{ color: theme.accent }}>See All</ThemedText>
-          </Pressable>
-        </View>
+        {errorMessage && (
+          <View className="mx-6 mb-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-2xl border border-red-100 dark:border-red-900/30">
+            <ThemedText className="text-red-500 dark:text-red-400 text-center font-bold">{errorMessage}</ThemedText>
+          </View>
+        )}
 
-        <View className="pb-24">
-          {entriesError && (
-            <ThemedText className="px-6 text-sm text-red-500">
-              {entriesError}
-            </ThemedText>
-          )}
-          {isEntriesLoading && (
-            <View className="items-center py-4">
-              <ActivityIndicator color={theme.accent} />
-            </View>
-          )}
-          {!isEntriesLoading && sections.length === 0 && !entriesError && (
-            <ThemedText className="px-6 text-sm text-gray-500 text-center py-10">
-              No entries yet. Start by adding your first transaction!
-            </ThemedText>
-          )}
-          {/* Flatten sections for this view or just show first few items */}
-          {visibleSections.map((section) => (
-            <View key={section.title}>
-              {section.data.map(renderTransactionCard)}
-            </View>
-          ))}
-        </View>
+        {renderRecentActivity()}
 
+        <View className="h-32" />
       </ScrollView>
 
-      {/* Floating Plus Button (Optional, can keep or remove based on design. Design didn't explicitly show it but usually good UX) */}
-      {/* Kept for manual entry fallback */}
       <Pressable
         accessibilityRole="button"
         onPress={handleOpenManualEntry}
-        className="h-14 w-14 items-center justify-center rounded-full absolute right-6 bottom-8 shadow-lg"
-        style={{
-          backgroundColor: theme.accent,
-        }}
+        style={[{ backgroundColor: theme.accent }, cardShadow]}
+        className="h-16 w-16 rounded-full items-center justify-center absolute bottom-10 right-6 elevation-5"
       >
-        <MaterialCommunityIcons name="plus" size={28} color="#FFFFFF" />
+        <MaterialCommunityIcons name="plus" size={32} color="white" />
       </Pressable>
 
       <TransactionFormModal
@@ -501,6 +653,16 @@ export default function HomeScreen() {
         onClose={() => setIsEditOpen(false)}
         initialData={form}
         onSave={handleConfirmEntry}
+        mode={modalMode}
+      />
+      <TransactionFormModal
+        visible={isPromptModalOpen}
+        onClose={() => setIsPromptModalOpen(false)}
+        initialData={getInitialPromptData()}
+        onSave={handleSavePrompt}
+        onDelete={editingPrompt ? handleDeletePrompt : undefined}
+        isEdit={!!editingPrompt}
+        mode="quick-prompt"
       />
     </SafeAreaView>
   );

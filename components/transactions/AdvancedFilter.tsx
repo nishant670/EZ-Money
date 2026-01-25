@@ -240,7 +240,7 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                             <View
                                 style={[
                                     styles.sliderThumb,
-                                    { left: `${(maxAmount / maxPossibleAmount) * 100}%`, transform: [{ translateX: -24 }] }
+                                    { left: `${(maxAmount / maxPossibleAmount) * 100}%` }
                                 ]}
                                 hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                                 {...maxPanResponder.panHandlers}
@@ -259,7 +259,12 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                         <MaterialCommunityIcons name="tag-outline" size={18} color="#90A4AE" />
                         <Text style={styles.sectionLabel}>WHAT WAS IT FOR?</Text>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.chipsScroll}
+                        contentContainerStyle={styles.chipsScrollContent}
+                    >
                         {[
                             { name: 'Coffee', icon: 'coffee' },
                             { name: 'Groceries', icon: 'clover' },
@@ -502,11 +507,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     sliderFill: {
-        width: '50%',
         height: '100%',
         backgroundColor: '#FFAB91',
         borderRadius: 2,
-        alignSelf: 'center',
+        position: 'absolute',
     },
     sliderThumb: {
         width: 24,
@@ -517,7 +521,6 @@ const styles = StyleSheet.create({
         borderColor: 'white',
         position: 'absolute',
         top: -10,
-        left: '50%',
         transform: [{ translateX: -12 }],
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -537,7 +540,11 @@ const styles = StyleSheet.create({
     },
     chipsScroll: {
         marginHorizontal: -24,
+    },
+    chipsScrollContent: {
         paddingHorizontal: 24,
+        gap: 10,
+        paddingRight: 40, // Ensure + button is visible
     },
     chip: {
         flexDirection: 'row',

@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -63,9 +63,11 @@ export default function TransactionsScreen() {
     }
   }, [token, filterType, selectedCategory, selectedMethod, minAmount, maxAmount, startDate, endDate]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   // Filter Logic (Search remains FE only for speed)
   const filteredTransactions = useMemo(() => {
@@ -114,10 +116,12 @@ export default function TransactionsScreen() {
           key={item.id}
           icon={item.icon as any}
           title={item.name}
-          category={item.category} // Can swap with Merchant if available
-          subtitle={`${item.category} • ${item.dateLabel?.split(',')[0]}`} // Placeholder logic
-          amount={`₹${displayAmount}`}
-          date="" // Hiding date in right column as per design it might be redundant or specific
+          category={item.category}
+          subtitle={item.mode ?? ''}
+          amount={`${displayAmount}`}
+          date={""}
+          color={item.color}
+          bgColor={item.bgColor}
           isIncome={isIncome}
           onPress={() =>
             router.push({
@@ -156,7 +160,7 @@ export default function TransactionsScreen() {
         <ThemedText className="text-lg font-bold" style={{ color: theme.text }}>
           &nbsp; Your Money Story&nbsp;
         </ThemedText>
-        <View></View>
+        <View className="h-10 w-10"></View>
       </View>
 
       {/* Header and Search */}
@@ -198,7 +202,7 @@ export default function TransactionsScreen() {
 
           return (
             <View key={section.title} className="mb-6">
-              <View className="flex-row justify-between items-center px-8 mb-3">
+              <View className="flex-row justify-between items-center px-6 mb-3">
                 <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400">
                   {section.title.toUpperCase()}
                 </ThemedText>
@@ -208,7 +212,9 @@ export default function TransactionsScreen() {
                   </ThemedText>
                 </View>
               </View>
-              {section.data.map(renderTransactionCard)}
+              <View className="px-6">
+                {section.data.map(renderTransactionCard)}
+              </View>
             </View>
           );
         })}
