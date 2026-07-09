@@ -26,6 +26,7 @@ export type ApiEntry = {
 };
 
 export interface TransactionFilters {
+  q?: string;
   type?: string;
   category?: string;
   mode?: string;
@@ -34,6 +35,8 @@ export interface TransactionFilters {
   max_amount?: number;
   start_date?: string;
   end_date?: string;
+  page?: number;
+  page_size?: number;
 }
 
 const monthLookup: Record<string, number> = {
@@ -284,7 +287,6 @@ export const loadTransactions = async (
   const payload = await response.json();
   const mapped = normalizeEntriesResponse(payload).map(mapEntryToTransaction);
   mapped.sort((a, b) => (b.occurredAt ?? 0) - (a.occurredAt ?? 0));
-  console.log('mapped', mapped);
   return mapped;
 };
 

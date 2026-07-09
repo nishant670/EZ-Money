@@ -6,7 +6,7 @@ import DateTimePicker, {
 import { Audio } from 'expo-av';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { cssInterop } from 'nativewind';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -141,6 +141,7 @@ export default function HomeScreen() {
   const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
   const [aiSourceText, setAiSourceText] = useState('');
   const [aiInputSource, setAiInputSource] = useState<'text' | 'voice'>('text');
+  const createIdempotencyKey = useRef<string | null>(null);
 
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<import('@/components/home/QuickPrompts').QuickPrompt | null>(null);
@@ -379,6 +380,7 @@ export default function HomeScreen() {
     setAiReview(null);
     setAiSourceText('');
     setAiInputSource('text');
+    createIdempotencyKey.current = null;
     setForm(createBlankForm());
     setModalMode('manual');
     setIsEditOpen(true);
@@ -419,11 +421,15 @@ export default function HomeScreen() {
 
       const parsedDate = parseDateLabel(formData.date);
       const trimmedTag = formData.tag.trim();
+      if (!createIdempotencyKey.current) {
+        createIdempotencyKey.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
       const response = await fetch(`${API_BASE_URL}/v1/entries`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': createIdempotencyKey.current,
         },
         body: JSON.stringify({
           amount: formData.amount.trim(),
@@ -449,6 +455,7 @@ export default function HomeScreen() {
         throw new Error(errorText || 'Unable to save the entry right now.');
       }
       await fetchEntries();
+      createIdempotencyKey.current = null;
       setForm(createBlankForm());
       setAiSourceText('');
       setIsEditOpen(false);
@@ -495,6 +502,7 @@ export default function HomeScreen() {
         throw new Error(errorText || 'Unable to parse the entry right now.');
       }
       const data: ParseResponse = await response.json();
+      createIdempotencyKey.current = null;
       setAiSourceText(data.source_text ?? trimmed);
       setAiInputSource(recordedUri ? 'voice' : 'text');
       setAiReview({

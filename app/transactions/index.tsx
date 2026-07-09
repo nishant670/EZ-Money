@@ -26,6 +26,7 @@ export default function TransactionsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
 
   // Filter States
@@ -40,6 +41,10 @@ export default function TransactionsScreen() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [activeDatePill, setActiveDatePill] = useState('This Month');
 
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
 
   // Initial Load & Filtered Load
   const load = useCallback(async () => {
@@ -48,6 +53,7 @@ export default function TransactionsScreen() {
     setError(null);
     try {
       const filters = {
+        q: debouncedSearchQuery || undefined,
         type: filterType === 'All' ? undefined : filterType,
         category: selectedCategory ?? undefined,
         mode: selectedMethod ?? undefined,
@@ -57,6 +63,8 @@ export default function TransactionsScreen() {
         max_amount: maxAmount < 10000 ? maxAmount : undefined,
         start_date: startDate ?? undefined,
         end_date: endDate ?? undefined,
+        page: 1,
+        page_size: 100,
       };
       const mapped = await loadTransactions(token, filters);
       setTransactions(mapped);
@@ -65,7 +73,7 @@ export default function TransactionsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate]);
+  }, [token, filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate, debouncedSearchQuery]);
 
   useFocusEffect(
     useCallback(() => {
@@ -75,20 +83,6 @@ export default function TransactionsScreen() {
       }
     }, [load, token])
   );
-
-  // Filter Logic (Search remains FE only for speed)
-  const filteredTransactions = useMemo(() => {
-    const query = searchQuery.toLowerCase();
-    return transactions.filter((txn) => {
-      const matchesQuery = !query || (
-        txn.name.toLowerCase().includes(query) ||
-        txn.category.toLowerCase().includes(query) ||
-        txn.amount.toString().includes(query) ||
-        (txn.notes && txn.notes.toLowerCase().includes(query))
-      );
-      return matchesQuery;
-    });
-  }, [transactions, searchQuery]);
 
   const isFilterActive = useMemo(() => {
     return (
@@ -104,8 +98,8 @@ export default function TransactionsScreen() {
   }, [filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate]);
 
   const sections = useMemo(
-    () => groupTransactionsBySection(filteredTransactions),
-    [filteredTransactions],
+    () => groupTransactionsBySection(transactions),
+    [transactions],
   );
 
   const calculateDailyTotal = (items: Transaction[]) => {
@@ -248,7 +242,7 @@ export default function TransactionsScreen() {
           <Pressable className="absolute inset-0" onPress={() => setIsFilterOpen(false)} />
           <AdvancedFilter
             onClose={() => setIsFilterOpen(false)}
-            count={filteredTransactions.length}
+            count={transactions.length}
             onApply={(newFilters: any) => {
               setFilterType(newFilters.type);
               setSelectedCategory(newFilters.category);
