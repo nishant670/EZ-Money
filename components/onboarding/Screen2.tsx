@@ -14,46 +14,46 @@ export default function Screen2() {
         <View style={styles.visualContainer}>
           {/* AI Prompt Card */}
           <View style={[styles.aiCard, { backgroundColor: theme.card }]}>
-             <View style={styles.aiHeader}>
-                <View style={[styles.aiIconCircle, { backgroundColor: '#F5F5F7' }]}>
-                   <MaterialCommunityIcons name="robot" size={16} color={theme.accent} />
-                </View>
-                <View style={styles.aiDots}>
-                    <View style={[styles.dot, { backgroundColor: '#E0E0E0' }]} />
-                    <View style={[styles.dot, { backgroundColor: '#E0E0E0' }]} />
-                    <View style={[styles.dot, { backgroundColor: '#E0E0E0' }]} />
-                </View>
-             </View>
-             
-             <View style={styles.transactionItem}>
-                <View style={[styles.amountLabel, { backgroundColor: theme.accent + '20' }]}>
-                   <Text style={[styles.labelText, { color: theme.accent }]}>$ AMOUNT</Text>
-                   <Text style={[styles.valueText, { color: theme.text }]}>$32.50</Text>
-                </View>
-             </View>
+            <View style={styles.aiHeader}>
+              <View style={[styles.aiIconCircle, { backgroundColor: '#F5F5F7' }]}>
+                <MaterialCommunityIcons name="robot" size={16} color={theme.accent} />
+              </View>
+              <View style={styles.aiDots}>
+                <View style={[styles.dot, { backgroundColor: '#E0E0E0' }]} />
+                <View style={[styles.dot, { backgroundColor: '#E0E0E0' }]} />
+                <View style={[styles.dot, { backgroundColor: '#E0E0E0' }]} />
+              </View>
+            </View>
 
-             <View style={styles.transactionItem}>
-                <View style={[styles.categoryLabel, { backgroundColor: '#B088FF20' }]}>
-                   <Text style={[styles.labelText, { color: '#B088FF' }]}>⬙ CATEGORY</Text>
-                   <Text style={[styles.valueText, { color: theme.text }]}>Groceries</Text>
-                </View>
-             </View>
+            <View style={styles.transactionItem}>
+              <View style={[styles.amountLabel, { backgroundColor: theme.accent + '20' }]}>
+                <Text style={[styles.labelText, { color: theme.accent }]}>₹ AMOUNT</Text>
+                <Text style={[styles.valueText, { color: theme.text }]}>₹32.50</Text>
+              </View>
+            </View>
 
-             <View style={styles.transactionItem}>
-                <View style={[styles.accountLabel, { backgroundColor: '#4A90E220' }]}>
-                   <Text style={[styles.labelText, { color: '#4A90E2' }]}>💳 ACCOUNT</Text>
-                   <Text style={[styles.valueText, { color: theme.text }]}>Visa ****</Text>
-                   <MaterialCommunityIcons name="check-circle" size={14} color="#4A90E2" style={{ marginLeft: 4 }} />
-                </View>
-             </View>
+            <View style={styles.transactionItem}>
+              <View style={[styles.categoryLabel, { backgroundColor: '#B088FF20' }]}>
+                <Text style={[styles.labelText, { color: '#B088FF' }]}>⬙ CATEGORY</Text>
+                <Text style={[styles.valueText, { color: theme.text }]}>Groceries</Text>
+              </View>
+            </View>
+
+            <View style={styles.transactionItem}>
+              <View style={[styles.accountLabel, { backgroundColor: '#4A90E220' }]}>
+                <Text style={[styles.labelText, { color: '#4A90E2' }]}>💳 ACCOUNT</Text>
+                <Text style={[styles.valueText, { color: theme.text }]}>Visa ****</Text>
+                <MaterialCommunityIcons name="check-circle" size={14} color="#4A90E2" style={{ marginLeft: 4 }} />
+              </View>
+            </View>
           </View>
-          
+
           {/* Floating AI Bubble */}
           <View style={[styles.floatingAiHead, { backgroundColor: theme.accent }]}>
-             <MaterialCommunityIcons name="robot" size={24} color="white" />
-             <View style={styles.questionMark}>
-                <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>?</Text>
-             </View>
+            <MaterialCommunityIcons name="robot" size={24} color="white" />
+            <View style={styles.questionMark}>
+              <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>?</Text>
+            </View>
           </View>
         </View>
 
@@ -99,89 +99,89 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   aiHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   aiIconCircle: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   aiDots: {
-      flexDirection: 'row',
-      gap: 4,
+    flexDirection: 'row',
+    gap: 4,
   },
   dot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   transactionItem: {
-      marginBottom: 12,
+    marginBottom: 12,
   },
   amountLabel: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: 10,
-      borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 12,
   },
   categoryLabel: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: 10,
-      borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 12,
   },
   accountLabel: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: 10,
-      borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 12,
   },
   labelText: {
-      fontSize: 10,
-      fontWeight: '800',
-      letterSpacing: 0.5,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   valueText: {
-      fontSize: 12,
-      fontWeight: '600',
-      flex: 1,
-      textAlign: 'right',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
   },
   floatingAiHead: {
-      position: 'absolute',
-      right: 40,
-      top: 60,
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: '#FF8865',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.3,
-      shadowRadius: 15,
-      elevation: 8,
+    position: 'absolute',
+    right: 40,
+    top: 60,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#FF8865',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 8,
   },
   questionMark: {
-      position: 'absolute',
-      top: -4,
-      right: -4,
-      backgroundColor: '#FF8865',
-      width: 16,
-      height: 16,
-      borderRadius: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      borderColor: 'white',
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF8865',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
   },
   textGroup: {
     alignItems: 'center',

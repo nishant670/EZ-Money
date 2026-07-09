@@ -74,8 +74,18 @@ export type InsightsResponse = {
     review_items: ReviewItem[];
 };
 
-export const fetchInsights = async (token: string): Promise<InsightsResponse> => {
-    const response = await fetch(`${API_BASE_URL}/v1/insights`, {
+export const fetchInsights = async (token: string, startDate?: string, endDate?: string): Promise<InsightsResponse> => {
+    let url = `${API_BASE_URL}/v1/insights`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+
+    const queryString = params.toString();
+    if (queryString) {
+        url += `?${queryString}`;
+    }
+
+    const response = await fetch(url, {
         headers: {
             Authorization: `Bearer ${token}`,
         },
