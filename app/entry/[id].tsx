@@ -166,7 +166,7 @@ export default function TransactionDetailsScreen() {
 
             const payload: any = {
                 title: formData.title,
-                amount: Number(formData.amount),
+                amount: formData.amount.trim(),
                 currency: formData.currency || DEFAULT_CURRENCY,
                 account_id: formData.accountId,
                 type: formData.type.toLowerCase(),

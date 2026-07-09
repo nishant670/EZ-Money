@@ -68,9 +68,11 @@ type ParseResponse = {
   category: string | null;
   merchant: string | null;
   tag: string | null;
-  notes: string | null;
+  note: string | null;
   date: string | null;
   source_text: string | null;
+  recurring_candidate?: boolean | null;
+  split_candidate?: boolean | null;
   confidence?: Record<string, number>;
   needs_confirmation?: Record<string, boolean>;
   missing_fields?: string[];
@@ -137,6 +139,8 @@ export default function HomeScreen() {
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
+  const [aiSourceText, setAiSourceText] = useState('');
+  const [aiInputSource, setAiInputSource] = useState<'text' | 'voice'>('text');
 
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<import('@/components/home/QuickPrompts').QuickPrompt | null>(null);
@@ -373,6 +377,8 @@ export default function HomeScreen() {
 
   const handleOpenManualEntry = useCallback(() => {
     setAiReview(null);
+    setAiSourceText('');
+    setAiInputSource('text');
     setForm(createBlankForm());
     setModalMode('manual');
     setIsEditOpen(true);
@@ -420,8 +426,10 @@ export default function HomeScreen() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: Number(formData.amount),
+          amount: formData.amount.trim(),
           currency: formData.currency || DEFAULT_CURRENCY,
+          source: modalMode === 'audio' ? aiInputSource : 'manual',
+          source_text: modalMode === 'audio' ? aiSourceText : '',
           account_id: formData.accountId,
           type: formData.type.toLowerCase(),
           mode: formData.mode,
@@ -442,13 +450,14 @@ export default function HomeScreen() {
       }
       await fetchEntries();
       setForm(createBlankForm());
+      setAiSourceText('');
       setIsEditOpen(false);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Unable to save your entry. Please try again.');
     } finally {
       setIsSavingEntry(false);
     }
-  }, [createBlankForm, fetchEntries, token]);
+  }, [aiInputSource, aiSourceText, createBlankForm, fetchEntries, modalMode, token]);
 
   const handleSubmitPrompt = useCallback(async () => {
     if (isSubmitting) return;
@@ -486,6 +495,8 @@ export default function HomeScreen() {
         throw new Error(errorText || 'Unable to parse the entry right now.');
       }
       const data: ParseResponse = await response.json();
+      setAiSourceText(data.source_text ?? trimmed);
+      setAiInputSource(recordedUri ? 'voice' : 'text');
       setAiReview({
         confidence: data.confidence,
         needsConfirmation: data.needs_confirmation,
@@ -493,22 +504,25 @@ export default function HomeScreen() {
         clarifications: data.clarifications,
       });
       setForm((prev) => {
-        const formattedDate = normalizeDateLabel(data.date, prev.date);
-        const tagValue = data.tag ?? prev.tag;
-        const newType = toTitleCase(data.type) ?? prev.type;
+        const missing = new Set(data.missing_fields ?? []);
+        const formattedDate = missing.has('date') || !data.date
+          ? ''
+          : normalizeDateLabel(data.date, '');
+        const tagValue = data.tag ?? '';
+        const newType = missing.has('type') ? '' : toTitleCase(data.type) ?? '';
         return {
           ...prev,
-          title: data.title ?? prev.title,
-          amount: data.amount != null ? data.amount.toFixed(2) : prev.amount,
+          title: missing.has('title') ? '' : data.title ?? '',
+          amount: missing.has('amount') || data.amount == null ? '' : data.amount.toFixed(2),
           currency: data.currency ?? prev.currency,
           time: data.time ?? prev.time,
           type: newType,
-          mode: data.mode ?? prev.mode,
-          category: data.category ?? prev.category,
-          merchant: data.merchant ?? prev.merchant,
-          notes: data.notes ?? prev.notes,
+          mode: missing.has('mode') ? '' : data.mode ?? '',
+          category: missing.has('category') ? '' : data.category ?? '',
+          merchant: data.merchant ?? '',
+          notes: data.note ?? '',
           date: formattedDate,
-          tag: tagValue ? toTitleCase(tagValue) ?? prev.tag : prev.tag,
+          tag: tagValue ? toTitleCase(tagValue) ?? '' : '',
         };
       });
       setInputText('');
