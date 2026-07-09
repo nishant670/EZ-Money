@@ -36,11 +36,11 @@ export default function Screen3() {
 
                 <View style={[styles.fieldRow, styles.activeRow, { backgroundColor: theme.accent + '10' }]}>
                    <View style={[styles.iconBox, { backgroundColor: 'white' }]}>
-                      <MaterialCommunityIcons name="currency-usd" size={18} color={theme.accent} />
+                      <MaterialCommunityIcons name="currency-inr" size={18} color={theme.accent} />
                    </View>
                    <View style={styles.fieldTexts}>
                       <Text style={[styles.fieldLabel, { color: theme.accent }]}>Amount</Text>
-                      <Text style={[styles.fieldValue, { color: theme.text }]}>$82.00?</Text>
+                      <Text style={[styles.fieldValue, { color: theme.text }]}>₹820.00?</Text>
                    </View>
                    <View style={[styles.checkBadge, { backgroundColor: '#FF5F56' }]}>
                       <MaterialCommunityIcons name="alert-circle" size={10} color="white" />
@@ -69,10 +69,10 @@ export default function Screen3() {
 
         <View style={styles.textGroup}>
           <Text style={[styles.title, { color: theme.text, fontFamily: Fonts.title }]}>
-            You're always in <Text style={{ color: theme.accent }}>control</Text>
+            You&apos;re always in <Text style={{ color: theme.accent }}>control</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
-            Review, edit, and confirm every entry before it's saved. Nothing slips through without your okay.
+            Review, edit, and confirm every entry before it&apos;s saved. Nothing slips through without your okay.
           </Text>
         </View>
       </View>

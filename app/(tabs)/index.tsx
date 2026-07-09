@@ -42,7 +42,7 @@ import {
 } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { CURRENCY_SYMBOL } from '@/constants/Currency';
+import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   TransactionFormModal,
@@ -104,7 +104,7 @@ export default function HomeScreen() {
     time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
     notes: '',
     tag: 'General',
-    currency: 'USD',
+    currency: DEFAULT_CURRENCY,
     account: 'Main Account',
     merchant: '',
     attachment: null,
@@ -404,6 +404,7 @@ export default function HomeScreen() {
         },
         body: JSON.stringify({
           amount: Number(formData.amount),
+          currency: formData.currency || DEFAULT_CURRENCY,
           type: formData.type.toLowerCase(),
           mode: formData.mode,
           category: formData.category,
@@ -482,6 +483,7 @@ export default function HomeScreen() {
           ...prev,
           title: data.title ?? prev.title,
           amount: data.amount != null ? data.amount.toFixed(2) : prev.amount,
+          currency: data.currency ?? prev.currency,
           time: data.time ?? prev.time,
           type: newType,
           mode: data.mode ?? prev.mode,

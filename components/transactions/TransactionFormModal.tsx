@@ -23,7 +23,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { CURRENCY_SYMBOL } from '@/constants/Currency';
+import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { formatDateLabel, parseDateLabel } from '@/lib/transactions';
 
 export type EntryForm = {
@@ -117,7 +117,7 @@ export function TransactionFormModal({
         time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
         notes: '',
         tag: 'General',
-        currency: 'USD',
+        currency: DEFAULT_CURRENCY,
         account: 'Main Account',
         merchant: '',
         attachment: null,
@@ -165,7 +165,7 @@ export function TransactionFormModal({
                 time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
                 notes: '',
                 tag: 'General',
-                currency: 'USD',
+                currency: DEFAULT_CURRENCY,
                 account: 'Main Account',
                 merchant: '',
                 attachment: null,

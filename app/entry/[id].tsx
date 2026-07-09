@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-import { CURRENCY_SYMBOL } from '@/constants/Currency';
+import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { TransactionFormModal, type EntryForm } from '@/components/transactions/TransactionFormModal';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
@@ -162,6 +162,7 @@ export default function TransactionDetailsScreen() {
             const payload: any = {
                 title: formData.title,
                 amount: Number(formData.amount),
+                currency: formData.currency || DEFAULT_CURRENCY,
                 type: formData.type.toLowerCase(),
                 mode: formData.mode,
                 category: formData.category,
@@ -208,14 +209,14 @@ export default function TransactionDetailsScreen() {
     const editInitialData: EntryForm = {
         title: displayData.title || '',
         amount: amountValue.toString(),
-        type: displayData.type ? toTitleCase(displayData.type) : 'Expense',
+        type: displayData.type ? (toTitleCase(displayData.type) ?? 'Expense') : 'Expense',
         mode: displayData.mode || 'Cash',
         category: displayData.category || 'Food',
         date: displayData.date || formatDateLabel(new Date()),
         time: displayData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
         notes: displayData.notes || '',
         tag: displayData.tag || 'General',
-        currency: 'USD',
+        currency: displayData.currency || DEFAULT_CURRENCY,
         account: 'Main Account',
         merchant: displayData.merchant || '',
         attachment: null
