@@ -64,7 +64,7 @@ interface TransactionFormModalProps {
     onManageAccounts?: () => void;
 }
 
-const requiredFields: (keyof EntryForm)[] = ['title', 'amount', 'type', 'mode', 'category', 'date', 'accountId'];
+const requiredFields: (keyof EntryForm)[] = ['title', 'amount', 'type', 'mode', 'category', 'date'];
 const fieldLabels: Record<keyof EntryForm, string> = {
     title: 'Transaction Title',
     time: 'Time',
@@ -278,10 +278,7 @@ export function TransactionFormModal({
     };
 
     const handleConfirmEntry = async () => {
-        const fieldsToRequire = mode === 'quick-prompt'
-            ? requiredFields.filter((field) => field !== 'accountId')
-            : requiredFields;
-        const missingField = fieldsToRequire.find((field) => {
+        const missingField = requiredFields.find((field) => {
             const value = form[field];
             return typeof value === 'string' ? value.trim().length === 0 : !value;
         });
@@ -484,8 +481,8 @@ export function TransactionFormModal({
                                                         <MaterialCommunityIcons name="wallet-outline" size={24} color="#3B82F6" />
                                                     </View>
                                                     <View>
-                                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account</ThemedText>
-                                                        <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.account || 'Select account'}</ThemedText>
+                                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account (optional)</ThemedText>
+                                                        <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.account || 'No account'}</ThemedText>
                                                     </View>
                                                 </View>
                                                 <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
@@ -666,6 +663,16 @@ export function TransactionFormModal({
                         <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
                             <ThemedText className="text-center text-lg font-bold mb-6">Select Account</ThemedText>
                             <View className="gap-2">
+                                <Pressable
+                                    onPress={() => {
+                                        setForm(p => ({ ...p, accountId: null, account: '' }));
+                                        setIsAccountPickerVisible(false);
+                                    }}
+                                    className={`p-4 rounded-2xl flex-row items-center justify-between ${form.accountId === null ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}
+                                >
+                                    <ThemedText className={`font-bold ${form.accountId === null ? 'text-blue-500' : 'text-gray-700'}`}>No account</ThemedText>
+                                    {form.accountId === null && <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />}
+                                </Pressable>
                                 {accounts.map(account => (
                                     <Pressable
                                         key={account.id}
@@ -684,7 +691,7 @@ export function TransactionFormModal({
                                 ))}
                                 {accounts.length === 0 && (
                                     <View className="items-center gap-4 py-4">
-                                        <ThemedText className="text-center text-sm text-gray-500">Add an account before saving this transaction.</ThemedText>
+                                        <ThemedText className="text-center text-sm text-gray-500">You can save without an account or add one for tracking.</ThemedText>
                                         {onManageAccounts && (
                                             <Pressable
                                                 accessibilityRole="button"
