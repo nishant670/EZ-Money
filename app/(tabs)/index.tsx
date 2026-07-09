@@ -44,7 +44,11 @@ import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import * as DocumentPicker from 'expo-document-picker';
-import { TransactionFormModal, type EntryForm } from '@/components/transactions/TransactionFormModal';
+import {
+  TransactionFormModal,
+  type AiReviewMetadata,
+  type EntryForm,
+} from '@/components/transactions/TransactionFormModal';
 
 import '../../global.css';
 
@@ -68,6 +72,7 @@ type ParseResponse = {
   source_text: string | null;
   confidence?: Record<string, number>;
   needs_confirmation?: Record<string, boolean>;
+  missing_fields?: string[];
   clarifications?: string[];
 };
 
@@ -126,6 +131,7 @@ export default function HomeScreen() {
   const [entriesError, setEntriesError] = useState<string | null>(null);
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
 
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<import('@/components/home/QuickPrompts').QuickPrompt | null>(null);
@@ -145,6 +151,7 @@ export default function HomeScreen() {
   const handleQuickPromptSelect = useCallback((prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
     const blank = createBlankForm();
     const now = new Date();
+    setAiReview(null);
     setForm({
       ...blank,
       title: prompt.title,
@@ -348,6 +355,7 @@ export default function HomeScreen() {
   }, []);
 
   const handleOpenManualEntry = useCallback(() => {
+    setAiReview(null);
     setForm(createBlankForm());
     setModalMode('manual');
     setIsEditOpen(true);
@@ -460,7 +468,12 @@ export default function HomeScreen() {
         throw new Error(errorText || 'Unable to parse the entry right now.');
       }
       const data: ParseResponse = await response.json();
-      console.log("Parsed Data", data);
+      setAiReview({
+        confidence: data.confidence,
+        needsConfirmation: data.needs_confirmation,
+        missingFields: data.missing_fields,
+        clarifications: data.clarifications,
+      });
       setForm((prev) => {
         const formattedDate = normalizeDateLabel(data.date, prev.date);
         const tagValue = data.tag ?? prev.tag;
@@ -608,7 +621,7 @@ export default function HomeScreen() {
 
         <View className="px-6 pb-6">
           <ThemedText className="text-3xl font-black leading-tight text-center" style={{ color: theme.text }}>What did you do today?</ThemedText>
-          <ThemedText className="text-sm text-gray-500 mt-2 font-medium text-center">Let's track your ins and outs!</ThemedText>
+          <ThemedText className="text-sm text-gray-500 mt-2 font-medium text-center">Let&apos;s track your ins and outs!</ThemedText>
         </View>
 
         <VoiceInputCard
@@ -655,6 +668,7 @@ export default function HomeScreen() {
         initialData={form}
         onSave={handleConfirmEntry}
         mode={modalMode}
+        aiReview={aiReview}
       />
       <TransactionFormModal
         visible={isPromptModalOpen}
