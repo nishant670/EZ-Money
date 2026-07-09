@@ -460,6 +460,7 @@ export default function HomeScreen() {
         throw new Error(errorText || 'Unable to parse the entry right now.');
       }
       const data: ParseResponse = await response.json();
+      console.log("Parsed Data", data);
       setForm((prev) => {
         const formattedDate = normalizeDateLabel(data.date, prev.date);
         const tagValue = data.tag ?? prev.tag;
