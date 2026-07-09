@@ -5,6 +5,12 @@ import { Transaction } from '@/types/transaction';
 
 export type ApiEntry = {
   id?: string;
+  account_id?: number | null;
+  account?: {
+    id: number;
+    name: string;
+    type: string;
+  } | null;
   amount?: number | string;
   type?: string;
   mode?: string;
@@ -23,6 +29,7 @@ export interface TransactionFilters {
   type?: string;
   category?: string;
   mode?: string;
+  account_id?: number;
   min_amount?: number;
   max_amount?: number;
   start_date?: string;
@@ -211,6 +218,8 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
     occurredAt: timestamp,
     entryType: normalizedType,
     mode: entry.mode ?? null,
+    accountId: entry.account_id ?? null,
+    accountName: entry.account?.name ?? null,
     notes: entry.notes ?? null,
     merchant: entry.merchant ?? null,
     dateLabel: formattedDate,

@@ -13,6 +13,8 @@ export type Transaction = {
   occurredAt?: number;
   entryType?: 'income' | 'expense';
   mode?: string | null;
+  accountId?: number | null;
+  accountName?: string | null;
   notes?: string | null;
   merchant?: string | null;
   dateLabel?: string | null;

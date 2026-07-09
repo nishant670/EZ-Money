@@ -43,6 +43,7 @@ import {
 import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
+import { Account, fetchAccounts as loadAccounts } from '@/lib/accounts';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   TransactionFormModal,
@@ -105,16 +106,20 @@ export default function HomeScreen() {
     notes: '',
     tag: 'General',
     currency: DEFAULT_CURRENCY,
-    account: 'Main Account',
+    accountId: null,
+    account: '',
     merchant: '',
     attachment: null,
   }), []);
 
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const createBlankForm = useCallback((): EntryForm => ({
     ...defaultForm,
+    accountId: accounts.find((account) => account.is_default)?.id ?? accounts[0]?.id ?? null,
+    account: accounts.find((account) => account.is_default)?.name ?? accounts[0]?.name ?? '',
     merchant: '',
     notes: '',
-  }), [defaultForm]);
+  }), [accounts, defaultForm]);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [form, setForm] = useState<EntryForm>(defaultForm);
@@ -160,7 +165,6 @@ export default function HomeScreen() {
       time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
       mode: prompt.mode,
       category: prompt.category,
-      account: 'Main Account',
     });
     setModalMode('manual');
     setIsEditOpen(true);
@@ -269,10 +273,23 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  const fetchAccountOptions = useCallback(async () => {
+    if (!token) {
+      setAccounts([]);
+      return;
+    }
+    try {
+      setAccounts(await loadAccounts(token));
+    } catch {
+      setAccounts([]);
+    }
+  }, [token]);
+
   useFocusEffect(
     useCallback(() => {
-      fetchEntries();
-    }, [fetchEntries])
+      void fetchEntries();
+      void fetchAccountOptions();
+    }, [fetchAccountOptions, fetchEntries])
   );
 
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
@@ -405,13 +422,13 @@ export default function HomeScreen() {
         body: JSON.stringify({
           amount: Number(formData.amount),
           currency: formData.currency || DEFAULT_CURRENCY,
+          account_id: formData.accountId,
           type: formData.type.toLowerCase(),
           mode: formData.mode,
           category: formData.category,
           notes: formData.notes.trim(),
-          date: parsedDate ? parsedDate.toISOString() : formData.date,
+          date: parsedDate ? parsedDate.toISOString().split('T')[0] : formData.date,
           tag: trimmedTag.length > 0 ? trimmedTag : null,
-          account: formData.account,
           merchant: formData.merchant.trim(),
           title: formData.title.trim() || 'Untitled Transaction',
           time: formData.time,
@@ -518,7 +535,7 @@ export default function HomeScreen() {
         icon={item.icon}
         //@ts-ignore
         category={item.category}
-        subtitle={`${item.category} • ${item.mode}`}
+        subtitle={`${item.category} • ${item.accountName ?? item.mode ?? ''}`}
         amount={displayAmount}
         date={dateStr}
         color={item.color}
@@ -584,7 +601,7 @@ export default function HomeScreen() {
               title={item.name}
               icon={item.icon}
               category={item.category}
-              subtitle={item.mode ?? ''}
+              subtitle={item.accountName ?? item.mode ?? ''}
               amount={Math.abs(item.amount).toFixed(2)}
               date={item.section}
               color={item.color}
@@ -671,6 +688,8 @@ export default function HomeScreen() {
         onSave={handleConfirmEntry}
         mode={modalMode}
         aiReview={aiReview}
+        accounts={accounts}
+        onManageAccounts={() => router.push('/accounts')}
       />
       <TransactionFormModal
         visible={isPromptModalOpen}

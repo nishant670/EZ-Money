@@ -15,11 +15,12 @@ import { Account, fetchAccounts } from '@/lib/accounts';
 const TView = cssInterop(ThemedView, { className: 'style' });
 const TText = cssInterop(ThemedText, { className: 'style' });
 
-type AccountType = 'credit' | 'debit' | 'bank' | 'wallet' | 'upi' | 'other';
+type AccountType = 'cash' | 'credit' | 'debit' | 'bank' | 'wallet' | 'upi' | 'other';
 type AccountFilter = 'all' | AccountType;
 
 const filterOptions: { key: AccountFilter; label: string }[] = [
   { key: 'all', label: 'All' },
+  { key: 'cash', label: 'Cash' },
   { key: 'credit', label: 'Credit Cards' },
   { key: 'debit', label: 'Debit Cards' },
   { key: 'bank', label: 'Bank Accounts' },
@@ -168,6 +169,7 @@ export default function AccountsScreen() {
 
   const renderAccountRow = (account: Account) => {
     const iconName: Record<AccountType, keyof typeof MaterialCommunityIcons.glyphMap> = {
+      cash: 'cash',
       credit: 'credit-card-outline',
       debit: 'credit-card-outline',
       bank: 'bank-outline',

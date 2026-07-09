@@ -11,6 +11,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { Account, fetchAccounts } from '@/lib/accounts';
 import { groupTransactionsBySection, loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
@@ -25,6 +26,7 @@ export default function TransactionsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   // Filter States
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -35,6 +37,7 @@ export default function TransactionsScreen() {
   const [endDate, setEndDate] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [activeDatePill, setActiveDatePill] = useState('This Month');
 
 
@@ -48,6 +51,7 @@ export default function TransactionsScreen() {
         type: filterType === 'All' ? undefined : filterType,
         category: selectedCategory ?? undefined,
         mode: selectedMethod ?? undefined,
+        account_id: selectedAccountId ?? undefined,
         // Only send amount filter if it differs from default range
         min_amount: minAmount > 0 ? minAmount : undefined,
         max_amount: maxAmount < 10000 ? maxAmount : undefined,
@@ -61,12 +65,15 @@ export default function TransactionsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, filterType, selectedCategory, selectedMethod, minAmount, maxAmount, startDate, endDate]);
+  }, [token, filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate]);
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      void load();
+      if (token) {
+        void fetchAccounts(token).then(setAccounts).catch(() => setAccounts([]));
+      }
+    }, [load, token])
   );
 
   // Filter Logic (Search remains FE only for speed)
@@ -88,12 +95,13 @@ export default function TransactionsScreen() {
       filterType !== 'All' ||
       selectedCategory !== null ||
       selectedMethod !== null ||
+      selectedAccountId !== null ||
       minAmount > 0 ||
       maxAmount < 10000 ||
       startDate !== null ||
       endDate !== null
     );
-  }, [filterType, selectedCategory, selectedMethod, minAmount, maxAmount, startDate, endDate]);
+  }, [filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate]);
 
   const sections = useMemo(
     () => groupTransactionsBySection(filteredTransactions),
@@ -117,7 +125,7 @@ export default function TransactionsScreen() {
           icon={item.icon as any}
           title={item.name}
           category={item.category}
-          subtitle={item.mode ?? ''}
+          subtitle={item.accountName ?? item.mode ?? ''}
           amount={`${displayAmount}`}
           date={""}
           color={item.color}
@@ -245,6 +253,7 @@ export default function TransactionsScreen() {
               setFilterType(newFilters.type);
               setSelectedCategory(newFilters.category);
               setSelectedMethod(newFilters.mode);
+              setSelectedAccountId(newFilters.account_id);
               setMinAmount(newFilters.min_amount);
               setMaxAmount(newFilters.max_amount);
               setStartDate(newFilters.start_date);
@@ -256,9 +265,10 @@ export default function TransactionsScreen() {
               dateRange: { from: startDate, to: endDate },
               amountRange: { min: minAmount, max: maxAmount },
               category: selectedCategory,
-              account: null,
+              accountId: selectedAccountId,
               paymentMethod: selectedMethod,
             }}
+            accounts={accounts}
           />
         </View>
       </Modal>

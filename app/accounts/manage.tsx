@@ -21,6 +21,7 @@ type AccountTypeOption = {
 };
 
 const typeOptions: AccountTypeOption[] = [
+  { key: 'cash', label: 'Cash', icon: 'cash', color: '#2ECC71', bgColor: '#EAF8F0' },
   { key: 'credit', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
   { key: 'debit', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
   { key: 'wallet', label: 'Wallet', icon: 'wallet', color: '#FF9F43', bgColor: '#FFF4EB' },
@@ -164,7 +165,7 @@ export default function ManageAccountScreen() {
         <View style={styles.mascotSection}>
           <View style={styles.bubbleContainer}>
             <ThemedText style={styles.bubbleText}>
-              Let's set up your new account!
+              Let&apos;s set up your new account!
             </ThemedText>
             <View style={styles.bubbleTriangle} />
           </View>
@@ -173,7 +174,7 @@ export default function ManageAccountScreen() {
               <MaterialCommunityIcons name="face-woman-outline" size={24} color="#FF8A65" />
             </View>
             <ThemedText style={styles.mascotCaption}>
-              "I'll help you organize your cash flow."
+              &quot;I&apos;ll help you organize your cash flow.&quot;
             </ThemedText>
           </View>
         </View>
@@ -280,7 +281,7 @@ export default function ManageAccountScreen() {
             <View style={styles.mascotSection}>
               <View style={[styles.bubbleContainer, { backgroundColor: '#F4F1FE' }]}>
                 <ThemedText style={styles.bubbleText}>
-                  Yay! Let's set up your plastic power.
+                  Yay! Let&apos;s set up your plastic power.
                 </ThemedText>
                 <View style={[styles.bubbleTriangle, { backgroundColor: '#F4F1FE' }]} />
               </View>

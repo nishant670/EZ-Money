@@ -12,6 +12,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { TransactionFormModal, type EntryForm } from '@/components/transactions/TransactionFormModal';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { Account, fetchAccounts } from '@/lib/accounts';
 import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
 
 export default function TransactionDetailsScreen() {
@@ -35,6 +36,7 @@ export default function TransactionDetailsScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [accounts, setAccounts] = useState<Account[]>([]);
 
     const [isExpanded, setIsExpanded] = useState(true);
     const [attachment, setAttachment] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
@@ -59,6 +61,9 @@ export default function TransactionDetailsScreen() {
 
     useEffect(() => {
         fetchTransactionDetails();
+        if (token) {
+            fetchAccounts(token).then(setAccounts).catch(() => setAccounts([]));
+        }
     }, [params.id, token]);
 
     const fetchTransactionDetails = async () => {
@@ -163,6 +168,7 @@ export default function TransactionDetailsScreen() {
                 title: formData.title,
                 amount: Number(formData.amount),
                 currency: formData.currency || DEFAULT_CURRENCY,
+                account_id: formData.accountId,
                 type: formData.type.toLowerCase(),
                 mode: formData.mode,
                 category: formData.category,
@@ -217,7 +223,8 @@ export default function TransactionDetailsScreen() {
         notes: displayData.notes || '',
         tag: displayData.tag || 'General',
         currency: displayData.currency || DEFAULT_CURRENCY,
-        account: 'Main Account',
+        accountId: displayData.account_id || null,
+        account: displayData.account?.name || accounts.find((account) => account.id === displayData.account_id)?.name || '',
         merchant: displayData.merchant || '',
         attachment: null
     };
@@ -335,7 +342,7 @@ export default function TransactionDetailsScreen() {
                                     </View>
                                     <View>
                                         <ThemedText className="text-[9px] uppercase font-black text-gray-300">ACCOUNT</ThemedText>
-                                        <ThemedText className="text-sm font-black text-slate-700">HDFC Savings</ThemedText>
+                                        <ThemedText className="text-sm font-black text-slate-700">{displayData.account?.name || 'Not linked'}</ThemedText>
                                     </View>
                                 </View>
                             </View>
@@ -435,6 +442,8 @@ export default function TransactionDetailsScreen() {
                 initialData={editInitialData}
                 onSave={handleSaveUpdate}
                 isEdit={true}
+                accounts={accounts}
+                onManageAccounts={() => router.push('/accounts')}
             />
 
         </SafeAreaView>
