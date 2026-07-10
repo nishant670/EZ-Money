@@ -111,8 +111,28 @@ export function TransactionFormModal({
     const [backdropAnim] = useState(new Animated.Value(0));
     const [typeSwitchAnim] = useState(new Animated.Value(0));
     const [showModal, setShowModal] = useState(visible);
+    const defaultAccount = useMemo(
+        () => accounts.find((account) => account.is_default) ?? accounts.find((account) => account.type === 'cash') ?? accounts[0] ?? null,
+        [accounts],
+    );
+    const resolveEntryFormAccount = useCallback((nextForm: EntryForm): EntryForm => {
+        if (mode === 'quick-prompt') {
+            return nextForm;
+        }
+        if (nextForm.accountId !== null) {
+            const selectedAccount = accounts.find((account) => account.id === nextForm.accountId);
+            if (selectedAccount && (nextForm.account ?? '').trim().length === 0) {
+                return { ...nextForm, account: selectedAccount.name };
+            }
+            return nextForm;
+        }
+        if (defaultAccount) {
+            return { ...nextForm, accountId: defaultAccount.id, account: defaultAccount.name };
+        }
+        return nextForm;
+    }, [accounts, defaultAccount, mode]);
 
-    const [form, setForm] = useState<EntryForm>({
+    const [form, setForm] = useState<EntryForm>(() => resolveEntryFormAccount({
         title: '',
         amount: '',
         type: 'Expense',
@@ -128,7 +148,7 @@ export function TransactionFormModal({
         merchant: '',
         attachment: null,
         ...initialData
-    });
+    }));
 
     const [isMoreDetailsExpanded, setIsMoreDetailsExpanded] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -161,7 +181,7 @@ export function TransactionFormModal({
     useEffect(() => {
         if (visible) {
             setShowModal(true);
-            setForm({
+            setForm(resolveEntryFormAccount({
                 title: '',
                 amount: '',
                 type: 'Expense',
@@ -177,7 +197,7 @@ export function TransactionFormModal({
                 merchant: '',
                 attachment: null,
                 ...initialData
-            });
+            }));
             typeSwitchAnim.setValue((initialData?.type || 'Expense') === 'Income' ? 1 : 0);
 
             Animated.parallel([
@@ -211,6 +231,17 @@ export function TransactionFormModal({
             });
         }
     }, [visible, SCREEN_HEIGHT]); // removed initialData to prevent reset on type change if needed, but keeping for now as it syncs parent state
+
+    useEffect(() => {
+        if (!visible || mode === 'quick-prompt' || form.accountId !== null || !defaultAccount) {
+            return;
+        }
+        setForm((prev) => prev.accountId !== null ? prev : {
+            ...prev,
+            accountId: defaultAccount.id,
+            account: defaultAccount.name,
+        });
+    }, [visible, mode, form.accountId, defaultAccount]);
 
     const animateTypeSwitch = useCallback((isIncome: boolean) => {
         Animated.spring(typeSwitchAnim, {
@@ -285,6 +316,10 @@ export function TransactionFormModal({
 
         if (missingField) {
             setFormError(`Please provide ${fieldLabels[missingField]}.`);
+            return;
+        }
+        if (mode !== 'quick-prompt' && form.accountId === null) {
+            setFormError(accounts.length === 0 ? 'Add an account before saving this transaction.' : 'Please select an account.');
             return;
         }
 
@@ -475,22 +510,20 @@ export function TransactionFormModal({
                                                 </View>
                                                 <MaterialCommunityIcons name="pencil-outline" size={18} color="#D1D5DB" />
                                             </Pressable>
-                                            {form.mode !== 'Cash' && (
-                                                <Pressable onPress={() => setIsAccountPickerVisible(true)} className="mt-4 w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
-                                                    <View className="flex-row items-center gap-4">
-                                                        <View className="h-12 w-12 rounded-2xl bg-blue-50 items-center justify-center">
-                                                            <MaterialCommunityIcons name="wallet-outline" size={24} color="#3B82F6" />
-                                                        </View>
-                                                        <View>
-                                                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account (optional)</ThemedText>
-                                                            <ThemedText className="text-base font-bold" style={{ color: theme.text }}>
-                                                                {form.account || (accounts.length === 0 ? 'Add an account' : 'No account')}
-                                                            </ThemedText>
-                                                        </View>
+                                            <Pressable onPress={() => setIsAccountPickerVisible(true)} className="mt-4 w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
+                                                <View className="flex-row items-center gap-4">
+                                                    <View className="h-12 w-12 rounded-2xl bg-blue-50 items-center justify-center">
+                                                        <MaterialCommunityIcons name="wallet-outline" size={24} color="#3B82F6" />
                                                     </View>
-                                                    <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
-                                                </Pressable>
-                                            )}
+                                                    <View>
+                                                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account</ThemedText>
+                                                        <ThemedText className="text-base font-bold" style={{ color: theme.text }}>
+                                                            {form.account || (accounts.length === 0 ? 'Add an account' : 'Select an account')}
+                                                        </ThemedText>
+                                                    </View>
+                                                </View>
+                                                <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
+                                            </Pressable>
                                         </>
                                     )}
                                 </View>
@@ -634,11 +667,7 @@ export function TransactionFormModal({
                                     <Pressable
                                         key={m}
                                         onPress={() => {
-                                            setForm(p => ({
-                                                ...p,
-                                                mode: m,
-                                                ...(m === 'Cash' ? { accountId: null, account: '' } : {}),
-                                            }));
+                                            setForm(p => ({ ...p, mode: m }));
                                             setIsModePickerVisible(false);
                                         }}
                                         className={`p-4 rounded-2xl flex-row items-center justify-between ${form.mode === m ? 'bg-orange-50 border border-orange-100' : 'bg-gray-50'}`}
@@ -678,16 +707,6 @@ export function TransactionFormModal({
                         <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
                             <ThemedText className="text-center text-lg font-bold mb-6">Select Account</ThemedText>
                             <View className="gap-2">
-                                <Pressable
-                                    onPress={() => {
-                                        setForm(p => ({ ...p, accountId: null, account: '' }));
-                                        setIsAccountPickerVisible(false);
-                                    }}
-                                    className={`p-4 rounded-2xl flex-row items-center justify-between ${form.accountId === null ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}
-                                >
-                                    <ThemedText className={`font-bold ${form.accountId === null ? 'text-blue-500' : 'text-gray-700'}`}>No account</ThemedText>
-                                    {form.accountId === null && <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />}
-                                </Pressable>
                                 {accounts.map(account => (
                                     <Pressable
                                         key={account.id}
@@ -707,7 +726,7 @@ export function TransactionFormModal({
                                 {accounts.length === 0 && (
                                     <View className="items-center gap-4 py-4">
                                         <ThemedText className="text-center text-sm text-gray-500">
-                                            Add an account to track your outflows smartly. You can still save this transaction without one.
+                                            Add an account before saving this transaction.
                                         </ThemedText>
                                         {onManageAccounts && (
                                             <Pressable
