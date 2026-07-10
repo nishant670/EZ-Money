@@ -33,14 +33,12 @@ export default function ProfileScreen() {
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
       {/* Header */}
       <View className="flex-row items-center justify-between px-6 py-4">
-        <Pressable hitSlop={20}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.text} />
-        </Pressable>
+        <View style={{ width: 24 }} />
         <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
           Your Playbook
         </TText>
-        <Pressable hitSlop={20}>
-          <MaterialCommunityIcons name="pencil-outline" size={24} color={theme.text} />
+        <Pressable onPress={() => router.push('/app-mood')} hitSlop={20}>
+          <MaterialCommunityIcons name="magic-staff" size={24} color={theme.text} />
         </Pressable>
       </View>
 
@@ -48,13 +46,6 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}>
         <View className="px-6 gap-6">
-          {/* Hero Text */}
-          <TText
-            className="text-2xl font-black leading-tight mt-1"
-            style={{ fontFamily: Fonts.title }}>
-            Your Financial{'\n'}Adventure Starts Here!
-          </TText>
-
           {/* Finnri Profile Card */}
           <View
             className="rounded-[40px] items-center py-10 overflow-hidden"
@@ -118,41 +109,6 @@ export default function ProfileScreen() {
 
           {/* Features Grid */}
           <View className="flex-row flex-wrap justify-between gap-y-4">
-            {/* My AI Voice */}
-            <View className="w-[48%] p-5 rounded-[32px]" style={{ backgroundColor: cardColor }}>
-              <View
-                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
-                style={{ backgroundColor: '#F3E5F5' }}>
-                <MaterialCommunityIcons name="account-voice" size={20} color="#7B1FA2" />
-              </View>
-              <TText
-                className="text-base font-bold leading-tight"
-                style={{ fontFamily: Fonts.title }}>
-                My AI Voice
-              </TText>
-              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                Choose Your{'\n'}
-                {"Companion's Tone"}
-              </TText>
-            </View>
-
-            {/* App Mood */}
-            <View className="w-[48%] p-5 rounded-[32px]" style={{ backgroundColor: cardColor }}>
-              <View
-                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
-                style={{ backgroundColor: '#FFF9C4' }}>
-                <MaterialCommunityIcons name="palette" size={20} color="#FBC02D" />
-              </View>
-              <TText
-                className="text-base font-bold leading-tight"
-                style={{ fontFamily: Fonts.title }}>
-                App Mood
-              </TText>
-              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                Personalize Your Look
-              </TText>
-            </View>
-
             {/* Sync My World */}
             <View className="w-[48%] p-5 rounded-[32px]" style={{ backgroundColor: cardColor }}>
               <View
