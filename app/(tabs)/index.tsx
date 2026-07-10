@@ -32,6 +32,7 @@ import { StateView } from '@/components/ui/StateView';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { readApiError } from '@/lib/api-error';
 import {
   API_BASE_URL,
   formatDateLabel,
@@ -90,6 +91,18 @@ const cardShadow = {
   shadowOpacity: 0.3,
   shadowRadius: 20,
   elevation: 2,
+};
+
+const entryFieldLabels: Record<string, string> = {
+  account_id: 'Account',
+  amount: 'Amount',
+  category: 'Category',
+  currency: 'Currency',
+  date: 'Date',
+  mode: 'Payment method',
+  source: 'Source',
+  title: 'Title',
+  type: 'Transaction type',
 };
 
 export default function HomeScreen() {
@@ -430,8 +443,7 @@ export default function HomeScreen() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Unable to save the entry right now.');
+        throw await readApiError(response, 'Unable to save the entry right now.', entryFieldLabels);
       }
 
       const createdEntry = await response.json() as ApiEntry;

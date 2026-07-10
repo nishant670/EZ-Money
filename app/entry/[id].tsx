@@ -12,7 +12,20 @@ import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { TransactionFormModal, type EntryForm } from '@/components/transactions/TransactionFormModal';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
+import { readApiError } from '@/lib/api-error';
 import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
+
+const entryFieldLabels: Record<string, string> = {
+    account_id: 'Account',
+    amount: 'Amount',
+    category: 'Category',
+    currency: 'Currency',
+    date: 'Date',
+    mode: 'Payment method',
+    source: 'Source',
+    title: 'Title',
+    type: 'Transaction type',
+};
 
 export default function TransactionDetailsScreen() {
     const router = useRouter();
@@ -176,7 +189,7 @@ export default function TransactionDetailsScreen() {
             });
 
             if (!response.ok) {
-                throw new Error('Update failed');
+                throw await readApiError(response, 'Unable to update the transaction right now.', entryFieldLabels);
             }
 
             // Refresh logic
@@ -184,7 +197,7 @@ export default function TransactionDetailsScreen() {
             setIsEditModalVisible(false);
         } catch (error) {
             console.error(error);
-            throw new Error("Failed to update transaction");
+            throw error instanceof Error ? error : new Error("Failed to update transaction");
         }
     };
 

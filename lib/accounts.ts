@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './transactions';
+import { ApiFieldErrors, readApiError } from './api-error';
 
 export type Account = {
     id: number;
@@ -32,26 +33,33 @@ export type AccountPayload = {
 export class AccountApiError extends Error {
     status: number;
     code?: string;
+    fields?: ApiFieldErrors;
 
-    constructor(message: string, status: number, code?: string) {
+    constructor(message: string, status: number, code?: string, fields?: ApiFieldErrors) {
         super(message);
         this.name = 'AccountApiError';
         this.status = status;
         this.code = code;
+        this.fields = fields;
     }
 }
 
+const accountFieldLabels: Record<string, string> = {
+    type: 'Account type',
+    name: 'Account name',
+    color: 'Color',
+    provider: 'Provider',
+    identifier: 'Identifier',
+    credit_limit: 'Credit limit',
+    due_day: 'Due day',
+    fee_month: 'Fee month',
+    balance: 'Balance',
+    is_default: 'Default account',
+};
+
 const readAccountError = async (response: Response, fallback: string): Promise<AccountApiError> => {
-    let message = fallback;
-    let code: string | undefined;
-    try {
-        const payload = await response.json() as { error?: string; message?: string };
-        code = payload.error;
-        message = payload.message || payload.error || fallback;
-    } catch {
-        // Keep the user-facing fallback when the server does not return JSON.
-    }
-    return new AccountApiError(message, response.status, code);
+    const apiError = await readApiError(response, fallback, accountFieldLabels);
+    return new AccountApiError(apiError.message, apiError.status, apiError.code, apiError.fields);
 };
 
 export const fetchAccounts = async (token: string): Promise<Account[]> => {

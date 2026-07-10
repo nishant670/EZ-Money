@@ -56,6 +56,7 @@ export default function ManageAccountScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingAccount, setIsLoadingAccount] = useState(isEditing);
   const [isDefault, setIsDefault] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Step navigation
   const [step, setStep] = useState(1);
@@ -106,7 +107,7 @@ export default function ManageAccountScreen() {
         setIsDefault(Boolean(account.is_default));
       })
       .catch((error) => {
-        alert(error instanceof Error ? error.message : 'Unable to load account.');
+        setSaveError(error instanceof Error ? error.message : 'Unable to load account.');
         router.back();
       })
       .finally(() => {
@@ -120,11 +121,12 @@ export default function ManageAccountScreen() {
   const handleSave = async () => {
     if (!token) return;
     if (!name) {
-      alert('Please enter a name for the account');
+      setSaveError('Please enter a name for the account.');
       return;
     }
 
     setIsSaving(true);
+    setSaveError(null);
     try {
       const payload = {
         type: selectedType,
@@ -144,8 +146,8 @@ export default function ManageAccountScreen() {
         await saveAccount(token, payload);
       }
       router.back();
-    } catch (err: any) {
-      alert(err.message || 'Failed to save account');
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save account.');
     } finally {
       setIsSaving(false);
     }
@@ -293,21 +295,29 @@ export default function ManageAccountScreen() {
 
       {/* Footer Step 1 */}
       <View style={styles.footer}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.cancelButton}>
-          <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setStep(2)}
-          style={styles.saveButton}
-          disabled={isSaving}
-        >
-          <ThemedText style={styles.saveButtonText}>{isEditing ? 'Continue' : 'Looks Good! Save'}</ThemedText>
-          {isSaving ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <MaterialCommunityIcons name="thumb-up-outline" size={20} color="white" />
-          )}
-        </TouchableOpacity>
+        {saveError ? (
+          <View style={styles.errorContainer}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
+            <ThemedText style={styles.errorText}>{saveError}</ThemedText>
+          </View>
+        ) : null}
+        <View style={styles.footerActions}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.cancelButton}>
+            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setStep(2)}
+            style={styles.saveButton}
+            disabled={isSaving}
+          >
+            <ThemedText style={styles.saveButtonText}>{isEditing ? 'Continue' : 'Looks Good! Save'}</ThemedText>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <MaterialCommunityIcons name="thumb-up-outline" size={20} color="white" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </>
   );
@@ -441,17 +451,25 @@ export default function ManageAccountScreen() {
 
           {/* Footer Step 2 */}
           <View style={styles.footer}>
-            <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
-              <ThemedText style={styles.cancelText}>Back</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSave}
-              style={[styles.saveButton, { backgroundColor: '#FF8A65' }]}
-              disabled={isSaving}
-            >
-              <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Done 🎉'}</ThemedText>
-              {isSaving && <ActivityIndicator size="small" color="white" className="ml-2" />}
-            </TouchableOpacity>
+            {saveError ? (
+              <View style={styles.errorContainer}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
+                <ThemedText style={styles.errorText}>{saveError}</ThemedText>
+              </View>
+            ) : null}
+            <View style={styles.footerActions}>
+              <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
+                <ThemedText style={styles.cancelText}>Back</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSave}
+                style={[styles.saveButton, { backgroundColor: '#FF8A65' }]}
+                disabled={isSaving}
+              >
+                <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Done 🎉'}</ThemedText>
+                {isSaving && <ActivityIndicator size="small" color="white" className="ml-2" />}
+              </TouchableOpacity>
+            </View>
           </View>
 
           {renderSelectionModal(showDayModal, () => setShowDayModal(false), DAYS, setDueDay, 'Select Due Day')}
@@ -507,21 +525,29 @@ export default function ManageAccountScreen() {
         </ScrollView>
 
         <View style={styles.footer}>
-          <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
-            <ThemedText style={styles.cancelText}>Back</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleSave}
-            style={styles.saveButton}
-            disabled={isSaving}
-          >
-            <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Finish Setup'}</ThemedText>
-            {isSaving ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <MaterialCommunityIcons name="check-all" size={20} color="white" />
-            )}
-          </TouchableOpacity>
+          {saveError ? (
+            <View style={styles.errorContainer}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
+              <ThemedText style={styles.errorText}>{saveError}</ThemedText>
+            </View>
+          ) : null}
+          <View style={styles.footerActions}>
+            <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
+              <ThemedText style={styles.cancelText}>Back</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSave}
+              style={styles.saveButton}
+              disabled={isSaving}
+            >
+              <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Finish Setup'}</ThemedText>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <MaterialCommunityIcons name="check-all" size={20} color="white" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </>
     );
@@ -831,12 +857,33 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: 16,
     paddingHorizontal: 24,
     backgroundColor: '#F9F7FC',
+  },
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: 'rgba(211, 47, 47, 0.12)',
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorText: {
+    flex: 1,
+    color: '#D32F2F',
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   cancelButton: {
     paddingHorizontal: 24,
