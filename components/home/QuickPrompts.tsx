@@ -3,9 +3,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { API_BASE_URL } from '@/lib/transactions';
 
 export type QuickPrompt = {
@@ -20,14 +19,13 @@ export type QuickPrompt = {
 export function QuickPrompts({
   onSelect,
   onAdd,
-  onLongPress
+  onLongPress,
 }: {
   onSelect: (prompt: QuickPrompt) => void;
   onAdd: () => void;
   onLongPress: (prompt: QuickPrompt) => void;
 }) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const theme = useThemeTokens();
   const { token } = useAuthStore();
 
   const [prompts, setPrompts] = useState<QuickPrompt[]>([]);
@@ -44,7 +42,7 @@ export function QuickPrompts({
     setError(null);
     try {
       const resp = await fetch(`${API_BASE_URL}/v1/quick-prompts`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!resp.ok) {
         throw new Error('Unable to load quick prompts.');
@@ -66,25 +64,28 @@ export function QuickPrompts({
 
   return (
     <View className="py-6 flex-row items-center">
-      <ThemedText className="pl-6 text-[10px] font-black uppercase tracking-widest opacity-40 mr-3">
+      <ThemedText variant="micro" className="pl-6 uppercase tracking-widest opacity-40 mr-3">
         QUICK PROMPTS:
       </ThemedText>
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingRight: 24, gap: 10, alignItems: 'center' }}
-      >
-
+        contentContainerStyle={{
+          paddingRight: theme.components.screen.horizontalPadding,
+          gap: theme.spacing.sm + 2,
+          alignItems: 'center',
+        }}>
         {isLoading ? (
-          <ActivityIndicator size="small" color={theme.accent} className="mx-2" />
+          <ActivityIndicator size="small" color={theme.colors.accent} className="mx-2" />
         ) : error ? (
           <Pressable
             onPress={() => void fetchPrompts()}
-            className="flex-row items-center rounded-full border border-red-100 bg-red-50 px-4 py-2 dark:border-red-900/30 dark:bg-red-900/20"
-          >
-            <MaterialCommunityIcons name="refresh" size={14} color={theme.accent} />
-            <ThemedText className="ml-2 text-xs font-bold text-red-500">Retry prompts</ThemedText>
+            className="flex-row items-center rounded-full border border-red-100 bg-red-50 px-4 py-2 dark:border-red-900/30 dark:bg-red-900/20">
+            <MaterialCommunityIcons name="refresh" size={14} color={theme.colors.accent} />
+            <ThemedText variant="captionStrong" className="ml-2 text-red-500">
+              Retry prompts
+            </ThemedText>
           </Pressable>
         ) : (
           prompts.map((item) => (
@@ -92,23 +93,25 @@ export function QuickPrompts({
               key={item.id}
               onPress={() => onSelect(item)}
               onLongPress={() => onLongPress(item)}
-              className="flex-row items-center bg-white dark:bg-gray-800 rounded-full px-5 py-2 gap-2 shadow-sm active:opacity-70 border border-gray-50 dark:border-gray-700"
-            >
+              className="flex-row items-center bg-white dark:bg-gray-800 rounded-full px-5 py-2 gap-2 shadow-sm active:opacity-70 border border-gray-50 dark:border-gray-700">
               <MaterialCommunityIcons
                 name={(item.icon || 'lightning-bolt') as any}
                 size={14}
-                color={theme.accent}
+                color={theme.colors.accent}
               />
-              <ThemedText className="text-sm font-bold opacity-80">{item.title}</ThemedText>
+              <ThemedText variant="bodyStrong" className="opacity-80">
+                {item.title}
+              </ThemedText>
             </Pressable>
           ))
         )}
         {!isLoading && !error && canAddMore && (
           <Pressable
             onPress={onAdd}
-            className="flex-row items-center bg-gray-50 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-full px-4 py-2 gap-2 active:opacity-70"
-          >
-            <ThemedText className="text-xs font-bold text-gray-500">Add +</ThemedText>
+            className="flex-row items-center bg-gray-50 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-full px-4 py-2 gap-2 active:opacity-70">
+            <ThemedText variant="captionStrong" className="text-gray-500">
+              Add +
+            </ThemedText>
           </Pressable>
         )}
       </ScrollView>

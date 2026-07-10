@@ -42,8 +42,7 @@ export function StateView({
           backgroundColor: surfaceColor,
           borderColor: theme.border,
         },
-      ]}
-    >
+      ]}>
       <View style={[styles.iconCircle, { backgroundColor: theme.secondary }]}>
         {loading ? (
           <ActivityIndicator color={theme.accent} />
@@ -52,19 +51,25 @@ export function StateView({
         )}
       </View>
       <ThemedText style={[styles.title, { color: theme.text }]}>{title}</ThemedText>
-      {message ? <ThemedText style={[styles.message, { color: mutedText }]}>{message}</ThemedText> : null}
+      {message ? (
+        <ThemedText style={[styles.message, { color: mutedText }]}>{message}</ThemedText>
+      ) : null}
       {actionLabel && onAction ? (
         <Pressable
           accessibilityRole="button"
           onPress={onAction}
-          style={[styles.primaryButton, { backgroundColor: theme.accent }]}
-        >
+          style={[styles.primaryButton, { backgroundColor: theme.accent }]}>
           <ThemedText style={styles.primaryButtonText}>{actionLabel}</ThemedText>
         </Pressable>
       ) : null}
       {secondaryActionLabel && onSecondaryAction ? (
-        <Pressable accessibilityRole="button" onPress={onSecondaryAction} style={styles.secondaryButton}>
-          <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>{secondaryActionLabel}</ThemedText>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onSecondaryAction}
+          style={styles.secondaryButton}>
+          <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+            {secondaryActionLabel}
+          </ThemedText>
         </Pressable>
       ) : null}
     </View>
@@ -94,15 +99,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    fontSize: 18,
+    fontSize: 16,
+    lineHeight: 21,
     fontFamily: Fonts.title,
     fontWeight: '800',
     textAlign: 'center',
   },
   message: {
     marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 19,
     fontFamily: Fonts.body,
     textAlign: 'center',
   },
@@ -116,7 +122,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: Fonts.title,
     fontWeight: '800',
   },
@@ -128,7 +134,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   secondaryButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: Fonts.title,
     fontWeight: '700',
   },

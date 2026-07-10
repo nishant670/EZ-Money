@@ -70,3 +70,148 @@ export const Fonts = Platform.select({
     body: "'Inter', 'SF Pro Text', 'Manrope', sans-serif",
   },
 });
+
+export const Typography = {
+  screenTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '800',
+    fontFamily: Fonts.title,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '800',
+    fontFamily: Fonts.title,
+  },
+  cardTitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+    fontFamily: Fonts.title,
+  },
+  body: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: Fonts.body,
+  },
+  bodyStrong: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '700',
+    fontFamily: Fonts.title,
+  },
+  caption: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: Fonts.body,
+  },
+  captionStrong: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    fontFamily: Fonts.title,
+  },
+  micro: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800',
+    fontFamily: Fonts.title,
+  },
+  button: {
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '800',
+    fontFamily: Fonts.title,
+  },
+  amount: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900',
+    fontFamily: Fonts.title,
+  },
+  amountHero: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '900',
+    fontFamily: Fonts.title,
+  },
+} as const;
+
+export const Spacing = {
+  none: 0,
+  xxs: 2,
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+} as const;
+
+export const Radius = {
+  xs: 8,
+  sm: 12,
+  md: 16,
+  lg: 20,
+  xl: 24,
+  xxl: 28,
+  round: 999,
+} as const;
+
+export const Shadows = {
+  none: {},
+  soft: {
+    shadowColor: 'rgba(0,0,0,0.08)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  accent: {
+    shadowColor: palette.accent,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 7,
+  },
+} as const;
+
+export const Components = {
+  screen: {
+    horizontalPadding: Spacing.xxl,
+    bottomPadding: 100,
+  },
+  card: {
+    padding: Spacing.xl,
+    radius: Radius.xl,
+  },
+  compactCard: {
+    padding: Spacing.lg,
+    radius: Radius.lg,
+  },
+  iconButton: {
+    size: 40,
+    radius: Radius.round,
+  },
+  textAction: {
+    minHeight: 24,
+    gap: Spacing.xs,
+  },
+} as const;
+
+export type ThemeMode = keyof typeof Colors;
+export type TypographyVariant = keyof typeof Typography;
+
+export function getThemeTokens(mode: ThemeMode) {
+  return {
+    colors: Colors[mode],
+    typography: Typography,
+    spacing: Spacing,
+    radius: Radius,
+    shadows: Shadows,
+    components: Components,
+    mode,
+  };
+}

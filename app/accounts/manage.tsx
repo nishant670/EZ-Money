@@ -1,7 +1,16 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Modal, Pressable, ActivityIndicator } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+  Modal,
+  Pressable,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -9,7 +18,6 @@ import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { fetchAccounts, saveAccount, updateAccount } from '@/lib/accounts';
-
 
 type AccountTypeOption = {
   key: string;
@@ -30,7 +38,14 @@ const typeOptions: AccountTypeOption[] = [
 ];
 
 const COLORS = [
-  '#FF7A7A', '#FF9F43', '#FFD32D', '#2ECC71', '#54A0FF', '#8190FF', '#B57AFF', '#FF79B0'
+  '#FF7A7A',
+  '#FF9F43',
+  '#FFD32D',
+  '#2ECC71',
+  '#54A0FF',
+  '#8190FF',
+  '#B57AFF',
+  '#FF79B0',
 ];
 
 const CARD_ISSUERS = [
@@ -46,7 +61,20 @@ const CARD_ISSUERS = [
 ];
 
 const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 export default function ManageAccountScreen() {
   const { token } = useAuthStore();
@@ -68,7 +96,7 @@ export default function ManageAccountScreen() {
 
   // Step 2 States
   const [issuerQuery, setIssuerQuery] = useState('');
-  const [selectedIssuer, setSelectedIssuer] = useState<typeof CARD_ISSUERS[0] | null>(null);
+  const [selectedIssuer, setSelectedIssuer] = useState<(typeof CARD_ISSUERS)[0] | null>(null);
   const [showIssuerResults, setShowIssuerResults] = useState(false);
 
   const [last4, setLast4] = useState('');
@@ -155,9 +183,7 @@ export default function ManageAccountScreen() {
 
   const filteredIssuers = useMemo(() => {
     if (!issuerQuery) return [];
-    return CARD_ISSUERS.filter(i =>
-      i.name.toLowerCase().includes(issuerQuery.toLowerCase())
-    );
+    return CARD_ISSUERS.filter((i) => i.name.toLowerCase().includes(issuerQuery.toLowerCase()));
   }, [issuerQuery]);
 
   const renderSelectionModal = (
@@ -167,12 +193,7 @@ export default function ManageAccountScreen() {
     onSelect: (item: string) => void,
     title: string
   ) => (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
@@ -189,8 +210,7 @@ export default function ManageAccountScreen() {
                 onPress={() => {
                   onSelect(item);
                   onClose();
-                }}
-              >
+                }}>
                 <ThemedText style={styles.modalItemText}>{item}</ThemedText>
               </TouchableOpacity>
             ))}
@@ -228,9 +248,7 @@ export default function ManageAccountScreen() {
         </View>
 
         {/* Account Type Selection */}
-        <ThemedText style={styles.sectionTitle}>
-          What kind of account is this?
-        </ThemedText>
+        <ThemedText style={styles.sectionTitle}>What kind of account is this?</ThemedText>
         <View style={styles.gridContainer}>
           {typeOptions.map((option) => {
             const isSelected = selectedType === option.key;
@@ -240,14 +258,17 @@ export default function ManageAccountScreen() {
                 onPress={() => setSelectedType(option.key)}
                 style={[
                   styles.gridItem,
-                  isSelected ? styles.gridItemSelected : styles.gridItemUnselected
-                ]}
-              >
+                  isSelected ? styles.gridItemSelected : styles.gridItemUnselected,
+                ]}>
                 <View style={[styles.gridIconContainer, { backgroundColor: option.bgColor }]}>
                   <MaterialCommunityIcons name={option.icon} size={24} color={option.color} />
                 </View>
                 <View style={styles.gridLabelContainer}>
-                  <ThemedText style={[styles.gridLabel, isSelected ? styles.textSelected : styles.textUnselected]}>
+                  <ThemedText
+                    style={[
+                      styles.gridLabel,
+                      isSelected ? styles.textSelected : styles.textUnselected,
+                    ]}>
                     {option.label}
                   </ThemedText>
                 </View>
@@ -257,11 +278,14 @@ export default function ManageAccountScreen() {
         </View>
 
         {/* Name Input */}
-        <ThemedText style={styles.sectionTitle}>
-          What should we call it?
-        </ThemedText>
+        <ThemedText style={styles.sectionTitle}>What should we call it?</ThemedText>
         <View style={styles.inputContainer}>
-          <MaterialCommunityIcons name="tag-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+          <MaterialCommunityIcons
+            name="tag-outline"
+            size={24}
+            color="#FFAD91"
+            style={styles.inputIcon}
+          />
           <TextInput
             value={name}
             onChangeText={setName}
@@ -272,21 +296,23 @@ export default function ManageAccountScreen() {
         </View>
 
         {/* Color Picker */}
-        <ThemedText style={styles.sectionTitle}>
-          Pick a happy color!
-        </ThemedText>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.colorScroll}>
+        <ThemedText style={styles.sectionTitle}>Pick a happy color!</ThemedText>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.colorScroll}>
           {COLORS.map((color) => {
             const isSelected = selectedColor === color;
             return (
               <TouchableOpacity
                 key={color}
                 onPress={() => setSelectedColor(color)}
-                style={[styles.colorItem, { backgroundColor: color }, isSelected && styles.colorItemSelected]}
-              >
-                {isSelected && (
-                  <View style={[styles.colorRing, { borderColor: '#FFAD91' }]} />
-                )}
+                style={[
+                  styles.colorItem,
+                  { backgroundColor: color },
+                  isSelected && styles.colorItemSelected,
+                ]}>
+                {isSelected && <View style={[styles.colorRing, { borderColor: '#FFAD91' }]} />}
               </TouchableOpacity>
             );
           })}
@@ -308,9 +334,10 @@ export default function ManageAccountScreen() {
           <TouchableOpacity
             onPress={() => setStep(2)}
             style={styles.saveButton}
-            disabled={isSaving}
-          >
-            <ThemedText style={styles.saveButtonText}>{isEditing ? 'Continue' : 'Looks Good! Save'}</ThemedText>
+            disabled={isSaving}>
+            <ThemedText style={styles.saveButtonText}>
+              {isEditing ? 'Continue' : 'Looks Good! Save'}
+            </ThemedText>
             {isSaving ? (
               <ActivityIndicator size="small" color="white" />
             ) : (
@@ -332,7 +359,9 @@ export default function ManageAccountScreen() {
             rightText="Skip"
             onRightPress={() => router.back()}
           />
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}>
             {/* Mascot & Message Step 2 */}
             <View style={styles.mascotSection}>
               <View style={[styles.bubbleContainer, { backgroundColor: '#F4F1FE' }]}>
@@ -342,7 +371,11 @@ export default function ManageAccountScreen() {
                 <View style={[styles.bubbleTriangle, { backgroundColor: '#F4F1FE' }]} />
               </View>
               <View style={styles.mascotRowCenter}>
-                <View style={[styles.mascotAvatar, { backgroundColor: '#FFEEED', width: 56, height: 56, borderRadius: 28 }]}>
+                <View
+                  style={[
+                    styles.mascotAvatar,
+                    { backgroundColor: '#FFEEED', width: 56, height: 56, borderRadius: 28 },
+                  ]}>
                   <MaterialCommunityIcons name="face-woman-outline" size={32} color="#FF8A65" />
                 </View>
               </View>
@@ -353,7 +386,12 @@ export default function ManageAccountScreen() {
             <ThemedText style={styles.labelSmall}>Choose your card</ThemedText>
             <View style={styles.searchWrapper}>
               <View style={styles.dropdownContainer}>
-                <MaterialCommunityIcons name="credit-card-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+                <MaterialCommunityIcons
+                  name="credit-card-outline"
+                  size={24}
+                  color="#FFAD91"
+                  style={styles.inputIcon}
+                />
                 <TextInput
                   style={styles.textInputSmall}
                   value={issuerQuery}
@@ -378,9 +416,13 @@ export default function ManageAccountScreen() {
                         setSelectedIssuer(item);
                         setIssuerQuery(item.name);
                         setShowIssuerResults(false);
-                      }}
-                    >
-                      <MaterialCommunityIcons name={item.icon as any} size={20} color="#FFAD91" style={{ marginRight: 10 }} />
+                      }}>
+                      <MaterialCommunityIcons
+                        name={item.icon as any}
+                        size={20}
+                        color="#FFAD91"
+                        style={{ marginRight: 10 }}
+                      />
                       <ThemedText style={styles.resultItemText}>{item.name}</ThemedText>
                     </TouchableOpacity>
                   ))}
@@ -390,7 +432,12 @@ export default function ManageAccountScreen() {
 
             <ThemedText style={styles.labelSmall}>Last 4 digits</ThemedText>
             <View style={styles.inputContainerSmall}>
-              <MaterialCommunityIcons name="numeric-4-box-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+              <MaterialCommunityIcons
+                name="numeric-4-box-outline"
+                size={24}
+                color="#FFAD91"
+                style={styles.inputIcon}
+              />
               <TextInput
                 value={last4}
                 onChangeText={(val) => setLast4(val.replace(/[^0-9]/g, '').slice(0, 4))}
@@ -407,7 +454,12 @@ export default function ManageAccountScreen() {
 
             <ThemedText style={styles.labelSmall}>Credit Limit</ThemedText>
             <View style={styles.inputContainerSmall}>
-              <MaterialCommunityIcons name="currency-inr" size={24} color="#FFAD91" style={styles.inputIcon} />
+              <MaterialCommunityIcons
+                name="currency-inr"
+                size={24}
+                color="#FFAD91"
+                style={styles.inputIcon}
+              />
               <TextInput
                 value={creditLimit}
                 onChangeText={(val) => setCreditLimit(val.replace(/[^0-9]/g, ''))}
@@ -423,9 +475,13 @@ export default function ManageAccountScreen() {
                 <ThemedText style={styles.labelSmall}>Due Day</ThemedText>
                 <TouchableOpacity
                   style={styles.dropdownContainerSmall}
-                  onPress={() => setShowDayModal(true)}
-                >
-                  <MaterialCommunityIcons name="calendar-outline" size={20} color="#FFAD91" style={styles.inputIcon} />
+                  onPress={() => setShowDayModal(true)}>
+                  <MaterialCommunityIcons
+                    name="calendar-outline"
+                    size={20}
+                    color="#FFAD91"
+                    style={styles.inputIcon}
+                  />
                   <ThemedText style={[styles.dropdownTextSmall, !dueDay && { color: '#AAB7C6' }]}>
                     {dueDay || 'Day'}
                   </ThemedText>
@@ -437,9 +493,13 @@ export default function ManageAccountScreen() {
                 <ThemedText style={styles.labelSmall}>Fee Month</ThemedText>
                 <TouchableOpacity
                   style={styles.dropdownContainerSmall}
-                  onPress={() => setShowMonthModal(true)}
-                >
-                  <MaterialCommunityIcons name="calendar-refresh-outline" size={20} color="#FFAD91" style={styles.inputIcon} />
+                  onPress={() => setShowMonthModal(true)}>
+                  <MaterialCommunityIcons
+                    name="calendar-refresh-outline"
+                    size={20}
+                    color="#FFAD91"
+                    style={styles.inputIcon}
+                  />
                   <ThemedText style={[styles.dropdownTextSmall, !feeMonth && { color: '#AAB7C6' }]}>
                     {feeMonth || 'Month'}
                   </ThemedText>
@@ -464,16 +524,29 @@ export default function ManageAccountScreen() {
               <TouchableOpacity
                 onPress={handleSave}
                 style={[styles.saveButton, { backgroundColor: '#FF8A65' }]}
-                disabled={isSaving}
-              >
-                <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Done 🎉'}</ThemedText>
+                disabled={isSaving}>
+                <ThemedText style={styles.saveButtonText}>
+                  {isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Done 🎉'}
+                </ThemedText>
                 {isSaving && <ActivityIndicator size="small" color="white" className="ml-2" />}
               </TouchableOpacity>
             </View>
           </View>
 
-          {renderSelectionModal(showDayModal, () => setShowDayModal(false), DAYS, setDueDay, 'Select Due Day')}
-          {renderSelectionModal(showMonthModal, () => setShowMonthModal(false), MONTHS, setFeeMonth, 'Select Fee Month')}
+          {renderSelectionModal(
+            showDayModal,
+            () => setShowDayModal(false),
+            DAYS,
+            setDueDay,
+            'Select Due Day'
+          )}
+          {renderSelectionModal(
+            showMonthModal,
+            () => setShowMonthModal(false),
+            MONTHS,
+            setFeeMonth,
+            'Select Fee Month'
+          )}
         </View>
       );
     }
@@ -487,7 +560,9 @@ export default function ManageAccountScreen() {
           rightText="Skip"
           onRightPress={() => router.back()}
         />
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}>
           <View style={styles.mascotSection}>
             <View style={styles.bubbleContainer}>
               <ThemedText style={styles.bubbleText}>
@@ -499,7 +574,12 @@ export default function ManageAccountScreen() {
 
           <ThemedText style={styles.sectionTitle}>Initial Balance</ThemedText>
           <View style={styles.inputContainer}>
-            <MaterialCommunityIcons name="scale-balance" size={24} color="#FFAD91" style={styles.inputIcon} />
+            <MaterialCommunityIcons
+              name="scale-balance"
+              size={24}
+              color="#FFAD91"
+              style={styles.inputIcon}
+            />
             <TextInput
               value={balance}
               onChangeText={(value) => setBalance(value.replace(/[^0-9.]/g, ''))}
@@ -512,7 +592,12 @@ export default function ManageAccountScreen() {
 
           <ThemedText style={styles.sectionTitle}>Account Number (Optional)</ThemedText>
           <View style={styles.inputContainer}>
-            <MaterialCommunityIcons name="card-text-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
+            <MaterialCommunityIcons
+              name="card-text-outline"
+              size={24}
+              color="#FFAD91"
+              style={styles.inputIcon}
+            />
             <TextInput
               value={last4}
               onChangeText={(value) => setLast4(value.replace(/[^0-9]/g, '').slice(-4))}
@@ -535,12 +620,10 @@ export default function ManageAccountScreen() {
             <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
               <ThemedText style={styles.cancelText}>Back</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSave}
-              style={styles.saveButton}
-              disabled={isSaving}
-            >
-              <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Finish Setup'}</ThemedText>
+            <TouchableOpacity onPress={handleSave} style={styles.saveButton} disabled={isSaving}>
+              <ThemedText style={styles.saveButtonText}>
+                {isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Finish Setup'}
+              </ThemedText>
               {isSaving ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
@@ -561,7 +644,11 @@ export default function ManageAccountScreen() {
             <ActivityIndicator size="large" color="#FF8A65" />
             <ThemedText>Loading account...</ThemedText>
           </View>
-        ) : step === 1 ? renderStep1() : renderStep2()}
+        ) : step === 1 ? (
+          renderStep1()
+        ) : (
+          renderStep2()
+        )}
       </View>
     </SafeAreaView>
   );
@@ -596,7 +683,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   bubbleText: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: Fonts.title,
     fontWeight: '900',
     textAlign: 'center',
@@ -648,7 +735,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '900',
     marginBottom: 16,
@@ -785,7 +872,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F0F0F0',
   },
   resultItemText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '600',
     color: '#1A1A1A',
@@ -795,14 +882,14 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: Fonts.title,
     fontWeight: 'bold',
     color: '#1A1A1A',
   },
   textInputSmall: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: 'bold',
     color: '#1A1A1A',
@@ -889,7 +976,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   cancelText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '900',
     color: '#BDBDBD',
@@ -909,7 +996,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: Fonts.title,
     fontWeight: '900',
     marginRight: 8,
@@ -935,7 +1022,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F0F0F0',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: Fonts.title,
     fontWeight: '900',
     color: '#1A1A1A',
@@ -949,7 +1036,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F0F0F0',
   },
   modalItemText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '600',
     color: '#1A1A1A',

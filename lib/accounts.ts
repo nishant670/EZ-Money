@@ -30,6 +30,56 @@ export type AccountPayload = {
     is_default?: boolean;
 };
 
+const paymentModeAccountDefaults: Record<string, Pick<AccountPayload, 'type' | 'name' | 'color'>> = {
+    Cash: { type: 'cash', name: 'Cash Account', color: '#2ECC71' },
+    UPI: { type: 'upi', name: 'UPI Account', color: '#00D2B4' },
+    'Credit Card': { type: 'credit', name: 'Credit Card Account', color: '#8257E5' },
+    Wallets: { type: 'wallet', name: 'Wallet Account', color: '#FF9F43' },
+};
+
+export const getAccountTypeForPaymentMode = (mode?: string | null) => {
+    if (!mode) return null;
+    const normalized = mode.trim().toLowerCase();
+    if (normalized === 'cash') return 'cash';
+    if (normalized === 'upi') return 'upi';
+    if (normalized === 'credit card') return 'credit';
+    if (normalized === 'wallets' || normalized === 'wallet') return 'wallet';
+    return null;
+};
+
+export const getAccountsForPaymentMode = (accounts: Account[], mode?: string | null) => {
+    const accountType = getAccountTypeForPaymentMode(mode);
+    if (!accountType) return accounts;
+    return accounts.filter((account) => account.type?.toLowerCase() === accountType);
+};
+
+export const getPreferredAccountForPaymentMode = (accounts: Account[], mode?: string | null) => {
+    const compatibleAccounts = getAccountsForPaymentMode(accounts, mode);
+    return (
+        compatibleAccounts.find((account) => account.is_default) ??
+        compatibleAccounts[0] ??
+        null
+    );
+};
+
+export const getAutoAccountPayloadForPaymentMode = (mode?: string | null): AccountPayload | null => {
+    if (!mode) return null;
+    const matchedMode = Object.keys(paymentModeAccountDefaults).find(
+        (option) => option.toLowerCase() === mode.trim().toLowerCase(),
+    );
+    if (!matchedMode) return null;
+    return {
+        ...paymentModeAccountDefaults[matchedMode],
+        provider: '',
+        identifier: '',
+        credit_limit: 0,
+        due_day: 0,
+        fee_month: '',
+        balance: 0,
+        is_default: false,
+    };
+};
+
 export class AccountApiError extends Error {
     status: number;
     code?: string;

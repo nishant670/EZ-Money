@@ -48,8 +48,14 @@ export default function AccountsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingAccountId, setPendingAccountId] = useState<number | null>(null);
-  const surfaceColor = useMemo(() => (colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E'), [colorScheme]);
-  const borderColor = useMemo(() => (colorScheme === 'light' ? theme.border : '#2E2E2E'), [colorScheme, theme.border]);
+  const surfaceColor = useMemo(
+    () => (colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E'),
+    [colorScheme]
+  );
+  const borderColor = useMemo(
+    () => (colorScheme === 'light' ? theme.border : '#2E2E2E'),
+    [colorScheme, theme.border]
+  );
 
   const loadAccounts = useCallback(async () => {
     if (!token) {
@@ -72,12 +78,15 @@ export default function AccountsScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadAccounts();
-    }, [loadAccounts]),
+    }, [loadAccounts])
   );
 
   const filteredAccounts = useMemo(
-    () => activeFilter === 'all' ? accounts : accounts.filter((account) => account.type === activeFilter),
-    [accounts, activeFilter],
+    () =>
+      activeFilter === 'all'
+        ? accounts
+        : accounts.filter((account) => account.type === activeFilter),
+    [accounts, activeFilter]
   );
 
   const handleAddAccount = () => {
@@ -96,7 +105,9 @@ export default function AccountsScreen() {
       await updateAccount(token, account.id, toAccountPayload({ ...account, is_default: true }));
       await loadAccounts();
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Unable to set the default account.');
+      setError(
+        updateError instanceof Error ? updateError.message : 'Unable to set the default account.'
+      );
     } finally {
       setPendingAccountId(null);
     }
@@ -118,16 +129,21 @@ export default function AccountsScreen() {
             void deleteAccount(token, account.id)
               .then(loadAccounts)
               .catch((deleteError: unknown) => {
-                if (deleteError instanceof AccountApiError && deleteError.code === 'account_in_use') {
+                if (
+                  deleteError instanceof AccountApiError &&
+                  deleteError.code === 'account_in_use'
+                ) {
                   setError('Move or delete linked transactions before deleting this account.');
                   return;
                 }
-                setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete account.');
+                setError(
+                  deleteError instanceof Error ? deleteError.message : 'Unable to delete account.'
+                );
               })
               .finally(() => setPendingAccountId(null));
           },
         },
-      ],
+      ]
     );
   };
 
@@ -188,33 +204,32 @@ export default function AccountsScreen() {
       upi: 'cellphone-nfc',
       other: 'wallet-outline',
     };
-    const accountType = account.type in iconName ? account.type as AccountType : 'other';
-    const accountDetails = [account.provider, account.identifier].filter(Boolean).join(' • ') || accountType.replace('_', ' ');
+    const accountType = account.type in iconName ? (account.type as AccountType) : 'other';
+    const accountDetails =
+      [account.provider, account.identifier].filter(Boolean).join(' • ') ||
+      accountType.replace('_', ' ');
 
     return (
       <View
         key={String(account.id)}
         className="gap-2 rounded-2xl border px-4 py-4"
-        style={{ backgroundColor: surfaceColor, borderColor }}
-      >
+        style={{ backgroundColor: surfaceColor, borderColor }}>
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-3">
             <View
               className="h-11 w-11 items-center justify-center rounded-full"
-              style={{ backgroundColor: colorScheme === 'light' ? '#EEF2FF' : '#2B2B2B' }}
-            >
+              style={{ backgroundColor: colorScheme === 'light' ? '#EEF2FF' : '#2B2B2B' }}>
               <MaterialCommunityIcons name={iconName[accountType]} size={20} color={theme.text} />
             </View>
             <View>
-              <TText className="text-base" style={{ fontFamily: Fonts.title }}>
+              <TText className="text-sm" style={{ fontFamily: Fonts.title }}>
                 {account.name}
               </TText>
               <TText
-                className="text-sm"
+                className="text-xs"
                 style={{ fontFamily: Fonts.body }}
                 lightColor="rgba(26,26,26,0.6)"
-                darkColor="rgba(250,250,250,0.65)"
-              >
+                darkColor="rgba(250,250,250,0.65)">
                 {accountDetails}
               </TText>
             </View>
@@ -222,15 +237,16 @@ export default function AccountsScreen() {
           {account.is_default && (
             <View
               className="rounded-full px-3 py-1"
-              style={{ backgroundColor: colorScheme === 'light' ? '#E8F5E9' : '#1F3322' }}
-            >
+              style={{ backgroundColor: colorScheme === 'light' ? '#E8F5E9' : '#1F3322' }}>
               <TText className="text-xs" style={{ fontFamily: Fonts.title, color: '#27AE60' }}>
                 Default
               </TText>
             </View>
           )}
         </View>
-        <View className="flex-row items-center justify-end gap-2 border-t pt-3" style={{ borderColor }}>
+        <View
+          className="flex-row items-center justify-end gap-2 border-t pt-3"
+          style={{ borderColor }}>
           {pendingAccountId === account.id ? (
             <ActivityIndicator size="small" color={theme.accent} />
           ) : (
@@ -239,9 +255,10 @@ export default function AccountsScreen() {
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => void handleSetDefault(account)}
-                  className="rounded-xl px-3 py-2"
-                >
-                  <TText className="text-xs" style={{ color: theme.accent, fontFamily: Fonts.title }}>
+                  className="rounded-xl px-3 py-2">
+                  <TText
+                    className="text-xs"
+                    style={{ color: theme.accent, fontFamily: Fonts.title }}>
                     Set default
                   </TText>
                 </Pressable>
@@ -249,16 +266,18 @@ export default function AccountsScreen() {
               <Pressable
                 accessibilityRole="button"
                 onPress={() => handleEditAccount(account)}
-                className="rounded-xl px-3 py-2"
-              >
-                <TText className="text-xs" style={{ color: theme.text, fontFamily: Fonts.title }}>Edit</TText>
+                className="rounded-xl px-3 py-2">
+                <TText className="text-xs" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                  Edit
+                </TText>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => confirmDeleteAccount(account)}
-                className="rounded-xl px-3 py-2"
-              >
-                <TText className="text-xs text-red-500" style={{ fontFamily: Fonts.title }}>Delete</TText>
+                className="rounded-xl px-3 py-2">
+                <TText className="text-xs text-red-500" style={{ fontFamily: Fonts.title }}>
+                  Delete
+                </TText>
               </Pressable>
             </>
           )}
@@ -270,12 +289,16 @@ export default function AccountsScreen() {
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
       <TView className="flex-1" style={{ backgroundColor: theme.background }}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 24, gap: 24 }}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ padding: 22, gap: 20 }}>
           <View className="gap-2">
-            <TText className="text-2xl" style={{ fontFamily: Fonts.title }}>
+            <TText className="text-xl" style={{ fontFamily: Fonts.title }}>
               Accounts
             </TText>
-            <TText className="text-sm text-black/60 dark:text-white/60" style={{ fontFamily: Fonts.body }}>
+            <TText
+              className="text-sm text-black/60 dark:text-white/60"
+              style={{ fontFamily: Fonts.body }}>
               Organize the cards, bank accounts, wallets, and UPI sources you use for transactions.
             </TText>
           </View>
@@ -299,15 +322,13 @@ export default function AccountsScreen() {
                     backgroundColor: isActive ? theme.accent : 'transparent',
                     borderColor: isActive ? 'transparent' : borderColor,
                     borderWidth: 1,
-                  }}
-                >
+                  }}>
                   <TText
-                    className="text-sm"
+                    className="text-xs"
                     style={{
                       fontFamily: Fonts.title,
                       color: isActive ? '#FFFFFF' : theme.text,
-                    }}
-                  >
+                    }}>
                     {option.label}
                   </TText>
                 </Pressable>
@@ -332,9 +353,8 @@ export default function AccountsScreen() {
             accessibilityRole="button"
             onPress={handleAddAccount}
             className="rounded-3xl border py-3"
-            style={{ borderColor }}
-          >
-            <TText className="text-center text-base" style={{ fontFamily: Fonts.title }}>
+            style={{ borderColor }}>
+            <TText className="text-center text-sm" style={{ fontFamily: Fonts.title }}>
               Add another account
             </TText>
           </Pressable>
