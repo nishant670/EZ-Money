@@ -1,9 +1,12 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuthStore } from '@/hooks/use-auth-store';
+import { guestCheckin } from '@/lib/auth';
+import { getDeviceId } from '@/lib/device';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
     SlideInLeft,
     SlideInRight,
@@ -30,10 +33,13 @@ const SCREENS = [
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { setAuth } = useAuthStore();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
+  const [guestError, setGuestError] = useState<string | null>(null);
+  const [isGuestChecking, setIsGuestChecking] = useState(false);
 
   const CurrentScreen = SCREENS[activeIndex].component;
 
@@ -55,6 +61,25 @@ export default function OnboardingScreen() {
 
   const handleFinish = () => {
     router.replace('/auth');
+  };
+
+  const handleGuestContinue = async () => {
+    setGuestError(null);
+    setIsGuestChecking(true);
+    try {
+      const deviceId = await getDeviceId();
+      const response = await guestCheckin({
+        device_id: deviceId,
+      });
+      if (response?.user) {
+        setAuth(response.user, response.token);
+      }
+      router.replace('/(tabs)');
+    } catch (error) {
+      setGuestError(error instanceof Error ? error.message : 'Unable to continue as guest.');
+    } finally {
+      setIsGuestChecking(false);
+    }
   };
 
   const enteringAnimation = direction === 'forward' ? SlideInRight.duration(400) : SlideInLeft.duration(400);
@@ -99,29 +124,51 @@ export default function OnboardingScreen() {
 
         {/* Footer */}
         <View style={styles.footer}>
-            {activeIndex > 0 ? (
-                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                    <Text style={[styles.footerBtnText, { color: theme.text, opacity: 0.6 }]}>Back</Text>
-                </TouchableOpacity>
-            ) : <View style={styles.footerBtnPlaceholder} />}
+            <View style={styles.navRow}>
+                {activeIndex > 0 ? (
+                    <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                        <Text style={[styles.footerBtnText, { color: theme.text, opacity: 0.6 }]}>Back</Text>
+                    </TouchableOpacity>
+                ) : <View style={styles.footerBtnPlaceholder} />}
 
-            <TouchableOpacity 
-                onPress={handleNext} 
+                <TouchableOpacity
+                    onPress={handleNext}
+                    style={[
+                        styles.primaryButton,
+                        { backgroundColor: activeIndex === SCREENS.length - 1 ? theme.accent : theme.text }
+                    ]}
+                >
+                    <Text style={[styles.primaryButtonText, { color: activeIndex === SCREENS.length - 1 ? 'white' : theme.background }]}>
+                        {activeIndex === SCREENS.length - 1 ? 'Sign in' : 'Next'}
+                    </Text>
+                    <MaterialCommunityIcons
+                        name="arrow-right"
+                        size={18}
+                        color={activeIndex === SCREENS.length - 1 ? 'white' : theme.background}
+                        style={{ marginLeft: 8 }}
+                    />
+                </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+                onPress={handleGuestContinue}
+                disabled={isGuestChecking}
                 style={[
-                    styles.primaryButton, 
-                    { backgroundColor: activeIndex === SCREENS.length - 1 ? theme.accent : theme.text }
+                    styles.guestButton,
+                    {
+                        borderColor: theme.border,
+                        backgroundColor: theme.card,
+                        opacity: isGuestChecking ? 0.7 : 1,
+                    },
                 ]}
             >
-                <Text style={[styles.primaryButtonText, { color: activeIndex === SCREENS.length - 1 ? 'white' : theme.background }]}>
-                    {activeIndex === SCREENS.length - 1 ? 'Get started' : 'Next'}
-                </Text>
-                <MaterialCommunityIcons 
-                    name="arrow-right" 
-                    size={18} 
-                    color={activeIndex === SCREENS.length - 1 ? 'white' : theme.background} 
-                    style={{ marginLeft: 8 }}
-                />
+                {isGuestChecking ? (
+                    <ActivityIndicator color={theme.accent} />
+                ) : (
+                    <Text style={[styles.guestButtonText, { color: theme.text }]}>Continue as guest</Text>
+                )}
             </TouchableOpacity>
+            {guestError ? <Text style={styles.errorText}>{guestError}</Text> : null}
         </View>
 
         {/* {activeIndex === SCREENS.length - 1 && (
@@ -169,11 +216,14 @@ const styles = StyleSheet.create({
       flex: 1,
   },
   footer: {
+      paddingHorizontal: 24,
+      paddingBottom: 40,
+  },
+  navRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 24,
-      paddingBottom: 40,
+      marginBottom: 12,
   },
   footerBtnPlaceholder: {
       width: 60,
@@ -201,6 +251,24 @@ const styles = StyleSheet.create({
   primaryButtonText: {
       fontSize: 16,
       fontWeight: 'bold',
+  },
+  guestButton: {
+      width: '100%',
+      minHeight: 54,
+      borderRadius: 27,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+  },
+  guestButtonText: {
+      fontSize: 16,
+      fontWeight: '700',
+  },
+  errorText: {
+      marginTop: 10,
+      fontSize: 12,
+      color: '#D32F2F',
+      textAlign: 'center',
   },
   skipForNow: {
       alignItems: 'center',
