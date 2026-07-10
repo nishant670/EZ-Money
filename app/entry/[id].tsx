@@ -13,6 +13,7 @@ import { TransactionFormModal, type EntryForm } from '@/components/transactions/
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { readApiError } from '@/lib/api-error';
+import { notifyTransactionsChanged } from '@/lib/transaction-events';
 import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
 
 const entryFieldLabels: Record<string, string> = {
@@ -135,6 +136,7 @@ export default function TransactionDetailsScreen() {
                                 headers: { Authorization: `Bearer ${token}` }
                             });
                             if (response.ok) {
+                                notifyTransactionsChanged();
                                 router.back();
                             } else {
                                 Alert.alert("Error", "Could not delete transaction.");
@@ -194,6 +196,7 @@ export default function TransactionDetailsScreen() {
 
             // Refresh logic
             await fetchTransactionDetails();
+            notifyTransactionsChanged();
             setIsEditModalVisible(false);
         } catch (error) {
             console.error(error);

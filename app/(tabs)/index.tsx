@@ -48,6 +48,7 @@ import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { Account, fetchAccounts as loadAccounts } from '@/lib/accounts';
+import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import {
   TransactionFormModal,
   type AiReviewMetadata,
@@ -313,6 +314,10 @@ export default function HomeScreen() {
     }, [fetchAccountOptions, fetchEntries])
   );
 
+  useEffect(() => subscribeTransactionsChanged(() => {
+    void fetchEntries(true);
+  }), [fetchEntries]);
+
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
   const visibleSections = useMemo(() => sections.slice(0, 3), [sections]);
   const hasTransactions = sections.length > 0;
@@ -458,7 +463,7 @@ export default function HomeScreen() {
       setForm(createBlankForm());
       setAiSourceText('');
       setIsEditOpen(false);
-      void fetchEntries(true);
+      notifyTransactionsChanged();
     } catch (error) {
       const saveError = error instanceof Error
         ? error
@@ -468,7 +473,7 @@ export default function HomeScreen() {
     } finally {
       setIsSavingEntry(false);
     }
-  }, [aiInputSource, aiSourceText, createBlankForm, fetchEntries, modalMode, token]);
+  }, [aiInputSource, aiSourceText, createBlankForm, modalMode, token]);
 
   const handleSubmitPrompt = useCallback(async () => {
     if (isSubmitting) return;

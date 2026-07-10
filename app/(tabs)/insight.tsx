@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native';
@@ -15,6 +16,7 @@ import {
     InsightCard,
     fetchDashboard,
 } from '@/lib/insights';
+import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 
 const formatMoney = (value: number) =>
     `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -54,9 +56,15 @@ export default function InsightScreen() {
         }
     }, [currentRange.end, currentRange.start, token]);
 
-    useEffect(() => {
-        void loadData();
-    }, [loadData]);
+    useFocusEffect(
+        useCallback(() => {
+            void loadData(true);
+        }, [loadData]),
+    );
+
+    useEffect(() => subscribeTransactionsChanged(() => {
+        void loadData(true);
+    }), [loadData]);
 
     if (loading && !dashboard) {
         return (

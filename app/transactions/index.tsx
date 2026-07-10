@@ -12,6 +12,7 @@ import { StateView } from '@/components/ui/StateView';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
+import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { groupTransactionsBySection, loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
@@ -81,6 +82,10 @@ export default function TransactionsScreen() {
       }
     }, [load, token])
   );
+
+  useEffect(() => subscribeTransactionsChanged(() => {
+    void load();
+  }), [load]);
 
   const isFilterActive = useMemo(() => {
     return (
