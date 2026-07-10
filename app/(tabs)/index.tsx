@@ -36,9 +36,11 @@ import {
   formatDateLabel,
   groupTransactionsBySection,
   loadTransactions,
+  mapEntryToTransaction,
   normalizeDateLabel,
   parseDateLabel,
   toTitleCase,
+  type ApiEntry,
 } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -117,11 +119,11 @@ export default function HomeScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const createBlankForm = useCallback((): EntryForm => ({
     ...defaultForm,
-    accountId: accounts.find((account) => account.is_default)?.id ?? accounts[0]?.id ?? null,
-    account: accounts.find((account) => account.is_default)?.name ?? accounts[0]?.name ?? '',
+    accountId: null,
+    account: '',
     merchant: '',
     notes: '',
-  }), [accounts, defaultForm]);
+  }), [defaultForm]);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [form, setForm] = useState<EntryForm>(defaultForm);
@@ -138,6 +140,7 @@ export default function HomeScreen() {
   const [entriesError, setEntriesError] = useState<string | null>(null);
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
   const [aiSourceText, setAiSourceText] = useState('');
   const [aiInputSource, setAiInputSource] = useState<'text' | 'voice'>('text');
@@ -264,9 +267,9 @@ export default function HomeScreen() {
     };
   };
 
-  const fetchEntries = useCallback(async () => {
+  const fetchEntries = useCallback(async (silent = false) => {
     if (!token) return;
-    setIsEntriesLoading(true);
+    if (!silent) setIsEntriesLoading(true);
     setEntriesError(null);
     try {
       const mapped = await loadTransactions(token);
@@ -274,7 +277,7 @@ export default function HomeScreen() {
     } catch (error) {
       setEntriesError(error instanceof Error ? error.message : 'Unable to load entries right now.');
     } finally {
-      setIsEntriesLoading(false);
+      if (!silent) setIsEntriesLoading(false);
     }
   }, [token]);
 
@@ -370,6 +373,12 @@ export default function HomeScreen() {
     };
   }, [recording]);
 
+  useEffect(() => {
+    if (!saveConfirmation) return;
+    const timeout = setTimeout(() => setSaveConfirmation(null), 3000);
+    return () => clearTimeout(timeout);
+  }, [saveConfirmation]);
+
   const handleClearRecording = useCallback(() => {
     setRecordedUri(null);
     setInputText('');
@@ -454,13 +463,26 @@ export default function HomeScreen() {
         const errorText = await response.text();
         throw new Error(errorText || 'Unable to save the entry right now.');
       }
-      await fetchEntries();
+
+      const createdEntry = await response.json() as ApiEntry;
+      const createdTransaction = mapEntryToTransaction(createdEntry);
+      setTransactions((current) => [
+        createdTransaction,
+        ...current.filter((transaction) => transaction.id !== createdTransaction.id),
+      ]);
+      setSaveConfirmation('Transaction saved successfully');
+
       createIdempotencyKey.current = null;
       setForm(createBlankForm());
       setAiSourceText('');
       setIsEditOpen(false);
+      void fetchEntries(true);
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Unable to save your entry. Please try again.');
+      const saveError = error instanceof Error
+        ? error
+        : new Error('Unable to save your entry. Please try again.');
+      setFormError(saveError.message);
+      throw saveError;
     } finally {
       setIsSavingEntry(false);
     }
@@ -702,6 +724,17 @@ export default function HomeScreen() {
       >
         <MaterialCommunityIcons name="plus" size={32} color="white" />
       </Pressable>
+
+      {saveConfirmation && (
+        <View
+          accessibilityLiveRegion="polite"
+          className="absolute left-6 right-6 top-4 z-50 flex-row items-center gap-3 rounded-2xl bg-emerald-600 px-4 py-3 shadow-lg"
+          pointerEvents="none"
+        >
+          <MaterialCommunityIcons name="check-circle" size={22} color="white" />
+          <ThemedText className="flex-1 font-bold text-white">{saveConfirmation}</ThemedText>
+        </View>
+      )}
 
       <TransactionFormModal
         visible={isEditOpen}
