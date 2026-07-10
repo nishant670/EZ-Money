@@ -1,72 +1,63 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState, useMemo } from 'react';
-import {
-    ActivityIndicator,
-    Image,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    TouchableOpacity,
-    View,
-} from 'react-native';
+import type { ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { DateRange, PeriodPicker } from '@/components/insights/PeriodPicker';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Fonts } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { CURRENCY_SYMBOL } from '@/constants/Currency';
+import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { fetchInsights, InsightsResponse } from '@/lib/insights';
-import { PeriodPicker, DateRange } from '@/components/insights/PeriodPicker';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import {
+    DashboardResponse,
+    InsightCard,
+    fetchDashboard,
+} from '@/lib/insights';
+
+const formatMoney = (value: number) =>
+    `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 export default function InsightScreen() {
-    const router = useRouter();
     const colorScheme = useColorScheme() ?? 'light';
     const theme = Colors[colorScheme];
-    const { token, user } = useAuthStore();
-
+    const { token } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [insights, setInsights] = useState<InsightsResponse | null>(null);
+    const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
     const [error, setError] = useState<string | null>(null);
-
     const [pickerVisible, setPickerVisible] = useState(false);
     const [currentRange, setCurrentRange] = useState<DateRange>({
         start: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
         end: new Date(),
         label: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
-        preset: 'this_month'
+        preset: 'this_month',
     });
 
-    const loadData = async (isRefreshing = false) => {
-        if (!token) return;
-        if (!isRefreshing) setLoading(true);
+    const loadData = useCallback(async (isRefresh = false) => {
+        if (!token) {
+            setLoading(false);
+            return;
+        }
+        if (!isRefresh) setLoading(true);
         setError(null);
         try {
-            const startDate = currentRange.start ? currentRange.start.toISOString().split('T')[0] : undefined;
-            const endDate = currentRange.end ? currentRange.end.toISOString().split('T')[0] : undefined;
-            const data = await fetchInsights(token, startDate, endDate);
-            setInsights(data);
-        } catch (err: any) {
-            console.error('Failed to fetch insights:', err);
-            setError(err.message || 'Something went wrong');
+            const start = currentRange.start?.toISOString().split('T')[0];
+            const end = currentRange.end?.toISOString().split('T')[0];
+            setDashboard(await fetchDashboard(token, start, end));
+        } catch (loadError) {
+            setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard.');
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, [currentRange.end, currentRange.start, token]);
 
     useEffect(() => {
-        loadData();
-    }, [token, currentRange]);
+        void loadData();
+    }, [loadData]);
 
-    const onRefresh = () => {
-        setRefreshing(true);
-        loadData(true);
-    };
-
-    if (loading && !refreshing) {
+    if (loading && !dashboard) {
         return (
             <View className="flex-1 items-center justify-center" style={{ backgroundColor: theme.background }}>
                 <ActivityIndicator size="large" color={theme.accent} />
@@ -74,84 +65,57 @@ export default function InsightScreen() {
         );
     }
 
-    if (error && !insights) {
+    if (!dashboard) {
         return (
-            <View className="flex-1 items-center justify-center p-6" style={{ backgroundColor: theme.background }}>
-                <MaterialCommunityIcons name="alert-circle-outline" size={64} color={theme.text} style={{ opacity: 0.5 }} />
-                <ThemedText className="text-lg font-bold mt-4 text-center">{error}</ThemedText>
-                <TouchableOpacity
-                    className="mt-6 px-8 py-3 rounded-full"
-                    style={{ backgroundColor: theme.accent }}
-                    onPress={() => loadData()}
-                >
-                    <ThemedText className="text-white font-bold">Retry</ThemedText>
+            <View className="flex-1 items-center justify-center gap-4 p-8" style={{ backgroundColor: theme.background }}>
+                <MaterialCommunityIcons name="chart-box-outline" size={48} color={theme.text} />
+                <ThemedText className="text-center text-base">{error || 'No dashboard data is available yet.'}</ThemedText>
+                <TouchableOpacity className="rounded-full px-6 py-3" style={{ backgroundColor: theme.accent }} onPress={() => void loadData()}>
+                    <ThemedText className="font-bold text-white">Retry</ThemedText>
                 </TouchableOpacity>
             </View>
         );
     }
 
-    if (!insights) {
-        return (
-            <View className="flex-1 items-center justify-center p-6" style={{ backgroundColor: theme.background }}>
-                <ThemedText>No data available yet. Add some transactions!</ThemedText>
-            </View>
-        );
-    }
-
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
+        <SafeAreaView className="flex-1" style={{ backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
             <View className="flex-row items-center justify-between px-6 py-4">
                 <View>
-                    <ThemedText className="text-2xl font-black" style={{ color: theme.text }}>Intelligence</ThemedText>
-                    <TouchableOpacity className="flex-row items-center mt-1" onPress={() => setPickerVisible(true)}>
+                    <ThemedText className="text-2xl font-black">Dashboard</ThemedText>
+                    <TouchableOpacity className="mt-1 flex-row items-center" onPress={() => setPickerVisible(true)}>
                         <ThemedText className="text-xs font-bold" style={{ color: theme.accent }}>{currentRange.label}</ThemedText>
                         <MaterialCommunityIcons name="chevron-down" size={14} color={theme.accent} />
                     </TouchableOpacity>
                 </View>
-                <View className="flex-row gap-4">
-                    <TouchableOpacity className="h-10 w-10 rounded-full bg-gray-50 items-center justify-center">
-                        <MaterialCommunityIcons name="magnify" size={24} color={theme.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity className="h-10 w-10 rounded-full bg-gray-50 items-center justify-center">
-                        <MaterialCommunityIcons name="filter-variant" size={24} color={theme.text} />
-                    </TouchableOpacity>
-                </View>
+                {loading && <ActivityIndicator color={theme.accent} />}
             </View>
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 100 }}
+                contentContainerStyle={{ padding: 24, gap: 24, paddingBottom: 100 }}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            setRefreshing(true);
+                            void loadData(true);
+                        }}
+                        tintColor={theme.accent}
+                    />
                 }
             >
-                {/* Monthly Health Section */}
-                <MonthlyHealthSection health={insights.monthly_health} theme={theme} />
+                {error && (
+                    <View className="rounded-2xl border border-red-100 bg-red-50 p-3">
+                        <ThemedText className="text-center text-sm text-red-600">{error}</ThemedText>
+                    </View>
+                )}
 
-                {/* Spending Analysis Section */}
-                <SpendingAnalysisSection
-                    categories={insights.category_breakdown}
-                    merchants={insights.top_merchants}
-                    theme={theme}
-                    router={router}
-                />
-
-                {/* AI Insights Section / Smart Alerts */}
-                <SmartAlertsSection insights={insights.ai_insights} theme={theme} />
-
-                {/* Account Intelligence Section */}
-                <AccountIntelligenceSection
-                    spending={insights.account_spending}
-                    utilization={insights.credit_utilization}
-                    theme={theme}
-                />
-
-                {/* Stats Cards Row */}
-                <StatsCardsSection trends={insights.behavioral_insights} theme={theme} />
-
-                {/* Needs Review Section */}
-                <NeedsReviewSection items={insights.review_items} theme={theme} />
-
+                <SummarySection dashboard={dashboard} />
+                <CategorySection categories={dashboard.top_categories} />
+                <AccountSection accounts={dashboard.account_spending} accent={theme.accent} />
+                <MerchantSection merchants={dashboard.top_merchants} />
+                <RecentSection entries={dashboard.recent_transactions} />
+                <InsightSection cards={dashboard.insights} />
             </ScrollView>
 
             <PeriodPicker
@@ -164,268 +128,124 @@ export default function InsightScreen() {
     );
 }
 
-// Sub-components
-function MonthlyHealthSection({ health, theme }: { health: InsightsResponse['monthly_health'], theme: any }) {
+function SummarySection({ dashboard }: { dashboard: DashboardResponse }) {
+    const summary = dashboard.summary;
     return (
-        <View className="mx-6 mt-4 p-6 rounded-[32px] bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
-            <View className="flex-row justify-between items-center mb-6">
-                <View>
-                    <ThemedText className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Financial Health</ThemedText>
-                    <ThemedText className="text-2xl font-black" style={{ color: theme.text }}>Good Standing</ThemedText>
-                </View>
-                <View className="h-16 w-16 items-center justify-center">
-                    {/* Progress Circle Mockup using Views */}
-                    <View className="h-16 w-16 rounded-full border-[6px] border-gray-100 items-center justify-center relative">
-                        <View className="absolute h-16 w-16 rounded-full border-[6px] border-orange-500" style={{ borderBottomColor: 'transparent', borderLeftColor: 'transparent', transform: [{ rotate: '45deg' }] }} />
-                        <ThemedText className="text-xs font-black">70%</ThemedText>
-                    </View>
-                </View>
-            </View>
-
-            <View className="flex-row justify-between mb-8">
-                <View className="flex-1">
-                    <ThemedText className="text-[10px] font-black text-gray-400 uppercase mb-2">Total Income</ThemedText>
-                    <View className="flex-row items-center">
-                        <View className="h-6 w-1 rounded-full bg-green-500 mr-3" />
-                        <ThemedText className="text-xl font-black" style={{ color: theme.text }}>{CURRENCY_SYMBOL}85,000</ThemedText>
-                    </View>
-                </View>
-                <View className="flex-1 pl-4">
-                    <ThemedText className="text-[10px] font-black text-gray-400 uppercase mb-2">Total Spent</ThemedText>
-                    <View className="flex-row items-center">
-                        <View className="h-6 w-1 rounded-full bg-red-400 mr-3" />
-                        <ThemedText className="text-xl font-black" style={{ color: theme.text }}>{CURRENCY_SYMBOL}52,400</ThemedText>
-                    </View>
-                </View>
-            </View>
-
-            <View className="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-2xl flex-row items-center">
-                <View className="h-8 w-8 rounded-full bg-orange-500 items-center justify-center mr-3">
-                    <MaterialCommunityIcons name="clock-outline" size={16} color="white" />
-                </View>
-                <View className="flex-1">
-                    <ThemedText className="text-[11px] font-bold" style={{ color: theme.accent }}>
-                        Burn Rate: <ThemedText className="text-[11px] font-medium" style={{ color: theme.accent }}>At your current spending, your balance will last ~18 days.</ThemedText>
-                    </ThemedText>
-                </View>
+        <View className="rounded-[28px] border border-gray-100 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">Selected period</ThemedText>
+            <ThemedText className="mt-2 text-3xl font-black">{formatMoney(summary.total_spent)}</ThemedText>
+            <ThemedText className="text-sm text-gray-500">Total spent</ThemedText>
+            <View className="mt-6 flex-row gap-3">
+                <Metric label="Daily average" value={formatMoney(summary.daily_average)} />
+                <Metric label="Income recorded" value={formatMoney(summary.total_income)} />
+                <Metric label="Transactions" value={String(summary.transaction_count)} />
             </View>
         </View>
     );
 }
 
-function SpendingAnalysisSection({ categories, merchants, theme, router }: { categories: InsightsResponse['category_breakdown'], merchants: InsightsResponse['top_merchants'], theme: any, router: any }) {
+function Metric({ label, value }: { label: string; value: string }) {
     return (
-        <View className="mx-6 mt-8">
-            <View className="flex-row justify-between items-center mb-4">
-                <ThemedText className="text-lg font-black" style={{ color: theme.text }}>Spending Analysis</ThemedText>
-                <TouchableOpacity onPress={() => router.push('/spending-analysis')}>
-                    <ThemedText className="text-xs font-bold" style={{ color: theme.accent }}>Details</ThemedText>
-                </TouchableOpacity>
-            </View>
-
-            <View className="bg-white dark:bg-gray-800 p-6 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700">
-                <View className="flex-row items-center mb-8">
-                    <View className="h-28 w-28 items-center justify-center relative">
-                        <View className="h-28 w-28 rounded-full border-[10px] border-gray-50 dark:border-gray-700" />
-                        <View className="absolute h-28 w-28 rounded-full border-[10px] border-red-400" style={{ borderBottomColor: 'transparent', borderLeftColor: 'transparent', borderTopColor: 'transparent', transform: [{ rotate: '-30deg' }] }} />
-                        <View className="absolute h-28 w-28 rounded-full border-[10px] border-orange-500" style={{ borderBottomColor: 'transparent', borderLeftColor: 'transparent', borderRightColor: 'transparent', transform: [{ rotate: '120deg' }] }} />
-                        <View className="absolute items-center">
-                            <ThemedText className="text-[8px] text-gray-400 font-bold uppercase">Food</ThemedText>
-                            <ThemedText className="text-lg font-black">28%</ThemedText>
-                        </View>
-                    </View>
-
-                    <View className="flex-1 ml-8 gap-4">
-                        <View className="flex-row items-center justify-between">
-                            <View className="flex-row items-center">
-                                <View className="h-2 w-2 rounded-full bg-red-400 mr-2" />
-                                <ThemedText className="text-xs font-bold text-gray-500">Food & Dining</ThemedText>
-                            </View>
-                            <ThemedText className="text-xs font-black" style={{ color: theme.text }}>{CURRENCY_SYMBOL}14,600</ThemedText>
-                        </View>
-                        <View className="flex-row items-center justify-between">
-                            <View className="flex-row items-center">
-                                <View className="h-2 w-2 rounded-full bg-orange-500 mr-2" />
-                                <ThemedText className="text-xs font-bold text-gray-500">Shopping</ThemedText>
-                            </View>
-                            <ThemedText className="text-xs font-black" style={{ color: theme.text }}>{CURRENCY_SYMBOL}12,200</ThemedText>
-                        </View>
-                        <View className="flex-row items-center">
-                            <MaterialCommunityIcons name="trending-up" size={14} color="#F87171" className="mr-1" />
-                            <ThemedText className="text-[10px] font-bold text-red-400">12% higher than last month</ThemedText>
-                        </View>
-                    </View>
-                </View>
-
-                <View className="pt-6 border-t border-gray-50 dark:border-gray-700">
-                    <ThemedText className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Top Merchants</ThemedText>
-                    {merchants?.slice(0, 2).map((m, idx) => (
-                        <View key={idx} className="flex-row items-center justify-between mb-4">
-                            <View className="flex-row items-center">
-                                <View className="h-10 w-10 rounded-2xl bg-gray-50 dark:bg-gray-700 items-center justify-center mr-4">
-                                    <MaterialCommunityIcons name={idx === 0 ? "shopping" : "car"} size={20} color={theme.text} />
-                                </View>
-                                <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>{m.merchant}</ThemedText>
-                            </View>
-                            <ThemedText className="text-sm font-black" style={{ color: theme.text }}>{CURRENCY_SYMBOL}{Math.round(m.amount).toLocaleString()}</ThemedText>
-                        </View>
-                    ))}
-                </View>
-            </View>
+        <View className="flex-1 rounded-2xl bg-gray-50 p-3 dark:bg-gray-700">
+            <ThemedText className="text-[9px] font-bold uppercase text-gray-400">{label}</ThemedText>
+            <ThemedText className="mt-1 text-sm font-black">{value}</ThemedText>
         </View>
     );
 }
 
-function SmartAlertsSection({ insights, theme }: { insights: InsightsResponse['ai_insights'], theme: any }) {
+function CategorySection({ categories }: { categories: DashboardResponse['top_categories'] }) {
     return (
-        <View className="mx-6 mt-8">
-            <ThemedText className="text-lg font-black mb-4" style={{ color: theme.text }}>Smart Alerts</ThemedText>
-            <View className="gap-4">
-                <View className="bg-white dark:bg-gray-800 p-6 rounded-[32px] border-l-4 border-l-indigo-500 shadow-sm border border-gray-100 dark:border-gray-700">
-                    <View className="flex-row items-start mb-4">
-                        <View className="h-10 w-10 rounded-2xl bg-indigo-50 items-center justify-center mr-4">
-                            <MaterialCommunityIcons name="star-four-points" size={20} color="#6366F1" />
-                        </View>
-                        <View className="flex-1">
-                            <ThemedText className="text-sm font-black mb-1">Unusual Spending</ThemedText>
-                            <ThemedText className="text-xs text-gray-500 leading-4">Uber spending is 42% higher than your weekly average.</ThemedText>
-                        </View>
+        <Section title="Top categories" empty={categories.length === 0}>
+            {categories.map((category) => (
+                <View key={category.category} className="mb-4">
+                    <View className="mb-2 flex-row justify-between">
+                        <ThemedText className="text-sm font-bold">{category.category}</ThemedText>
+                        <ThemedText className="text-sm font-black">{formatMoney(category.amount)}</ThemedText>
                     </View>
-                    <View className="flex-row gap-3">
-                        <TouchableOpacity className="flex-1 bg-gray-50 dark:bg-gray-700 py-2 rounded-xl items-center">
-                            <ThemedText className="text-[10px] font-black">View Details</ThemedText>
-                        </TouchableOpacity>
-                        <TouchableOpacity className="flex-1 bg-indigo-500 py-2 rounded-xl items-center" style={{ backgroundColor: '#6366F1' }}>
-                            <ThemedText className="text-[10px] font-black text-white">Set Limit</ThemedText>
-                        </TouchableOpacity>
+                    <View className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                        <View className="h-full rounded-full bg-orange-500" style={{ width: `${Math.min(category.percentage, 100)}%` }} />
                     </View>
                 </View>
-
-                <View className="bg-white dark:bg-gray-800 p-6 rounded-[32px] border-l-4 border-l-orange-500 shadow-sm border border-gray-100 dark:border-gray-700">
-                    <View className="flex-row items-start mb-4">
-                        <View className="h-10 w-10 rounded-2xl bg-orange-50 items-center justify-center mr-4">
-                            <MaterialCommunityIcons name="calendar-clock" size={20} color="#F59E0B" />
-                        </View>
-                        <View className="flex-1">
-                            <ThemedText className="text-sm font-black mb-1">Subscription Renewed</ThemedText>
-                            <ThemedText className="text-xs text-gray-500 leading-4">Netflix renewed ({CURRENCY_SYMBOL}649). This is your 14th consecutive month.</ThemedText>
-                        </View>
-                    </View>
-                    <TouchableOpacity className="self-start bg-gray-50 dark:bg-gray-700 px-6 py-2 rounded-xl items-center">
-                        <ThemedText className="text-[10px] font-black">Manage</ThemedText>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </View>
+            ))}
+        </Section>
     );
 }
 
-function AccountIntelligenceSection({ spending, utilization, theme }: { spending: InsightsResponse['account_spending'], utilization: InsightsResponse['credit_utilization'], theme: any }) {
+function AccountSection({ accounts, accent }: { accounts: DashboardResponse['account_spending']; accent: string }) {
     return (
-        <View className="mx-6 mt-8">
-            <ThemedText className="text-lg font-black mb-4" style={{ color: theme.text }}>Account Intelligence</ThemedText>
-            <View className="bg-white dark:bg-gray-800 p-6 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 space-y-6">
-                <View className="mb-6">
-                    <View className="flex-row justify-between items-center mb-2">
-                        <ThemedText className="text-sm font-bold">HDFC Savings</ThemedText>
-                        <ThemedText className="text-[11px] text-gray-400">{CURRENCY_SYMBOL}14,200 spent</ThemedText>
+        <Section title="Account-wise spending" empty={accounts.length === 0}>
+            {accounts.map((account) => (
+                <View key={account.account_id ?? 'unassigned'} className="mb-4">
+                    <View className="mb-2 flex-row justify-between">
+                        <ThemedText className="text-sm font-bold">{account.account_name}</ThemedText>
+                        <ThemedText className="text-sm font-black">{formatMoney(account.amount)}</ThemedText>
                     </View>
-                    <View className="h-2 bg-gray-50 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <View className="h-full rounded-full" style={{ backgroundColor: theme.accent, width: '45%' }} />
-                    </View>
-                </View>
-
-                <View>
-                    <View className="flex-row justify-between items-center mb-2">
-                        <View className="flex-row items-center">
-                            <ThemedText className="text-sm font-bold">ICICI Credit Card</ThemedText>
-                            <View className="ml-2 bg-red-50 px-2 py-0.5 rounded-full">
-                                <ThemedText className="text-[8px] font-black text-red-500 uppercase">High Utilization</ThemedText>
-                            </View>
-                        </View>
-                        <ThemedText className="text-[10px] font-black text-red-500">74% of limit used</ThemedText>
-                    </View>
-                    <View className="h-2 bg-gray-50 dark:bg-gray-700 rounded-full overflow-hidden mb-1">
-                        <View className="h-full bg-red-400 rounded-full" style={{ width: '74%' }} />
-                    </View>
-                    <View className="flex-row justify-end">
-                        <ThemedText className="text-[10px] font-bold text-gray-400">{CURRENCY_SYMBOL}74,000 / {CURRENCY_SYMBOL}1,00,000</ThemedText>
+                    <View className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                        <View className="h-full rounded-full" style={{ backgroundColor: accent, width: `${Math.min(account.percentage, 100)}%` }} />
                     </View>
                 </View>
-            </View>
-        </View>
+            ))}
+        </Section>
     );
 }
 
-function StatsCardsSection({ trends, theme }: { trends: InsightsResponse['behavioral_insights'], theme: any }) {
+function MerchantSection({ merchants }: { merchants: DashboardResponse['top_merchants'] }) {
     return (
-        <View className="mx-6 mt-8 flex-row gap-4">
-            <View className="flex-1 bg-white dark:bg-gray-800 p-6 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700">
-                <View className="h-10 w-10 rounded-2xl bg-blue-50 items-center justify-center mb-4">
-                    <MaterialCommunityIcons name="calendar-outline" size={20} color="#3B82F6" />
+        <Section title="Top merchants" empty={merchants.length === 0}>
+            {merchants.map((merchant) => (
+                <View key={merchant.merchant} className="mb-3 flex-row items-center justify-between">
+                    <View>
+                        <ThemedText className="text-sm font-bold">{merchant.merchant}</ThemedText>
+                        <ThemedText className="text-xs text-gray-400">{merchant.transaction_count} transaction(s)</ThemedText>
+                    </View>
+                    <ThemedText className="text-sm font-black">{formatMoney(merchant.amount)}</ThemedText>
                 </View>
-                <ThemedText className="text-[10px] font-black text-gray-400 uppercase mb-1">Daily Average</ThemedText>
-                <ThemedText className="text-lg font-black">{CURRENCY_SYMBOL}1,690</ThemedText>
-            </View>
-
-            <View className="flex-1 bg-white dark:bg-gray-800 p-6 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700">
-                <View className="h-10 w-10 rounded-2xl bg-red-50 items-center justify-center mb-4">
-                    <MaterialCommunityIcons name="chart-bar" size={20} color="#EF4444" />
-                </View>
-                <ThemedText className="text-[10px] font-black text-gray-400 uppercase mb-1">Busiest Day</ThemedText>
-                <ThemedText className="text-lg font-black">Friday</ThemedText>
-            </View>
-        </View>
+            ))}
+        </Section>
     );
 }
 
-function NeedsReviewSection({ items, theme }: { items: InsightsResponse['review_items'], theme: any }) {
+function RecentSection({ entries }: { entries: DashboardResponse['recent_transactions'] }) {
     return (
-        <View className="mx-6 mt-8">
-            <View className="flex-row justify-between items-center mb-4">
-                <ThemedText className="text-lg font-black" style={{ color: theme.text }}>Needs Review</ThemedText>
-                <View className="bg-red-50 px-2 py-0.5 rounded-full">
-                    <ThemedText className="text-[10px] font-black text-red-500">3 Items</ThemedText>
+        <Section title="Recent transactions" empty={entries.length === 0}>
+            {entries.map((entry) => (
+                <View key={entry.id} className="mb-3 flex-row items-center justify-between">
+                    <View className="flex-1 pr-4">
+                        <ThemedText className="text-sm font-bold">{entry.title || entry.merchant || entry.category || 'Transaction'}</ThemedText>
+                        <ThemedText className="text-xs text-gray-400">{entry.date}</ThemedText>
+                    </View>
+                    <ThemedText className="text-sm font-black">{formatMoney(Number(entry.amount || 0))}</ThemedText>
                 </View>
-            </View>
+            ))}
+        </Section>
+    );
+}
 
-            <View className="bg-white dark:bg-gray-800 p-2 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700">
-                <View className="p-4 flex-row items-center justify-between border-b border-gray-50 dark:border-gray-700">
-                    <View className="flex-row items-center flex-1">
-                        <View className="h-10 w-10 rounded-full bg-gray-50 dark:bg-gray-700 items-center justify-center mr-4">
-                            <MaterialCommunityIcons name="help-circle-outline" size={20} color={theme.text} />
-                        </View>
-                        <View className="flex-1">
-                            <ThemedText className="text-sm font-bold">Payment to Vendor</ThemedText>
-                            <ThemedText className="text-[10px] text-gray-400">Uncategorized • Yesterday</ThemedText>
-                        </View>
-                    </View>
-                    <View className="items-end">
-                        <ThemedText className="text-sm font-black">{CURRENCY_SYMBOL}1,200</ThemedText>
-                        <TouchableOpacity>
-                            <ThemedText className="text-[10px] font-black" style={{ color: theme.accent }}>Assign</ThemedText>
-                        </TouchableOpacity>
-                    </View>
+function InsightSection({ cards }: { cards: InsightCard[] }) {
+    return (
+        <Section title="Insights" empty={cards.length === 0}>
+            {cards.map((card) => (
+                <View
+                    key={card.kind}
+                    className={`mb-3 rounded-2xl border-l-4 p-4 ${
+                        card.severity === 'warning'
+                            ? 'border-l-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                            : 'border-l-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                    }`}
+                >
+                    <ThemedText className="text-sm font-black">{card.title}</ThemedText>
+                    <ThemedText className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">{card.body}</ThemedText>
                 </View>
+            ))}
+        </Section>
+    );
+}
 
-                <View className="p-4 flex-row items-center justify-between">
-                    <View className="flex-row items-center flex-1">
-                        <View className="h-10 w-10 rounded-full bg-gray-50 dark:bg-gray-700 items-center justify-center mr-4">
-                            <MaterialCommunityIcons name="content-copy" size={20} color={theme.text} />
-                        </View>
-                        <View className="flex-1">
-                            <ThemedText className="text-sm font-bold">Amazon India</ThemedText>
-                            <ThemedText className="text-[10px] text-gray-400">Potential Duplicate • 2 Oct</ThemedText>
-                        </View>
-                    </View>
-                    <View className="items-end">
-                        <ThemedText className="text-sm font-black">{CURRENCY_SYMBOL}4,490</ThemedText>
-                        <TouchableOpacity>
-                            <ThemedText className="text-[10px] font-black" style={{ color: theme.accent }}>Resolve</ThemedText>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
+function Section({ title, empty, children }: { title: string; empty: boolean; children: ReactNode }) {
+    return (
+        <View className="rounded-[28px] border border-gray-100 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+            <ThemedText className="mb-5 text-lg font-black">{title}</ThemedText>
+            {empty ? <ThemedText className="text-sm text-gray-400">No data for this period.</ThemedText> : children}
         </View>
     );
 }

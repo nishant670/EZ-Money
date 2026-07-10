@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 import { Transaction } from '@/types/transaction';
 
 export type ApiEntry = {
-  id?: string;
+  id?: string | number;
   account_id?: number | null;
   account?: {
     id: number;
