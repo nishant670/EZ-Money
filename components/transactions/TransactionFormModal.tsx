@@ -10,18 +10,15 @@ import {
     ScrollView,
     TextInput,
     View,
-    TouchableOpacity,
-    Image
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, {
     DateTimePickerAndroid,
     type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import * as DocumentPicker from 'expo-document-picker';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Fonts } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import type { Account } from '@/lib/accounts';
@@ -294,20 +291,6 @@ export function TransactionFormModal({
         setIsDatePickerVisible(false);
     };
 
-    const handlePickDocument = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: '*/*',
-                copyToCacheDirectory: true,
-            });
-            if (!result.canceled) {
-                setForm((prev) => ({ ...prev, attachment: result.assets[0].uri }));
-            }
-        } catch (err) {
-            console.log('Document picker error:', err);
-        }
-    };
-
     const handleConfirmEntry = async () => {
         const missingField = requiredFields.find((field) => {
             const value = form[field];
@@ -340,8 +323,6 @@ export function TransactionFormModal({
             setIsSaving(false);
         }
     };
-
-    const softBorder = colorScheme === 'light' ? theme.border : '#2E2E2E';
 
     if (!showModal) return null;
 
@@ -597,23 +578,6 @@ export function TransactionFormModal({
                                             <View>
                                                 <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Notes</ThemedText>
                                                 <TextInput multiline placeholder="Add a note..." placeholderTextColor="#D1D5DB" value={form.notes} onChangeText={(t) => setForm(p => ({ ...p, notes: t }))} className="bg-gray-50 dark:bg-gray-800/50 rounded-[24px] p-5 text-sm min-h-[100px]" textAlignVertical="top" style={{ color: theme.text }} />
-                                            </View>
-
-                                            <View>
-                                                <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">Attach Document</ThemedText>
-                                                <Pressable onPress={handlePickDocument} className="w-full h-16 border-2 border-dashed border-gray-100 rounded-[24px] items-center justify-center flex-row gap-2 bg-gray-50/50">
-                                                    {form.attachment ? (
-                                                        <>
-                                                            <MaterialCommunityIcons name="file-check-outline" size={20} color="#10B981" />
-                                                            <ThemedText className="text-sm font-bold text-gray-600" numberOfLines={1}>{form.attachment.split('/').pop()}</ThemedText>
-                                                            <Pressable onPress={() => setForm(prev => ({ ...prev, attachment: null }))} hitSlop={10}><MaterialCommunityIcons name="close-circle" size={16} color="#EF4444" /></Pressable>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <MaterialCommunityIcons name="file-upload-outline" size={20} color="#6B7280" /><ThemedText className="text-sm font-bold text-gray-400">Upload receipt</ThemedText>
-                                                        </>
-                                                    )}
-                                                </Pressable>
                                             </View>
                                         </View>
                                     )}

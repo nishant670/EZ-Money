@@ -46,7 +46,6 @@ import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { Account, fetchAccounts as loadAccounts } from '@/lib/accounts';
-import * as DocumentPicker from 'expo-document-picker';
 import {
   TransactionFormModal,
   type AiReviewMetadata,
@@ -399,35 +398,6 @@ export default function HomeScreen() {
     setFormError(null);
     setIsSavingEntry(true);
     try {
-      let attachmentUrl = formData.attachment;
-
-      if (formData.attachment && (formData.attachment.startsWith('file://') || formData.attachment.startsWith('content://'))) {
-        const uploadData = new FormData();
-        const filename = formData.attachment.split('/').pop() || 'file';
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : 'application/octet-stream';
-
-        uploadData.append('file', {
-          uri: formData.attachment,
-          name: filename,
-          type,
-        } as any);
-
-        const uploadRes = await fetch(`${API_BASE_URL}/v1/upload`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          body: uploadData,
-        });
-
-        if (uploadRes.ok) {
-          const data = await uploadRes.json();
-          attachmentUrl = data.url;
-        }
-      }
-
       const parsedDate = parseDateLabel(formData.date);
       const trimmedTag = formData.tag.trim();
       if (!createIdempotencyKey.current) {
@@ -455,7 +425,6 @@ export default function HomeScreen() {
           merchant: formData.merchant.trim(),
           title: formData.title.trim() || 'Untitled Transaction',
           time: formData.time,
-          attachment: attachmentUrl,
         }),
       });
 
