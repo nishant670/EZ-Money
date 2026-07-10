@@ -28,6 +28,7 @@ import { TransactionItem } from '@/components/home/TransactionItem';
 import { VoiceInputCard } from '@/components/home/VoiceInputCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { StateView } from '@/components/ui/StateView';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -587,12 +588,27 @@ export default function HomeScreen() {
       );
     }
 
+    if (entriesError) {
+      return (
+        <StateView
+          icon="wifi-off"
+          title="Activity did not load"
+          message={entriesError}
+          actionLabel="Try again"
+          onAction={() => void fetchEntries()}
+        />
+      );
+    }
+
     if (!hasTransactions) {
       return (
-        <View className="items-center py-10 bg-white/40 dark:bg-gray-800/40 rounded-[32px] border border-dashed border-gray-200 dark:border-gray-700 mx-6">
-          <MaterialCommunityIcons name="receipt" size={48} color={theme.text} opacity={0.1} />
-          <ThemedText className="mt-4 text-gray-400 font-bold text-center">No activity yet.{"\n"}Try recording a spend!</ThemedText>
-        </View>
+        <StateView
+          icon="receipt-text-plus-outline"
+          title="No activity yet"
+          message="Record, type, or add your first transaction to start building your money story."
+          actionLabel="Add manually"
+          onAction={handleOpenManualEntry}
+        />
       );
     }
 

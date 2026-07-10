@@ -8,9 +8,9 @@ import { TransactionItem } from '@/components/home/TransactionItem';
 import { ThemedText } from '@/components/themed-text';
 import { AdvancedFilter } from '@/components/transactions/AdvancedFilter';
 import { Colors } from '@/constants/theme';
+import { StateView } from '@/components/ui/StateView';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { useThemeColor } from '@/hooks/use-theme-color';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { groupTransactionsBySection, loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
@@ -18,7 +18,6 @@ import { Transaction } from '@/types/transaction';
 export default function TransactionsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
-  const accent = useThemeColor({}, 'accent');
   const { token } = useAuthStore();
 
   // Logic States
@@ -39,7 +38,6 @@ export default function TransactionsScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-  const [activeDatePill, setActiveDatePill] = useState('This Month');
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
@@ -96,6 +94,22 @@ export default function TransactionsScreen() {
       endDate !== null
     );
   }, [filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate]);
+
+  const hasSearchQuery = searchQuery.trim().length > 0 || debouncedSearchQuery.length > 0;
+  const hasActiveConstraints = isFilterActive || hasSearchQuery;
+
+  const clearFilters = useCallback(() => {
+    setSearchQuery('');
+    setDebouncedSearchQuery('');
+    setFilterType('All');
+    setSelectedCategory(null);
+    setSelectedMethod(null);
+    setSelectedAccountId(null);
+    setMinAmount(0);
+    setMaxAmount(10000);
+    setStartDate(null);
+    setEndDate(null);
+  }, []);
 
   const sections = useMemo(
     () => groupTransactionsBySection(transactions),
@@ -197,6 +211,44 @@ export default function TransactionsScreen() {
         </View>
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {error && transactions.length > 0 && (
+          <View className="mx-6 mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
+            <ThemedText className="text-center text-sm font-semibold text-red-600 dark:text-red-300">{error}</ThemedText>
+            <TouchableOpacity className="mt-2 items-center" onPress={() => void load()}>
+              <ThemedText className="text-sm font-bold" style={{ color: theme.accent }}>Retry</ThemedText>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isLoading && transactions.length === 0 ? (
+          <StateView
+            icon="history"
+            title="Loading transactions"
+            message="Fetching your latest activity."
+            loading
+          />
+        ) : error && transactions.length === 0 ? (
+          <StateView
+            icon="wifi-off"
+            title="Transactions did not load"
+            message={error}
+            actionLabel="Try again"
+            onAction={() => void load()}
+          />
+        ) : sections.length === 0 ? (
+          <StateView
+            icon={hasActiveConstraints ? 'filter-off-outline' : 'receipt-text-plus-outline'}
+            title={hasActiveConstraints ? 'No matching transactions' : 'No transactions yet'}
+            message={
+              hasActiveConstraints
+                ? 'Adjust your search or filters to see more activity.'
+                : 'Capture your first spend or income from the home screen.'
+            }
+            actionLabel={hasActiveConstraints ? 'Clear filters' : 'Capture transaction'}
+            onAction={hasActiveConstraints ? clearFilters : () => router.push('/(tabs)')}
+          />
+        ) : (
+          <>
         {/* Dynamic Sections */}
         {sections.map((section) => {
           const total = calculateDailyTotal(section.data);
@@ -228,6 +280,8 @@ export default function TransactionsScreen() {
           </View>
           <ThemedText className="text-xs" style={{ color: theme.text }}>End of your story for now!</ThemedText>
         </View>
+          </>
+        )}
 
       </ScrollView>
 

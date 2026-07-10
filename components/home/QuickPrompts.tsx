@@ -1,4 +1,4 @@
-import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -32,19 +32,27 @@ export function QuickPrompts({
 
   const [prompts, setPrompts] = useState<QuickPrompt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchPrompts = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setPrompts([]);
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
     try {
       const resp = await fetch(`${API_BASE_URL}/v1/quick-prompts`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        setPrompts(data);
+      if (!resp.ok) {
+        throw new Error('Unable to load quick prompts.');
       }
-    } catch (err) {
-      console.error('Failed to fetch quick prompts', err);
+      const data = await resp.json();
+      setPrompts(data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load quick prompts.');
     } finally {
       setIsLoading(false);
     }
@@ -70,6 +78,14 @@ export function QuickPrompts({
 
         {isLoading ? (
           <ActivityIndicator size="small" color={theme.accent} className="mx-2" />
+        ) : error ? (
+          <Pressable
+            onPress={() => void fetchPrompts()}
+            className="flex-row items-center rounded-full border border-red-100 bg-red-50 px-4 py-2 dark:border-red-900/30 dark:bg-red-900/20"
+          >
+            <MaterialCommunityIcons name="refresh" size={14} color={theme.accent} />
+            <ThemedText className="ml-2 text-xs font-bold text-red-500">Retry prompts</ThemedText>
+          </Pressable>
         ) : (
           prompts.map((item) => (
             <Pressable
@@ -87,7 +103,7 @@ export function QuickPrompts({
             </Pressable>
           ))
         )}
-        {!isLoading && canAddMore && (
+        {!isLoading && !error && canAddMore && (
           <Pressable
             onPress={onAdd}
             className="flex-row items-center bg-gray-50 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-full px-4 py-2 gap-2 active:opacity-70"
