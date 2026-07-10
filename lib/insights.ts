@@ -1,100 +1,71 @@
-import { API_BASE_URL } from './transactions';
+import { API_BASE_URL, type ApiEntry } from './transactions';
 
-export type MonthlyHealth = {
-    income: number;
-    spent: number;
-    savings: number;
-    savings_rate: number;
-    burn_rate: string;
+export type DashboardSummary = {
+    total_spent: number;
+    total_income: number;
+    daily_average: number;
+    transaction_count: number;
 };
 
-export type CategoryBreakdown = {
+export type DashboardCategory = {
     category: string;
     amount: number;
     percentage: number;
     change: number;
 };
 
-export type MerchantInfo = {
+export type DashboardMerchant = {
     merchant: string;
     amount: number;
     transaction_count: number;
-    icon: string;
 };
 
-export type AIInsightCard = {
-    type: 'info' | 'warning' | 'success';
-    title: string;
-    description: string;
-    action_label: string;
-    action_type: string;
-};
-
-export type AccountSpending = {
-    type: string;
+export type DashboardAccount = {
+    account_id: number | null;
+    account_name: string;
     amount: number;
     percentage: number;
 };
 
-export type CreditUtilization = {
-    account_name: string;
-    used: number;
-    limit: number;
-    percentage: number;
-    due_date: string;
-    warning: boolean;
-};
-
-export type EMISummary = {
-    total_monthly_emi: number;
-    total_lent: number;
-    lent_count: number;
-};
-
-export type BehavioralInsight = {
-    average_daily_spend: number;
-    highest_spend_day: string;
-};
-
-export type ReviewItem = {
-    type: string;
-    count: number;
+export type InsightCard = {
+    kind: 'period_comparison' | 'category_increase' | 'top_merchant' | 'account_usage' | 'unusual_spending';
+    severity: 'info' | 'warning' | 'success';
     title: string;
+    body: string;
 };
 
-export type InsightsResponse = {
-    monthly_health: MonthlyHealth;
-    category_breakdown: CategoryBreakdown[];
-    top_merchants: MerchantInfo[];
-    ai_insights: AIInsightCard[];
-    account_spending: AccountSpending[];
-    credit_utilization: CreditUtilization[];
-    emi_summary: EMISummary;
-    behavioral_insights: BehavioralInsight;
-    review_items: ReviewItem[];
+export type DashboardResponse = {
+    period: { start: string; end: string };
+    summary: DashboardSummary;
+    top_categories: DashboardCategory[];
+    top_merchants: DashboardMerchant[];
+    account_spending: DashboardAccount[];
+    recent_transactions: ApiEntry[];
+    insights: InsightCard[];
 };
 
-export const fetchInsights = async (token: string, startDate?: string, endDate?: string): Promise<InsightsResponse> => {
-    let url = `${API_BASE_URL}/v1/insights`;
+export const fetchDashboard = async (
+    token: string,
+    startDate?: string,
+    endDate?: string,
+): Promise<DashboardResponse> => {
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
+    params.append('tz', 'Asia/Kolkata');
 
-    const queryString = params.toString();
-    if (queryString) {
-        url += `?${queryString}`;
-    }
-
-    const response = await fetch(url, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
+    const response = await fetch(`${API_BASE_URL}/v1/dashboard?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
     });
-
     if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Unable to fetch insights right now.');
+        let message = 'Unable to fetch dashboard right now.';
+        try {
+            const payload = await response.json() as { error?: string };
+            message = payload.error || message;
+        } catch {
+            // Keep the stable fallback for non-JSON errors.
+        }
+        throw new Error(message);
     }
-
     return response.json();
 };

@@ -23,7 +23,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { CURRENCY_SYMBOL } from '@/constants/Currency';
+import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
+import type { Account } from '@/lib/accounts';
 import { formatDateLabel, parseDateLabel } from '@/lib/transactions';
 
 export type EntryForm = {
@@ -37,9 +38,17 @@ export type EntryForm = {
     notes: string;
     tag: string;
     currency: string;
+    accountId: number | null;
     account: string;
     merchant: string;
     attachment: string | null;
+};
+
+export type AiReviewMetadata = {
+    confidence?: Record<string, number>;
+    needsConfirmation?: Record<string, boolean>;
+    missingFields?: string[];
+    clarifications?: string[];
 };
 
 interface TransactionFormModalProps {
@@ -50,6 +59,9 @@ interface TransactionFormModalProps {
     onDelete?: () => Promise<void>;
     isEdit?: boolean;
     mode?: 'audio' | 'manual' | 'quick-prompt';
+    aiReview?: AiReviewMetadata | null;
+    accounts?: Account[];
+    onManageAccounts?: () => void;
 }
 
 const requiredFields: (keyof EntryForm)[] = ['title', 'amount', 'type', 'mode', 'category', 'date'];
@@ -64,6 +76,7 @@ const fieldLabels: Record<keyof EntryForm, string> = {
     notes: 'Notes',
     tag: 'Tag',
     currency: 'Currency',
+    accountId: 'Account',
     account: 'Account',
     merchant: 'Merchant',
     attachment: 'Attachment',
@@ -72,9 +85,23 @@ const fieldLabels: Record<keyof EntryForm, string> = {
 const modeOptions = ['Cash', 'UPI', 'Credit Card', 'Wallets'];
 const categoryOptions = ['Food & Drinks', 'Travel', 'Shopping', 'Bills', 'Transport', 'Family/Gifts', 'Misc'];
 const tagOptions = ['Investment', 'Lending', 'EMI', 'Subscription', 'General'];
-const accountOptions = ['Main Account', 'Savings', 'ICICI Bank', 'HDFC Credit', 'Cash Wallet'];
+const formatFieldName = (field: string) => {
+    const normalized = field === 'account_hint' ? 'account' : field;
+    return normalized.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
 
-export function TransactionFormModal({ visible, onClose, initialData, onSave, onDelete, isEdit, mode = 'manual' }: TransactionFormModalProps) {
+export function TransactionFormModal({
+    visible,
+    onClose,
+    initialData,
+    onSave,
+    onDelete,
+    isEdit,
+    mode = 'manual',
+    aiReview,
+    accounts = [],
+    onManageAccounts,
+}: TransactionFormModalProps) {
     const colorScheme = useColorScheme() ?? 'light';
     const theme = Colors[colorScheme];
     const accent = theme.accent;
@@ -95,8 +122,9 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
         time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
         notes: '',
         tag: 'General',
-        currency: 'USD',
-        account: 'Main Account',
+        currency: DEFAULT_CURRENCY,
+        accountId: null,
+        account: '',
         merchant: '',
         attachment: null,
         ...initialData
@@ -112,6 +140,24 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
     const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
     const [isAccountPickerVisible, setIsAccountPickerVisible] = useState(false);
 
+    const reviewFields = useMemo(() => {
+        const fields = new Set(aiReview?.missingFields ?? []);
+        Object.entries(aiReview?.needsConfirmation ?? {}).forEach(([field, needsConfirmation]) => {
+            if (needsConfirmation) fields.add(field);
+        });
+        Object.entries(aiReview?.confidence ?? {}).forEach(([field, confidence]) => {
+            if (confidence < 0.7) fields.add(field);
+        });
+        return Array.from(fields);
+    }, [aiReview]);
+    const hasReviewMetadata = Boolean(
+        aiReview?.confidence ||
+        aiReview?.needsConfirmation ||
+        aiReview?.missingFields ||
+        aiReview?.clarifications,
+    );
+    const categoryNeedsReview = reviewFields.includes('category');
+
     useEffect(() => {
         if (visible) {
             setShowModal(true);
@@ -125,8 +171,9 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
                 time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
                 notes: '',
                 tag: 'General',
-                currency: 'USD',
-                account: 'Main Account',
+                currency: DEFAULT_CURRENCY,
+                accountId: null,
+                account: '',
                 merchant: '',
                 attachment: null,
                 ...initialData
@@ -302,19 +349,47 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
                                     </ThemedText>
                                     <ThemedText className="text-center text-gray-500 text-sm leading-5 px-4">
                                         {isEdit ? 'Make your changes and confirm below.' :
-                                            mode === 'audio' ? "Here's what I understood. Just confirm the bits before you save." :
+                                            mode === 'audio' ? "Here's the AI draft. Review every field before you save." :
                                                 mode === 'quick-prompt' ? 'These details will be used for your shortcut.' : 'Fill in the transaction details below.'}
                                     </ThemedText>
                                 </View>
 
                                 <View className="px-6 mb-8">
                                     {mode === 'audio' && (
-                                        <View className="flex-row justify-between items-center mb-4">
-                                            <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic">Confirmed by AI</ThemedText>
-                                            <View className="flex-row items-center bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
-                                                <MaterialCommunityIcons name="check-decagram-outline" size={12} color="#10B981" />
-                                                <ThemedText className="text-[9px] font-black text-emerald-600 ml-1 uppercase">Confidence: High</ThemedText>
+                                        <View className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
+                                            <View className="flex-row items-center justify-between">
+                                                <View className="flex-row items-center">
+                                                    <MaterialCommunityIcons name="creation-outline" size={18} color="#D97706" />
+                                                    <ThemedText className="ml-2 text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                                                        AI draft
+                                                    </ThemedText>
+                                                </View>
+                                                <View className="rounded-full border border-amber-200 bg-white px-2 py-1 dark:border-amber-800 dark:bg-gray-800">
+                                                    <ThemedText className="text-[9px] font-black uppercase text-amber-700 dark:text-amber-300">
+                                                        {reviewFields.length > 0
+                                                            ? `${reviewFields.length} field${reviewFields.length === 1 ? '' : 's'} to check`
+                                                            : hasReviewMetadata
+                                                                ? 'No issues flagged'
+                                                                : 'Review all fields'}
+                                                    </ThemedText>
+                                                </View>
                                             </View>
+                                            {reviewFields.length > 0 && (
+                                                <ThemedText className="mt-3 text-sm font-bold text-amber-900 dark:text-amber-100">
+                                                    Check: {reviewFields.map(formatFieldName).join(', ')}
+                                                </ThemedText>
+                                            )}
+                                            {aiReview?.clarifications?.map((clarification) => (
+                                                <View key={clarification} className="mt-2 flex-row items-start">
+                                                    <MaterialCommunityIcons name="help-circle-outline" size={16} color="#D97706" />
+                                                    <ThemedText className="ml-2 flex-1 text-sm text-amber-900 dark:text-amber-100">
+                                                        {clarification}
+                                                    </ThemedText>
+                                                </View>
+                                            ))}
+                                            <ThemedText className="mt-3 text-xs text-amber-800 dark:text-amber-200">
+                                                AI suggestions are never saved until you confirm.
+                                            </ThemedText>
                                         </View>
                                     )}
 
@@ -387,28 +462,57 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
                                     </View>
 
                                     {mode !== 'quick-prompt' && (
-                                        <Pressable onPress={handleOpenDatePicker} className="w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
-                                            <View>
-                                                <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">Date & Time</ThemedText>
-                                                <View className="flex-row items-center gap-3">
-                                                    <View className="h-10 w-10 rounded-xl bg-purple-50 items-center justify-center">
-                                                        <MaterialCommunityIcons name="calendar-multiselect" size={20} color="#8B5CF6" />
+                                        <>
+                                            <Pressable onPress={handleOpenDatePicker} className="w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
+                                                <View>
+                                                    <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">Date & Time</ThemedText>
+                                                    <View className="flex-row items-center gap-3">
+                                                        <View className="h-10 w-10 rounded-xl bg-purple-50 items-center justify-center">
+                                                            <MaterialCommunityIcons name="calendar-multiselect" size={20} color="#8B5CF6" />
+                                                        </View>
+                                                        <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.date}, {form.time}</ThemedText>
                                                     </View>
-                                                    <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.date}, {form.time}</ThemedText>
                                                 </View>
-                                            </View>
-                                            <MaterialCommunityIcons name="pencil-outline" size={18} color="#D1D5DB" />
-                                        </Pressable>
+                                                <MaterialCommunityIcons name="pencil-outline" size={18} color="#D1D5DB" />
+                                            </Pressable>
+                                            {form.mode !== 'Cash' && (
+                                                <Pressable onPress={() => setIsAccountPickerVisible(true)} className="mt-4 w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
+                                                    <View className="flex-row items-center gap-4">
+                                                        <View className="h-12 w-12 rounded-2xl bg-blue-50 items-center justify-center">
+                                                            <MaterialCommunityIcons name="wallet-outline" size={24} color="#3B82F6" />
+                                                        </View>
+                                                        <View>
+                                                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account (optional)</ThemedText>
+                                                            <ThemedText className="text-base font-bold" style={{ color: theme.text }}>
+                                                                {form.account || (accounts.length === 0 ? 'Add an account' : 'No account')}
+                                                            </ThemedText>
+                                                        </View>
+                                                    </View>
+                                                    <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
+                                                </Pressable>
+                                            )}
+                                        </>
                                     )}
                                 </View>
 
                                 <View className="px-6 mb-8">
-                                    <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">Needs Attention</ThemedText>
+                                    <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">
+                                        {categoryNeedsReview ? 'Needs Attention' : 'Category'}
+                                    </ThemedText>
                                     <View className="relative mb-4">
-                                        <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
-                                            <ThemedText className="text-[8px] font-black text-black">Check this?</ThemedText>
-                                        </View>
-                                        <Pressable onPress={() => setIsCategoryPickerVisible(true)} className="w-full bg-[#FFFCF0] dark:bg-gray-800/50 rounded-[28px] p-4 border border-yellow-100 flex-row items-center justify-between">
+                                        {categoryNeedsReview && (
+                                            <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
+                                                <ThemedText className="text-[8px] font-black text-black">Check this</ThemedText>
+                                            </View>
+                                        )}
+                                        <Pressable
+                                            onPress={() => setIsCategoryPickerVisible(true)}
+                                            className={`w-full rounded-[28px] p-4 border flex-row items-center justify-between ${
+                                                categoryNeedsReview
+                                                    ? 'bg-[#FFFCF0] dark:bg-gray-800/50 border-yellow-100'
+                                                    : 'bg-white dark:bg-gray-800 border-gray-100'
+                                            }`}
+                                        >
                                             <View className="flex-row items-center gap-4">
                                                 <View className="h-12 w-12 rounded-2xl bg-orange-100 items-center justify-center">
                                                     <MaterialCommunityIcons name="car-outline" size={24} color="#F59E0B" />
@@ -444,21 +548,6 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
                                                         <TextInput value={form.merchant} onChangeText={(t) => setForm(p => ({ ...p, merchant: t }))} className="text-sm font-black flex-1 p-0" placeholder="Store Name" style={{ color: theme.text }} />
                                                     </View>
                                                 </View>
-                                            </View>
-
-                                            <View className="relative mb-4">
-                                                <Pressable onPress={() => setIsAccountPickerVisible(true)} className="w-full bg-white dark:bg-gray-800 rounded-[28px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
-                                                    <View className="flex-row items-center gap-4">
-                                                        <View className="h-12 w-12 rounded-2xl bg-blue-50 items-center justify-center">
-                                                            <MaterialCommunityIcons name="wallet-outline" size={24} color="#3B82F6" />
-                                                        </View>
-                                                        <View>
-                                                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">Paid from account</ThemedText>
-                                                            <ThemedText className="text-base font-bold" style={{ color: theme.text }}>{form.account || 'Select account'}</ThemedText>
-                                                        </View>
-                                                    </View>
-                                                    <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
-                                                </Pressable>
                                             </View>
 
                                             <View>
@@ -542,7 +631,18 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
                             <ThemedText className="text-center text-lg font-bold mb-6">Select Payment Method</ThemedText>
                             <View className="gap-2">
                                 {modeOptions.map(m => (
-                                    <Pressable key={m} onPress={() => { setForm(p => ({ ...p, mode: m })); setIsModePickerVisible(false); }} className={`p-4 rounded-2xl flex-row items-center justify-between ${form.mode === m ? 'bg-orange-50 border border-orange-100' : 'bg-gray-50'}`}>
+                                    <Pressable
+                                        key={m}
+                                        onPress={() => {
+                                            setForm(p => ({
+                                                ...p,
+                                                mode: m,
+                                                ...(m === 'Cash' ? { accountId: null, account: '' } : {}),
+                                            }));
+                                            setIsModePickerVisible(false);
+                                        }}
+                                        className={`p-4 rounded-2xl flex-row items-center justify-between ${form.mode === m ? 'bg-orange-50 border border-orange-100' : 'bg-gray-50'}`}
+                                    >
                                         <ThemedText className={`font-bold ${form.mode === m ? 'text-orange-500' : 'text-gray-700'}`}>{m}</ThemedText>
                                         {form.mode === m && <MaterialCommunityIcons name="check" size={20} color="#F97316" />}
                                     </Pressable>
@@ -578,12 +678,53 @@ export function TransactionFormModal({ visible, onClose, initialData, onSave, on
                         <View className="rounded-t-3xl px-4 pb-10 pt-4" style={{ backgroundColor: theme.background }}>
                             <ThemedText className="text-center text-lg font-bold mb-6">Select Account</ThemedText>
                             <View className="gap-2">
-                                {accountOptions.map(a => (
-                                    <Pressable key={a} onPress={() => { setForm(p => ({ ...p, account: a })); setIsAccountPickerVisible(false); }} className={`p-4 rounded-2xl flex-row items-center justify-between ${form.account === a ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}>
-                                        <ThemedText className={`font-bold ${form.account === a ? 'text-blue-500' : 'text-gray-700'}`}>{a}</ThemedText>
-                                        {form.account === a && <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />}
+                                <Pressable
+                                    onPress={() => {
+                                        setForm(p => ({ ...p, accountId: null, account: '' }));
+                                        setIsAccountPickerVisible(false);
+                                    }}
+                                    className={`p-4 rounded-2xl flex-row items-center justify-between ${form.accountId === null ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}
+                                >
+                                    <ThemedText className={`font-bold ${form.accountId === null ? 'text-blue-500' : 'text-gray-700'}`}>No account</ThemedText>
+                                    {form.accountId === null && <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />}
+                                </Pressable>
+                                {accounts.map(account => (
+                                    <Pressable
+                                        key={account.id}
+                                        onPress={() => {
+                                            setForm(p => ({ ...p, accountId: account.id, account: account.name }));
+                                            setIsAccountPickerVisible(false);
+                                        }}
+                                        className={`p-4 rounded-2xl flex-row items-center justify-between ${form.accountId === account.id ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}
+                                    >
+                                        <View>
+                                            <ThemedText className={`font-bold ${form.accountId === account.id ? 'text-blue-500' : 'text-gray-700'}`}>{account.name}</ThemedText>
+                                            <ThemedText className="text-xs text-gray-400">{account.provider || account.type}</ThemedText>
+                                        </View>
+                                        {form.accountId === account.id && <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />}
                                     </Pressable>
                                 ))}
+                                {accounts.length === 0 && (
+                                    <View className="items-center gap-4 py-4">
+                                        <ThemedText className="text-center text-sm text-gray-500">
+                                            Add an account to track your outflows smartly. You can still save this transaction without one.
+                                        </ThemedText>
+                                        {onManageAccounts && (
+                                            <Pressable
+                                                accessibilityRole="button"
+                                                onPress={() => {
+                                                    setIsAccountPickerVisible(false);
+                                                    onClose();
+                                                    onManageAccounts();
+                                                }}
+                                                className="rounded-2xl px-5 py-3"
+                                                style={{ backgroundColor: accent }}
+                                            >
+                                                <ThemedText className="font-bold text-white">Manage accounts</ThemedText>
+                                            </Pressable>
+                                        )}
+                                    </View>
+                                )}
                             </View>
                         </View>
                     </View>

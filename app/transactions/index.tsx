@@ -11,6 +11,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { Account, fetchAccounts } from '@/lib/accounts';
 import { groupTransactionsBySection, loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
@@ -25,6 +26,8 @@ export default function TransactionsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   // Filter States
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -35,8 +38,13 @@ export default function TransactionsScreen() {
   const [endDate, setEndDate] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [activeDatePill, setActiveDatePill] = useState('This Month');
 
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
 
   // Initial Load & Filtered Load
   const load = useCallback(async () => {
@@ -45,14 +53,18 @@ export default function TransactionsScreen() {
     setError(null);
     try {
       const filters = {
+        q: debouncedSearchQuery || undefined,
         type: filterType === 'All' ? undefined : filterType,
         category: selectedCategory ?? undefined,
         mode: selectedMethod ?? undefined,
+        account_id: selectedAccountId ?? undefined,
         // Only send amount filter if it differs from default range
         min_amount: minAmount > 0 ? minAmount : undefined,
         max_amount: maxAmount < 10000 ? maxAmount : undefined,
         start_date: startDate ?? undefined,
         end_date: endDate ?? undefined,
+        page: 1,
+        page_size: 100,
       };
       const mapped = await loadTransactions(token, filters);
       setTransactions(mapped);
@@ -61,43 +73,33 @@ export default function TransactionsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, filterType, selectedCategory, selectedMethod, minAmount, maxAmount, startDate, endDate]);
+  }, [token, filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate, debouncedSearchQuery]);
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      void load();
+      if (token) {
+        void fetchAccounts(token).then(setAccounts).catch(() => setAccounts([]));
+      }
+    }, [load, token])
   );
-
-  // Filter Logic (Search remains FE only for speed)
-  const filteredTransactions = useMemo(() => {
-    const query = searchQuery.toLowerCase();
-    return transactions.filter((txn) => {
-      const matchesQuery = !query || (
-        txn.name.toLowerCase().includes(query) ||
-        txn.category.toLowerCase().includes(query) ||
-        txn.amount.toString().includes(query) ||
-        (txn.notes && txn.notes.toLowerCase().includes(query))
-      );
-      return matchesQuery;
-    });
-  }, [transactions, searchQuery]);
 
   const isFilterActive = useMemo(() => {
     return (
       filterType !== 'All' ||
       selectedCategory !== null ||
       selectedMethod !== null ||
+      selectedAccountId !== null ||
       minAmount > 0 ||
       maxAmount < 10000 ||
       startDate !== null ||
       endDate !== null
     );
-  }, [filterType, selectedCategory, selectedMethod, minAmount, maxAmount, startDate, endDate]);
+  }, [filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate]);
 
   const sections = useMemo(
-    () => groupTransactionsBySection(filteredTransactions),
-    [filteredTransactions],
+    () => groupTransactionsBySection(transactions),
+    [transactions],
   );
 
   const calculateDailyTotal = (items: Transaction[]) => {
@@ -117,7 +119,7 @@ export default function TransactionsScreen() {
           icon={item.icon as any}
           title={item.name}
           category={item.category}
-          subtitle={item.mode ?? ''}
+          subtitle={item.accountName ?? item.mode ?? ''}
           amount={`${displayAmount}`}
           date={""}
           color={item.color}
@@ -240,11 +242,12 @@ export default function TransactionsScreen() {
           <Pressable className="absolute inset-0" onPress={() => setIsFilterOpen(false)} />
           <AdvancedFilter
             onClose={() => setIsFilterOpen(false)}
-            count={filteredTransactions.length}
+            count={transactions.length}
             onApply={(newFilters: any) => {
               setFilterType(newFilters.type);
               setSelectedCategory(newFilters.category);
               setSelectedMethod(newFilters.mode);
+              setSelectedAccountId(newFilters.account_id);
               setMinAmount(newFilters.min_amount);
               setMaxAmount(newFilters.max_amount);
               setStartDate(newFilters.start_date);
@@ -256,9 +259,10 @@ export default function TransactionsScreen() {
               dateRange: { from: startDate, to: endDate },
               amountRange: { min: minAmount, max: maxAmount },
               category: selectedCategory,
-              account: null,
+              accountId: selectedAccountId,
               paymentMethod: selectedMethod,
             }}
+            accounts={accounts}
           />
         </View>
       </Modal>

@@ -1,5 +1,6 @@
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import type { Account } from '@/lib/accounts';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import React, { useState } from 'react';
@@ -21,6 +22,7 @@ interface AdvancedFilterProps {
         type: string;
         category: string | null;
         mode: string | null;
+        account_id: number | null;
         min_amount: number;
         max_amount: number;
         start_date: string | null;
@@ -32,18 +34,19 @@ interface AdvancedFilterProps {
         dateRange: { from: string | null; to: string | null };
         amountRange: { min: number; max: number };
         category: string | null;
-        account: string | null;
+        accountId: number | null;
         paymentMethod: string | null;
     };
+    accounts: Account[];
 }
 
-export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: AdvancedFilterProps) => {
+export const AdvancedFilter = ({ onClose, onApply, currentFilters, accounts, count = 0 }: AdvancedFilterProps) => {
     const colorScheme = useColorScheme() ?? 'light';
     const theme = Colors[colorScheme];
 
     const [type, setType] = React.useState(currentFilters.type);
     const [category, setCategory] = React.useState(currentFilters.category);
-    const [account, setAccount] = React.useState(currentFilters.account);
+    const [accountId, setAccountId] = React.useState(currentFilters.accountId);
     const [paymentMethod, setPaymentMethod] = React.useState(currentFilters.paymentMethod);
 
     // Date Picker States
@@ -294,21 +297,18 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                         <Text style={styles.sectionLabel}>WHERE FROM / WHERE TO?</Text>
                     </View>
                     <View style={styles.accountContainer}>
-                        {[
-                            { name: 'Chase Sapphire', selected: true },
-                            { name: 'Checking' },
-                            { name: 'Savings' },
-                        ].map((acc) => (
+                        {accounts.map((account) => (
                             <TouchableOpacity
-                                key={acc.name}
-                                style={[styles.accountChip, account === acc.name && styles.activeAccountChip]}
-                                onPress={() => setAccount(acc.name)}
+                                key={account.id}
+                                style={[styles.accountChip, accountId === account.id && styles.activeAccountChip]}
+                                onPress={() => setAccountId(accountId === account.id ? null : account.id)}
                             >
-                                <MaterialCommunityIcons name={acc.name.includes('Chase') ? 'credit-card' : 'bank'} size={16} color="#42A5F5" />
-                                <Text style={styles.accountChipText}>{acc.name}</Text>
-                                {account === acc.name && <View style={styles.activeDot} />}
+                                <MaterialCommunityIcons name={account.type === 'credit' ? 'credit-card' : 'bank'} size={16} color="#42A5F5" />
+                                <Text style={styles.accountChipText}>{account.name}</Text>
+                                {accountId === account.id && <View style={styles.activeDot} />}
                             </TouchableOpacity>
                         ))}
+                        {accounts.length === 0 && <Text style={styles.accountChipText}>No accounts available</Text>}
                     </View>
                 </View>
 
@@ -349,7 +349,7 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                         onPress={() => {
                             setType('All');
                             setCategory(null);
-                            setAccount(null);
+                            setAccountId(null);
                             setPaymentMethod(null);
                             setStartDate(null);
                             setEndDate(null);
@@ -366,6 +366,7 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, count = 0 }: 
                             type,
                             category,
                             mode: paymentMethod,
+                            account_id: accountId,
                             min_amount: minAmount,
                             max_amount: maxAmount,
                             start_date: formatToApiDate(startDate),

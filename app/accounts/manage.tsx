@@ -1,15 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { useState, useMemo } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Modal, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Fonts } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { saveAccount } from '@/lib/accounts';
+import { fetchAccounts, saveAccount, updateAccount } from '@/lib/accounts';
 
 
 type AccountTypeOption = {
@@ -21,6 +20,7 @@ type AccountTypeOption = {
 };
 
 const typeOptions: AccountTypeOption[] = [
+  { key: 'cash', label: 'Cash', icon: 'cash', color: '#2ECC71', bgColor: '#EAF8F0' },
   { key: 'credit', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
   { key: 'debit', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
   { key: 'wallet', label: 'Wallet', icon: 'wallet', color: '#FF9F43', bgColor: '#FFF4EB' },
@@ -49,9 +49,13 @@ const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function ManageAccountScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
   const { token } = useAuthStore();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const accountId = id ? Number(id) : null;
+  const isEditing = Number.isInteger(accountId) && accountId !== null && accountId > 0;
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingAccount, setIsLoadingAccount] = useState(isEditing);
+  const [isDefault, setIsDefault] = useState(false);
 
   // Step navigation
   const [step, setStep] = useState(1);
@@ -67,6 +71,7 @@ export default function ManageAccountScreen() {
   const [showIssuerResults, setShowIssuerResults] = useState(false);
 
   const [last4, setLast4] = useState('');
+  const [balance, setBalance] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
   const [dueDay, setDueDay] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
@@ -74,6 +79,43 @@ export default function ManageAccountScreen() {
   // Modal States
   const [showDayModal, setShowDayModal] = useState(false);
   const [showMonthModal, setShowMonthModal] = useState(false);
+
+  useEffect(() => {
+    if (!token || !isEditing || accountId === null) {
+      setIsLoadingAccount(false);
+      return;
+    }
+    let active = true;
+    void fetchAccounts(token)
+      .then((accounts) => {
+        if (!active) return;
+        const account = accounts.find((candidate) => candidate.id === accountId);
+        if (!account) {
+          throw new Error('Account not found.');
+        }
+        setSelectedType(account.type);
+        setSelectedColor(account.color || '#54A0FF');
+        setName(account.name);
+        setIssuerQuery(account.provider || '');
+        setSelectedIssuer(CARD_ISSUERS.find((issuer) => issuer.name === account.provider) ?? null);
+        setLast4(account.identifier || '');
+        setBalance(account.balance ? String(account.balance) : '');
+        setCreditLimit(account.credit_limit ? String(account.credit_limit) : '');
+        setDueDay(account.due_day ? String(account.due_day) : '');
+        setFeeMonth(account.fee_month || '');
+        setIsDefault(Boolean(account.is_default));
+      })
+      .catch((error) => {
+        alert(error instanceof Error ? error.message : 'Unable to load account.');
+        router.back();
+      })
+      .finally(() => {
+        if (active) setIsLoadingAccount(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [accountId, isEditing, token]);
 
   const handleSave = async () => {
     if (!token) return;
@@ -88,14 +130,19 @@ export default function ManageAccountScreen() {
         type: selectedType,
         name: name,
         color: selectedColor,
-        provider: selectedIssuer?.name || '',
+        provider: selectedIssuer?.name || issuerQuery.trim(),
         identifier: last4,
         credit_limit: parseFloat(creditLimit) || 0,
         due_day: parseInt(dueDay) || 0,
         fee_month: feeMonth,
-        balance: 0, // Initial balance can be added later if needed
+        balance: parseFloat(balance) || 0,
+        is_default: isDefault,
       };
-      await saveAccount(token, payload);
+      if (isEditing && accountId !== null) {
+        await updateAccount(token, accountId, payload);
+      } else {
+        await saveAccount(token, payload);
+      }
       router.back();
     } catch (err: any) {
       alert(err.message || 'Failed to save account');
@@ -164,7 +211,7 @@ export default function ManageAccountScreen() {
         <View style={styles.mascotSection}>
           <View style={styles.bubbleContainer}>
             <ThemedText style={styles.bubbleText}>
-              Let's set up your new account!
+              {isEditing ? 'Update your account details.' : 'Let&apos;s set up your new account!'}
             </ThemedText>
             <View style={styles.bubbleTriangle} />
           </View>
@@ -173,7 +220,7 @@ export default function ManageAccountScreen() {
               <MaterialCommunityIcons name="face-woman-outline" size={24} color="#FF8A65" />
             </View>
             <ThemedText style={styles.mascotCaption}>
-              "I'll help you organize your cash flow."
+              &quot;I&apos;ll help you organize your cash flow.&quot;
             </ThemedText>
           </View>
         </View>
@@ -254,7 +301,7 @@ export default function ManageAccountScreen() {
           style={styles.saveButton}
           disabled={isSaving}
         >
-          <ThemedText style={styles.saveButtonText}>Looks Good! Save</ThemedText>
+          <ThemedText style={styles.saveButtonText}>{isEditing ? 'Continue' : 'Looks Good! Save'}</ThemedText>
           {isSaving ? (
             <ActivityIndicator size="small" color="white" />
           ) : (
@@ -280,7 +327,7 @@ export default function ManageAccountScreen() {
             <View style={styles.mascotSection}>
               <View style={[styles.bubbleContainer, { backgroundColor: '#F4F1FE' }]}>
                 <ThemedText style={styles.bubbleText}>
-                  Yay! Let's set up your plastic power.
+                  Yay! Let&apos;s set up your plastic power.
                 </ThemedText>
                 <View style={[styles.bubbleTriangle, { backgroundColor: '#F4F1FE' }]} />
               </View>
@@ -402,7 +449,7 @@ export default function ManageAccountScreen() {
               style={[styles.saveButton, { backgroundColor: '#FF8A65' }]}
               disabled={isSaving}
             >
-              <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Done 🎉'}</ThemedText>
+              <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Done 🎉'}</ThemedText>
               {isSaving && <ActivityIndicator size="small" color="white" className="ml-2" />}
             </TouchableOpacity>
           </View>
@@ -436,6 +483,8 @@ export default function ManageAccountScreen() {
           <View style={styles.inputContainer}>
             <MaterialCommunityIcons name="scale-balance" size={24} color="#FFAD91" style={styles.inputIcon} />
             <TextInput
+              value={balance}
+              onChangeText={(value) => setBalance(value.replace(/[^0-9.]/g, ''))}
               placeholder="0.00"
               placeholderTextColor="#AAB7C6"
               keyboardType="decimal-pad"
@@ -447,6 +496,8 @@ export default function ManageAccountScreen() {
           <View style={styles.inputContainer}>
             <MaterialCommunityIcons name="card-text-outline" size={24} color="#FFAD91" style={styles.inputIcon} />
             <TextInput
+              value={last4}
+              onChangeText={(value) => setLast4(value.replace(/[^0-9]/g, '').slice(-4))}
               placeholder="1234 5678 9012"
               placeholderTextColor="#AAB7C6"
               keyboardType="number-pad"
@@ -464,7 +515,7 @@ export default function ManageAccountScreen() {
             style={styles.saveButton}
             disabled={isSaving}
           >
-            <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Finish Setup'}</ThemedText>
+            <ThemedText style={styles.saveButtonText}>{isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Finish Setup'}</ThemedText>
             {isSaving ? (
               <ActivityIndicator size="small" color="white" />
             ) : (
@@ -479,7 +530,12 @@ export default function ManageAccountScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <View style={styles.container}>
-        {step === 1 ? renderStep1() : renderStep2()}
+        {isLoadingAccount ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator size="large" color="#FF8A65" />
+            <ThemedText>Loading account...</ThemedText>
+          </View>
+        ) : step === 1 ? renderStep1() : renderStep2()}
       </View>
     </SafeAreaView>
   );
@@ -492,6 +548,12 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
   scrollContent: {
     paddingHorizontal: 24,
