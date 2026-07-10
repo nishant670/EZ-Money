@@ -20,6 +20,7 @@ type AuthScreen2Props = ScreenProps & {
   errorMessage?: string | null;
   isLoading?: boolean;
   onInputChange?: () => void;
+  secondaryLabel?: string;
 };
 
 export const AuthScreen2 = ({
@@ -28,6 +29,7 @@ export const AuthScreen2 = ({
   errorMessage,
   isLoading,
   onInputChange,
+  secondaryLabel = 'Continue as Guest',
 }: AuthScreen2Props) => {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
@@ -135,7 +137,7 @@ export const AuthScreen2 = ({
 
             <TouchableOpacity style={styles.textButton} onPress={() => onSecondary?.()}>
               <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.6 }]}>
-                Continue as Guest
+                {secondaryLabel}
               </Text>
             </TouchableOpacity>
           </View>

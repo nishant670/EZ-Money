@@ -1,29 +1,29 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Image, Pressable, ScrollView, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/hooks/use-auth-store';
 
-const TView = cssInterop(ThemedView, { className: 'style' });
 const TText = cssInterop(ThemedText, { className: 'style' });
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, clearAuth } = useAuthStore();
   const [smartSorting, setSmartSorting] = useState(true);
 
   const handleLogout = () => {
+    clearAuth();
     router.replace('/onboarding');
   };
+  const isGuest = !!user?.is_guest;
 
   const backgroundColor = colorScheme === 'light' ? '#F9F7FB' : theme.background;
   const cardColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
@@ -107,7 +107,7 @@ export default function ProfileScreen() {
                 My AI Voice
               </TText>
               <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                Choose Your{"\n"}Companion's Tone
+                Choose Your{"\n"}{"Companion's Tone"}
               </TText>
             </View>
 
@@ -209,15 +209,29 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Logout */}
+          {/* Account action */}
           <Pressable
-            onPress={handleLogout}
+            onPress={() => {
+              if (isGuest) {
+                router.push('/auth?mode=link');
+                return;
+              }
+              handleLogout();
+            }}
             className="flex-row items-center justify-center h-16 rounded-[24px] mt-2 mb-2"
-            style={{ backgroundColor: '#FFF5F2' }}
+            style={{ backgroundColor: isGuest ? '#F0EAF5' : '#FFF5F2' }}
           >
-            <MaterialCommunityIcons name="logout" size={20} color="#D32F2F" style={{ marginRight: 10 }} />
-            <TText className="text-lg font-bold" style={{ color: '#D32F2F', fontFamily: Fonts.title }}>
-              Time to Log Out?
+            <MaterialCommunityIcons
+              name={isGuest ? 'login' : 'logout'}
+              size={20}
+              color={isGuest ? '#4A148C' : '#D32F2F'}
+              style={{ marginRight: 10 }}
+            />
+            <TText
+              className="text-lg font-bold"
+              style={{ color: isGuest ? '#4A148C' : '#D32F2F', fontFamily: Fonts.title }}
+            >
+              {isGuest ? 'Sign in / Create account' : 'Time to Log Out?'}
             </TText>
           </Pressable>
 

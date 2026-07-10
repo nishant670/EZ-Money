@@ -1,8 +1,10 @@
 import { OnboardingScreenWrapper } from '@/components/onboarding/OnboardingScreenWrapper';
+import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { useRouter } from 'expo-router';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   SlideInLeft,
   SlideInRight,
@@ -25,8 +27,12 @@ import { getDeviceId } from '@/lib/device';
 
 export default function AuthFlow() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const colorScheme = useColorScheme() ?? 'light';
+  const theme = Colors[colorScheme];
   const { user, setAuth } = useAuthStore();
-  const [step, setStep] = useState(1);
+  const isGuestLinking = params.mode === 'link' && !!user?.is_guest;
+  const [step, setStep] = useState(() => (isGuestLinking ? 2 : 1));
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [identifier, setIdentifier] = useState('');
   const [claimToken, setClaimToken] = useState<string | null>(null);
@@ -165,8 +171,10 @@ export default function AuthFlow() {
       setIdentifier(id);
       if (!result.exists) {
         await authOtpSend(id);
+        changeStep(3, 'forward');
+        return;
       }
-      changeStep(result.exists ? 7 : 3, 'forward');
+      changeStep(isGuestLinking ? 10 : 7, 'forward');
     } catch (error) {
       setIdentifyError(error instanceof Error ? error.message : 'Unable to verify that identifier.');
     } finally {
@@ -193,12 +201,29 @@ export default function AuthFlow() {
           <AuthScreen2
             onContinue={handleIdentify}
             onSecondary={() => {
+              if (isGuestLinking) {
+                router.replace('/(tabs)');
+                return;
+              }
               setGuestError(null);
               changeStep(5, 'forward');
             }}
             onInputChange={() => setIdentifyError(null)}
             errorMessage={identifyError}
             isLoading={isIdentifying}
+            secondaryLabel={isGuestLinking ? 'Keep using guest' : 'Continue as Guest'}
+          />
+        );
+      case 10:
+        return (
+          <ExistingAccountPrompt
+            identifier={identifier}
+            onContinue={() => changeStep(7, 'forward')}
+            onDifferent={() => {
+              setIdentifier('');
+              changeStep(2, 'back');
+            }}
+            theme={theme}
           />
         );
       case 7:
@@ -297,5 +322,87 @@ const styles = StyleSheet.create({
   },
   screenContainer: {
     flex: 1,
-  }
+  },
+  promptContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+  },
+  promptCard: {
+    borderRadius: 28,
+    padding: 24,
+    backgroundColor: 'white',
+  },
+  promptTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontFamily: Fonts.title,
+  },
+  promptBody: {
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+    fontFamily: Fonts.body,
+  },
+  promptPrimaryButton: {
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  promptPrimaryText: {
+    color: 'white',
+    fontSize: 17,
+    fontWeight: '800',
+    fontFamily: Fonts.title,
+  },
+  promptSecondaryButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  promptSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: Fonts.title,
+  },
 });
+
+type ExistingAccountPromptProps = {
+  identifier: string;
+  onContinue: () => void;
+  onDifferent: () => void;
+  theme: typeof Colors.light;
+};
+
+function ExistingAccountPrompt({
+  identifier,
+  onContinue,
+  onDifferent,
+  theme,
+}: ExistingAccountPromptProps) {
+  return (
+    <View style={styles.promptContainer}>
+      <View style={styles.promptCard}>
+        <Text style={[styles.promptTitle, { color: theme.text }]}>Account already exists</Text>
+        <Text style={[styles.promptBody, { color: theme.text, opacity: 0.65 }]}>
+          {identifier} is already registered. Sign in with that account to continue, or use a different email or mobile number.
+        </Text>
+        <TouchableOpacity
+          style={[styles.promptPrimaryButton, { backgroundColor: theme.accent }]}
+          onPress={onContinue}
+        >
+          <Text style={styles.promptPrimaryText}>Sign in to this account</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.promptSecondaryButton} onPress={onDifferent}>
+          <Text style={[styles.promptSecondaryText, { color: theme.text, opacity: 0.65 }]}>
+            Use different email/mobile
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
