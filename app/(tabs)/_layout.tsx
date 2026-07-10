@@ -19,51 +19,62 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarStyle: Platform.select({
-            ios: {
-                position: 'absolute',
-                borderTopWidth: 0,
-                elevation: 0,
-                height: 80,
-                paddingBottom: 20,
-                backgroundColor: theme.card,
-                shadowColor: '#000',
-                shadowOpacity: 0.1,
-                shadowRadius: 10,
-            },
-            default: {
-                backgroundColor: theme.card,
-                borderTopWidth: 0,
-                elevation: 0,
-                height: 70,
-                paddingBottom: 10,
-            }
-        })
-      }}
-    >
+          ios: {
+            position: 'absolute',
+            borderTopWidth: 0,
+            elevation: 0,
+            height: 80,
+            paddingBottom: 20,
+            backgroundColor: theme.card,
+            shadowColor: '#000',
+            shadowOpacity: 0.1,
+            shadowRadius: 10,
+          },
+          default: {
+            backgroundColor: theme.card,
+            borderTopWidth: 0,
+            elevation: 0,
+            height: 70,
+            paddingBottom: 10,
+          },
+        }),
+      }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons size={28} name={focused ? "home" : "home-outline"} color={color} />
+            <MaterialCommunityIcons
+              size={28}
+              name={focused ? 'home' : 'home-outline'}
+              color={color}
+            />
           ),
         }}
       />
       <Tabs.Screen
         name="insight"
         options={{
-          title: 'Analytics',
+          title: 'Insights',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons size={28} name={focused ? "chart-bar" : "chart-bar"} color={color} />
+            <MaterialCommunityIcons
+              size={28}
+              name={focused ? 'chart-bar' : 'chart-bar'}
+              color={color}
+            />
           ),
         }}
       />
       <Tabs.Screen
         name="accounts"
         options={{
-          title: 'Accounts', 
+          title: 'Accounts',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons size={28} name={focused ? "wallet" : "wallet-outline"} color={color} />
+            <MaterialCommunityIcons
+              size={28}
+              name={focused ? 'wallet' : 'wallet-outline'}
+              color={color}
+            />
           ),
         }}
       />
@@ -72,7 +83,11 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons size={28} name={focused ? "account" : "account-outline"} color={color} />
+            <MaterialCommunityIcons
+              size={28}
+              name={focused ? 'account' : 'account-outline'}
+              color={color}
+            />
           ),
         }}
       />

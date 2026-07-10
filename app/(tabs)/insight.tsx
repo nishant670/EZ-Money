@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -19,10 +19,68 @@ import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
-import { formatApiDate } from '@/lib/transactions';
+import { formatApiDate, resolveCategoryMetadata } from '@/lib/transactions';
 
 const formatMoney = (value: number) =>
-  `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  `₹${Math.round(value).toLocaleString('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
+
+const defaultRange = (): DateRange => {
+  const current = new Date();
+  return {
+    start: new Date(current.getFullYear(), current.getMonth(), 1),
+    end: current,
+    label: current.toLocaleString('default', { month: 'long', year: 'numeric' }),
+    preset: 'this_month',
+  };
+};
+
+const getInsightLevel = (dashboard: DashboardResponse) => {
+  const count = dashboard.summary.transaction_count;
+  if (count === 0) return 0;
+  if (count < 3) return 1;
+  if (dashboard.top_categories.length < 2 || dashboard.top_merchants.length < 1) return 2;
+  if (dashboard.account_spending.length < 1 || dashboard.insights.length < 2) return 3;
+  return 4;
+};
+
+const getHealthScore = (dashboard: DashboardResponse) => {
+  const { total_income: income, total_spent: spent } = dashboard.summary;
+  if (income <= 0 && spent <= 0) return 0;
+  if (income <= 0) return 55;
+  const savingsRate = Math.max(0, (income - spent) / income);
+  return Math.min(95, Math.max(35, Math.round(45 + savingsRate * 100)));
+};
+
+const getHealthLabel = (score: number, dashboard: DashboardResponse) => {
+  if (dashboard.summary.transaction_count === 0) return 'Waiting for data';
+  if (score >= 70) return 'Good Standing';
+  if (score >= 50) return 'Watch Closely';
+  return 'Needs Attention';
+};
+
+const getBurnRateCopy = (dashboard: DashboardResponse) => {
+  const { total_income: income, total_spent: spent, daily_average: daily } = dashboard.summary;
+  if (daily <= 0) return 'Add more transactions to estimate your spending rhythm.';
+  if (income > spent) {
+    const remaining = income - spent;
+    const days = Math.max(1, Math.round(remaining / daily));
+    return `At your current spending pace, your surplus can cover ~${days} more days.`;
+  }
+  return 'Spending has caught up with recorded income for this period.';
+};
+
+const getNeedsReview = (dashboard: DashboardResponse) =>
+  dashboard.recent_transactions
+    .filter((entry) => {
+      const category = String(entry.category ?? '')
+        .trim()
+        .toLowerCase();
+      return !category || category === 'uncategorized' || !entry.account_id;
+    })
+    .slice(0, 3);
 
 export default function InsightScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -33,12 +91,7 @@ export default function InsightScreen() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [currentRange, setCurrentRange] = useState<DateRange>({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-    end: new Date(),
-    label: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
-    preset: 'this_month',
-  });
+  const [currentRange, setCurrentRange] = useState<DateRange>(defaultRange);
 
   const loadData = useCallback(
     async (isRefresh = false) => {
@@ -53,7 +106,7 @@ export default function InsightScreen() {
         const end = currentRange.end ? formatApiDate(currentRange.end) : undefined;
         setDashboard(await fetchDashboard(token, start, end));
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard.');
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load insights.');
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -76,13 +129,16 @@ export default function InsightScreen() {
     [loadData]
   );
 
+  const insightLevel = useMemo(() => (dashboard ? getInsightLevel(dashboard) : 0), [dashboard]);
+  const reviewItems = useMemo(() => (dashboard ? getNeedsReview(dashboard) : []), [dashboard]);
+
   if (loading && !dashboard) {
     return (
       <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
         <StateView
           icon="chart-box-outline"
-          title="Loading dashboard"
-          message="Preparing your spending summary."
+          title="Loading insights"
+          message="Preparing your financial health view."
           loading
         />
       </View>
@@ -94,7 +150,7 @@ export default function InsightScreen() {
       <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
         <StateView
           icon={error ? 'wifi-off' : 'chart-box-outline'}
-          title={error ? 'Dashboard did not load' : 'No dashboard data yet'}
+          title={error ? 'Insights did not load' : 'No insights yet'}
           message={error || 'Capture a transaction to start seeing insights.'}
           actionLabel="Try again"
           onAction={() => void loadData()}
@@ -108,9 +164,9 @@ export default function InsightScreen() {
       className="flex-1"
       style={{ backgroundColor: theme.background }}
       edges={['top', 'left', 'right']}>
-      <View className="flex-row items-center justify-between px-6 py-4">
+      <View className="flex-row items-center justify-between px-5 py-4">
         <View>
-          <ThemedText className="text-xl font-black">Dashboard</ThemedText>
+          <ThemedText className="text-2xl font-black">Insights</ThemedText>
           <TouchableOpacity
             className="mt-1 flex-row items-center"
             onPress={() => setPickerVisible(true)}>
@@ -120,12 +176,21 @@ export default function InsightScreen() {
             <MaterialCommunityIcons name="chevron-down" size={14} color={theme.accent} />
           </TouchableOpacity>
         </View>
-        {loading && <ActivityIndicator color={theme.accent} />}
+        <View className="flex-row items-center gap-3">
+          {loading && <ActivityIndicator color={theme.accent} />}
+          <HeaderIcon name="magnify" onPress={() => router.push('/transactions')} />
+          <HeaderIcon name="tune-variant" onPress={() => setPickerVisible(true)} />
+        </View>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 22, gap: 20, paddingBottom: 100 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 6,
+          paddingBottom: 110,
+          gap: 20,
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -150,20 +215,43 @@ export default function InsightScreen() {
         {dashboard.summary.transaction_count === 0 && (
           <StateView
             icon="chart-box-outline"
-            title="No dashboard data for this period"
-            message="Choose a wider period or add a transaction to populate these charts."
+            title="No insights for this period"
+            message="Choose a wider period or add transactions to populate this screen."
             actionLabel="Change period"
             onAction={() => setPickerVisible(true)}
             compact
           />
         )}
 
-        <SummarySection dashboard={dashboard} />
-        <CategorySection categories={dashboard.top_categories} />
-        <AccountSection accounts={dashboard.account_spending} accent={theme.accent} />
-        <MerchantSection merchants={dashboard.top_merchants} />
-        <RecentSection entries={dashboard.recent_transactions} />
-        <InsightSection cards={dashboard.insights} />
+        <FinancialHealthCard dashboard={dashboard} insightLevel={insightLevel} />
+
+        {insightLevel >= 1 && <ProgressiveHint insightLevel={insightLevel} dashboard={dashboard} />}
+
+        {insightLevel >= 2 && (
+          <SpendingAnalysisCard
+            dashboard={dashboard}
+            onDetails={() =>
+              router.push({
+                pathname: '/spending-analysis',
+                params: {
+                  start: dashboard.period.start,
+                  end: dashboard.period.end,
+                  label: currentRange.label,
+                },
+              })
+            }
+          />
+        )}
+
+        {insightLevel >= 2 && <SmartAlerts cards={dashboard.insights} />}
+
+        {insightLevel >= 3 && <AccountIntelligence dashboard={dashboard} />}
+
+        {reviewItems.length > 0 && <NeedsReview entries={reviewItems} />}
+
+        {insightLevel < 4 && dashboard.summary.transaction_count > 0 && (
+          <UnlockCard dashboard={dashboard} insightLevel={insightLevel} />
+        )}
       </ScrollView>
 
       <PeriodPicker
@@ -176,159 +264,463 @@ export default function InsightScreen() {
   );
 }
 
-function SummarySection({ dashboard }: { dashboard: DashboardResponse }) {
-  const summary = dashboard.summary;
+function HeaderIcon({
+  name,
+  onPress,
+}: {
+  name: keyof typeof MaterialCommunityIcons.glyphMap;
+  onPress?: () => void;
+}) {
   return (
-    <View className="rounded-[24px] border border-gray-100 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-      <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-        Selected period
-      </ThemedText>
-      <ThemedText className="mt-2 text-2xl font-black">
-        {formatMoney(summary.total_spent)}
-      </ThemedText>
-      <ThemedText className="text-xs text-gray-500">Total spent</ThemedText>
-      <View className="mt-5 flex-row gap-3">
-        <Metric label="Daily average" value={formatMoney(summary.daily_average)} />
-        <Metric label="Income recorded" value={formatMoney(summary.total_income)} />
-        <Metric label="Transactions" value={String(summary.transaction_count)} />
+    <TouchableOpacity
+      className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-gray-800"
+      onPress={onPress}>
+      <MaterialCommunityIcons name={name} size={20} color="#6F6965" />
+    </TouchableOpacity>
+  );
+}
+
+function FinancialHealthCard({
+  dashboard,
+  insightLevel,
+}: {
+  dashboard: DashboardResponse;
+  insightLevel: number;
+}) {
+  const score = getHealthScore(dashboard);
+  const label = getHealthLabel(score, dashboard);
+  const change = dashboard.top_categories[0]?.change ?? 0;
+  const changeCopy =
+    change === 0
+      ? 'Building your baseline'
+      : `${Math.abs(Math.round(change))}% ${change < 0 ? 'better' : 'higher'} than last period`;
+
+  return (
+    <View className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <View className="flex-row items-start justify-between">
+        <View className="flex-1 pr-4">
+          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+            Financial Health
+          </ThemedText>
+          <ThemedText className="mt-1 text-2xl font-black">{label}</ThemedText>
+          <ThemedText
+            className="mt-1 text-[11px] font-bold"
+            style={{ color: change < 0 ? '#00B878' : '#FF6B6B' }}>
+            {changeCopy}
+          </ThemedText>
+        </View>
+        <ScoreRing score={score} />
+      </View>
+
+      <View className="mt-7 flex-row gap-5">
+        <MetricWithStripe
+          label="Total Income"
+          value={formatMoney(dashboard.summary.total_income)}
+          color="#00B878"
+        />
+        <MetricWithStripe
+          label="Total Spent"
+          value={formatMoney(dashboard.summary.total_spent)}
+          color="#FF6680"
+        />
+      </View>
+
+      <View className="mt-5 rounded-2xl border border-orange-100 bg-orange-50 p-3 dark:border-orange-900/30 dark:bg-orange-900/10">
+        <View className="flex-row items-start">
+          <View className="mr-3 h-7 w-7 items-center justify-center rounded-full bg-white">
+            <MaterialCommunityIcons name="timer-sand" size={16} color="#FF6B14" />
+          </View>
+          <View className="flex-1">
+            <ThemedText className="text-xs leading-5">
+              <ThemedText className="text-xs font-black" style={{ color: '#FF6B14' }}>
+                Burn Rate:{' '}
+              </ThemedText>
+              {getBurnRateCopy(dashboard)}
+            </ThemedText>
+          </View>
+        </View>
+      </View>
+
+      <View className="mt-4 flex-row items-center justify-between">
+        <ThemedText className="text-[11px] font-bold text-gray-500">
+          Insight depth grows as Finnri sees more transactions, merchants, and accounts.
+        </ThemedText>
+        <View className="rounded-full bg-orange-50 px-3 py-1">
+          <ThemedText className="text-[10px] font-black" style={{ color: '#FF6B14' }}>
+            L{insightLevel}/4
+          </ThemedText>
+        </View>
       </View>
     </View>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function ScoreRing({ score }: { score: number }) {
   return (
-    <View className="flex-1 rounded-2xl bg-gray-50 p-3 dark:bg-gray-700">
-      <ThemedText className="text-[9px] font-bold uppercase text-gray-400">{label}</ThemedText>
-      <ThemedText className="mt-1 text-sm font-black">{value}</ThemedText>
+    <View className="h-[72px] w-[72px] items-center justify-center rounded-full bg-orange-100">
+      <View className="h-[58px] w-[58px] items-center justify-center rounded-full bg-white">
+        <ThemedText className="text-xs font-black" style={{ color: '#FF6B14' }}>
+          {score}%
+        </ThemedText>
+      </View>
     </View>
   );
 }
 
-function CategorySection({ categories }: { categories: DashboardResponse['top_categories'] }) {
-  return (
-    <Section title="Top categories" empty={categories.length === 0}>
-      {categories.map((category) => (
-        <View key={category.category} className="mb-4">
-          <View className="mb-2 flex-row justify-between">
-            <ThemedText className="text-sm font-bold">{category.category}</ThemedText>
-            <ThemedText className="text-sm font-black">{formatMoney(category.amount)}</ThemedText>
-          </View>
-          <View className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-            <View
-              className="h-full rounded-full bg-orange-500"
-              style={{ width: `${Math.min(category.percentage, 100)}%` }}
-            />
-          </View>
-        </View>
-      ))}
-    </Section>
-  );
-}
-
-function AccountSection({
-  accounts,
-  accent,
+function MetricWithStripe({
+  label,
+  value,
+  color,
 }: {
-  accounts: DashboardResponse['account_spending'];
-  accent: string;
+  label: string;
+  value: string;
+  color: string;
 }) {
   return (
-    <Section title="Account-wise spending" empty={accounts.length === 0}>
-      {accounts.map((account) => (
-        <View key={account.account_id ?? 'unassigned'} className="mb-4">
-          <View className="mb-2 flex-row justify-between">
-            <ThemedText className="text-sm font-bold">{account.account_name}</ThemedText>
-            <ThemedText className="text-sm font-black">{formatMoney(account.amount)}</ThemedText>
-          </View>
-          <View className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-            <View
-              className="h-full rounded-full"
-              style={{ backgroundColor: accent, width: `${Math.min(account.percentage, 100)}%` }}
-            />
-          </View>
-        </View>
-      ))}
-    </Section>
+    <View className="flex-1 flex-row items-center">
+      <View className="mr-3 h-12 w-2 rounded-full" style={{ backgroundColor: color }} />
+      <View>
+        <ThemedText className="text-[11px] text-gray-500">{label}</ThemedText>
+        <ThemedText className="mt-1 text-lg font-black">{value}</ThemedText>
+      </View>
+    </View>
   );
 }
 
-function MerchantSection({ merchants }: { merchants: DashboardResponse['top_merchants'] }) {
-  return (
-    <Section title="Top merchants" empty={merchants.length === 0}>
-      {merchants.map((merchant) => (
-        <View key={merchant.merchant} className="mb-3 flex-row items-center justify-between">
-          <View>
-            <ThemedText className="text-sm font-bold">{merchant.merchant}</ThemedText>
-            <ThemedText className="text-xs text-gray-400">
-              {merchant.transaction_count} transaction(s)
-            </ThemedText>
-          </View>
-          <ThemedText className="text-sm font-black">{formatMoney(merchant.amount)}</ThemedText>
-        </View>
-      ))}
-    </Section>
-  );
-}
+function ProgressiveHint({
+  dashboard,
+  insightLevel,
+}: {
+  dashboard: DashboardResponse;
+  insightLevel: number;
+}) {
+  const next =
+    insightLevel >= 4
+      ? 'Full insight set active'
+      : insightLevel === 1
+        ? 'Add a few more transactions to unlock category and merchant intelligence.'
+        : insightLevel === 2
+          ? 'More account-linked transactions will unlock account intelligence.'
+          : 'Review items and richer behavior patterns unlock as data variety grows.';
 
-function RecentSection({ entries }: { entries: DashboardResponse['recent_transactions'] }) {
   return (
-    <Section title="Recent transactions" empty={entries.length === 0}>
-      {entries.map((entry) => (
-        <View key={entry.id} className="mb-3 flex-row items-center justify-between">
-          <View className="flex-1 pr-4">
-            <ThemedText className="text-sm font-bold">
-              {entry.title || entry.merchant || entry.category || 'Transaction'}
-            </ThemedText>
-            <ThemedText className="text-xs text-gray-400">{entry.date}</ThemedText>
-          </View>
-          <ThemedText className="text-sm font-black">
-            {formatMoney(Number(entry.amount || 0))}
-          </ThemedText>
+    <View className="rounded-2xl border border-gray-100 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+      <View className="flex-row items-center justify-between">
+        <View className="flex-1 pr-3">
+          <ThemedText className="text-xs font-black">Insights Level {insightLevel}</ThemedText>
+          <ThemedText className="mt-1 text-[11px] leading-4 text-gray-500">{next}</ThemedText>
         </View>
-      ))}
-    </Section>
-  );
-}
-
-function InsightSection({ cards }: { cards: InsightCard[] }) {
-  return (
-    <Section title="Insights" empty={cards.length === 0}>
-      {cards.map((card) => (
+        <ThemedText className="text-[11px] font-black" style={{ color: '#FF6B14' }}>
+          {dashboard.summary.transaction_count} txns
+        </ThemedText>
+      </View>
+      <View className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
         <View
-          key={card.kind}
-          className={`mb-3 rounded-2xl border-l-4 p-4 ${
-            card.severity === 'warning'
-              ? 'border-l-amber-500 bg-amber-50 dark:bg-amber-900/20'
-              : 'border-l-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
-          }`}>
-          <ThemedText className="text-sm font-black">{card.title}</ThemedText>
-          <ThemedText className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
-            {card.body}
-          </ThemedText>
-        </View>
-      ))}
-    </Section>
+          className="h-full rounded-full bg-orange-500"
+          style={{ width: `${Math.max(10, insightLevel * 25)}%` }}
+        />
+      </View>
+    </View>
   );
 }
 
-function Section({
+function SpendingAnalysisCard({
+  dashboard,
+  onDetails,
+}: {
+  dashboard: DashboardResponse;
+  onDetails: () => void;
+}) {
+  const categories = dashboard.top_categories.slice(0, 2);
+  const merchants = dashboard.top_merchants.slice(0, 2);
+  const primary = categories[0];
+  const primaryMeta = resolveCategoryMetadata(primary?.category);
+
+  return (
+    <SectionHeader title="Spending Analysis" actionLabel="Details" onAction={onDetails}>
+      <View className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <View className="flex-row items-center">
+          <View className="mr-5 h-[96px] w-[96px] items-center justify-center rounded-full bg-gray-100">
+            <View
+              className="h-[72px] w-[72px] items-center justify-center rounded-full bg-white"
+              style={{ borderColor: primaryMeta.color, borderWidth: 8 }}>
+              <ThemedText className="text-[9px] text-gray-400">
+                {primary?.category?.split(' ')[0] ?? 'Spend'}
+              </ThemedText>
+              <ThemedText className="text-xs font-black">
+                {Math.round(primary?.percentage ?? 0)}%
+              </ThemedText>
+            </View>
+          </View>
+          <View className="flex-1 gap-3">
+            {categories.map((category) => {
+              const meta = resolveCategoryMetadata(category.category);
+              const trend = category.change >= 0 ? 'higher' : 'lower';
+              return (
+                <View key={category.category}>
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center">
+                      <View
+                        className="mr-2 h-2 w-2 rounded-full"
+                        style={{ backgroundColor: meta.color }}
+                      />
+                      <ThemedText className="text-xs">{category.category}</ThemedText>
+                    </View>
+                    <ThemedText className="text-xs font-black">
+                      {formatMoney(category.amount)}
+                    </ThemedText>
+                  </View>
+                  {Math.abs(category.change) > 0 && (
+                    <ThemedText
+                      className="mt-1 text-[10px] font-bold"
+                      style={{ color: category.change >= 0 ? '#FF6680' : '#00B878' }}>
+                      {Math.abs(Math.round(category.change))}% {trend} than last period
+                    </ThemedText>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {merchants.length > 0 && (
+          <View className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-700">
+            <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Top Merchants
+            </ThemedText>
+            {merchants.map((merchant) => (
+              <MerchantRow key={merchant.merchant} merchant={merchant} />
+            ))}
+          </View>
+        )}
+      </View>
+    </SectionHeader>
+  );
+}
+
+function MerchantRow({ merchant }: { merchant: DashboardResponse['top_merchants'][number] }) {
+  return (
+    <TouchableOpacity
+      className="flex-row items-center justify-between py-2"
+      onPress={() =>
+        router.push({
+          pathname: '/merchant-history',
+          params: { merchant: merchant.merchant },
+        })
+      }>
+      <View className="flex-row items-center">
+        <View className="mr-3 h-8 w-8 items-center justify-center rounded-xl bg-orange-50">
+          <MaterialCommunityIcons name="storefront-outline" size={16} color="#FF6B14" />
+        </View>
+        <View>
+          <ThemedText className="text-xs font-bold">{merchant.merchant}</ThemedText>
+          <ThemedText className="text-[10px] text-gray-500">
+            {merchant.transaction_count} transactions
+          </ThemedText>
+        </View>
+      </View>
+      <ThemedText className="text-xs font-black">{formatMoney(merchant.amount)}</ThemedText>
+    </TouchableOpacity>
+  );
+}
+
+function SmartAlerts({ cards }: { cards: InsightCard[] }) {
+  if (cards.length === 0) return null;
+
+  return (
+    <SectionHeader title="Smart Alerts">
+      <View className="gap-3">
+        {cards.slice(0, 3).map((card) => (
+          <AlertCard key={card.kind} card={card} />
+        ))}
+      </View>
+    </SectionHeader>
+  );
+}
+
+function AlertCard({ card }: { card: InsightCard }) {
+  const isWarning = card.severity === 'warning';
+  const color = isWarning ? '#FF6680' : card.severity === 'success' ? '#00B878' : '#FF6B14';
+  const icon = isWarning
+    ? 'calendar-alert'
+    : card.severity === 'success'
+      ? 'check-decagram'
+      : 'creation';
+
+  return (
+    <View
+      className="rounded-[22px] border bg-white p-4 shadow-sm dark:bg-gray-800"
+      style={{ borderLeftColor: color, borderLeftWidth: 3, borderColor: '#F2F2F2' }}>
+      <View className="flex-row">
+        <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-orange-50">
+          <MaterialCommunityIcons name={icon} size={20} color={color} />
+        </View>
+        <View className="flex-1">
+          <ThemedText className="text-sm font-black">{card.title}</ThemedText>
+          <ThemedText className="mt-1 text-xs leading-4 text-gray-500">{card.body}</ThemedText>
+          {isWarning && (
+            <View className="mt-3 flex-row gap-2">
+              <PillButton label="View Details" muted />
+              <PillButton label="Set Limit" />
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function PillButton({ label, muted }: { label: string; muted?: boolean }) {
+  return (
+    <TouchableOpacity
+      className="rounded-lg px-3 py-2"
+      style={{ backgroundColor: muted ? '#F3F3F3' : '#FF6B14' }}>
+      <ThemedText
+        className="text-[10px] font-black"
+        style={{ color: muted ? '#161616' : '#FFFFFF' }}>
+        {label}
+      </ThemedText>
+    </TouchableOpacity>
+  );
+}
+
+function AccountIntelligence({ dashboard }: { dashboard: DashboardResponse }) {
+  const topCategory = dashboard.top_categories[0]?.category ?? 'Not enough data';
+  return (
+    <SectionHeader title="Account Intelligence">
+      <View className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        {dashboard.account_spending.slice(0, 3).map((account) => (
+          <View key={account.account_id ?? account.account_name} className="mb-4">
+            <View className="mb-2 flex-row items-center justify-between">
+              <ThemedText className="text-sm">{account.account_name}</ThemedText>
+              <ThemedText className="text-xs text-gray-500">
+                {formatMoney(account.amount)} spent
+              </ThemedText>
+            </View>
+            <View className="h-2 overflow-hidden rounded-full bg-gray-100">
+              <View
+                className="h-full rounded-full bg-orange-500"
+                style={{ width: `${Math.min(account.percentage, 100)}%` }}
+              />
+            </View>
+          </View>
+        ))}
+
+        <View className="mt-2 flex-row gap-3">
+          <MiniMetric
+            icon="calendar-blank-outline"
+            label="Daily Average"
+            value={formatMoney(dashboard.summary.daily_average)}
+          />
+          <MiniMetric icon="chart-bar" label="Top Category" value={topCategory} />
+        </View>
+      </View>
+    </SectionHeader>
+  );
+}
+
+function MiniMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View className="flex-1 rounded-2xl border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <MaterialCommunityIcons name={icon} size={20} color="#FF6B14" />
+      <ThemedText className="mt-3 text-[11px] text-gray-500">{label}</ThemedText>
+      <ThemedText className="mt-1 text-sm font-black" numberOfLines={1}>
+        {value}
+      </ThemedText>
+    </View>
+  );
+}
+
+function NeedsReview({ entries }: { entries: DashboardResponse['recent_transactions'] }) {
+  return (
+    <SectionHeader title="Needs Review" actionLabel={`${entries.length} Items`}>
+      <View className="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        {entries.map((entry, index) => (
+          <View
+            key={entry.id ?? `${entry.date}-${index}`}
+            className={`flex-row items-center p-4 ${index < entries.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
+            <View className="mr-3 h-9 w-9 items-center justify-center rounded-full bg-gray-100">
+              <MaterialCommunityIcons name="help" size={16} color="#9B9692" />
+            </View>
+            <View className="flex-1 pr-3">
+              <ThemedText className="text-sm font-bold">
+                {entry.title || entry.merchant || entry.category || 'Transaction'}
+              </ThemedText>
+              <ThemedText className="text-[11px] text-gray-500">
+                {!entry.account_id ? 'Missing account' : 'Uncategorized'} • {entry.date}
+              </ThemedText>
+            </View>
+            <View className="items-end">
+              <ThemedText className="text-sm font-black">
+                {formatMoney(Number(entry.amount || 0))}
+              </ThemedText>
+              <ThemedText className="mt-1 text-[10px] font-bold" style={{ color: '#FF6B14' }}>
+                Resolve
+              </ThemedText>
+            </View>
+          </View>
+        ))}
+      </View>
+    </SectionHeader>
+  );
+}
+
+function UnlockCard({
+  dashboard,
+  insightLevel,
+}: {
+  dashboard: DashboardResponse;
+  insightLevel: number;
+}) {
+  const remaining = insightLevel === 1 ? 3 - dashboard.summary.transaction_count : 1;
+  const copy =
+    insightLevel === 1
+      ? `${Math.max(1, remaining)} more transactions unlock spending analysis.`
+      : insightLevel === 2
+        ? 'Link spending to accounts to unlock account intelligence.'
+        : 'More repeated behavior unlocks deeper review and pattern insights.';
+  return (
+    <View className="rounded-[24px] border border-dashed border-orange-200 bg-orange-50 p-5 dark:bg-orange-900/10">
+      <ThemedText className="text-sm font-black" style={{ color: '#FF6B14' }}>
+        More insights are waiting
+      </ThemedText>
+      <ThemedText className="mt-1 text-xs leading-5 text-gray-500">{copy}</ThemedText>
+    </View>
+  );
+}
+
+function SectionHeader({
   title,
-  empty,
+  actionLabel,
+  onAction,
   children,
 }: {
   title: string;
-  empty: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
   children: ReactNode;
 }) {
   return (
-    <View className="rounded-[24px] border border-gray-100 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-      <ThemedText className="mb-4 text-base font-black">{title}</ThemedText>
-      {empty ? (
-        <ThemedText className="text-sm text-gray-400">No data for this period.</ThemedText>
-      ) : (
-        children
-      )}
+    <View>
+      <View className="mb-3 flex-row items-center justify-between px-1">
+        <ThemedText className="text-lg font-black">{title}</ThemedText>
+        {actionLabel && (
+          <TouchableOpacity onPress={onAction}>
+            <ThemedText className="text-xs font-bold" style={{ color: '#FF6B14' }}>
+              {actionLabel}
+            </ThemedText>
+          </TouchableOpacity>
+        )}
+      </View>
+      {children}
     </View>
   );
 }
