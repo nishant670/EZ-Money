@@ -22,6 +22,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import type { Account } from '@/lib/accounts';
+import { formatDisplayTime } from '@/lib/datetime';
 import { formatDateLabel, parseDateLabel } from '@/lib/transactions';
 
 export type EntryForm = {
@@ -136,7 +137,7 @@ export function TransactionFormModal({
         mode: 'Cash',
         category: 'Food',
         date: formatDateLabel(new Date()),
-        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+        time: formatDisplayTime(new Date()),
         notes: '',
         tag: 'General',
         currency: DEFAULT_CURRENCY,
@@ -185,7 +186,7 @@ export function TransactionFormModal({
                 mode: 'Cash',
                 category: 'Food & Drinks',
                 date: formatDateLabel(new Date()),
-                time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+                time: formatDisplayTime(new Date()),
                 notes: '',
                 tag: 'General',
                 currency: DEFAULT_CURRENCY,
@@ -263,11 +264,7 @@ export function TransactionFormModal({
                             is24Hour: false,
                             onChange: (event: DateTimePickerEvent, selectedTime?: Date) => {
                                 if (event.type === 'set' && selectedTime) {
-                                    const timeStr = selectedTime.toLocaleTimeString('en-US', {
-                                        hour: 'numeric',
-                                        minute: '2-digit',
-                                        hour12: true
-                                    });
+                                    const timeStr = formatDisplayTime(selectedTime);
                                     setForm(prev => ({ ...prev, time: timeStr }));
                                 }
                             },
@@ -286,7 +283,7 @@ export function TransactionFormModal({
         setForm((prev) => ({
             ...prev,
             date: formatDateLabel(pendingDate),
-            time: pendingDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+            time: formatDisplayTime(pendingDate)
         }));
         setIsDatePickerVisible(false);
     };

@@ -35,6 +35,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { readApiError } from '@/lib/api-error';
 import {
   API_BASE_URL,
+  formatApiDate,
   formatDateLabel,
   groupTransactionsBySection,
   loadTransactions,
@@ -48,6 +49,7 @@ import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { Account, fetchAccounts as loadAccounts } from '@/lib/accounts';
+import { formatDisplayTime, getClientTimeZone } from '@/lib/datetime';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import {
   TransactionFormModal,
@@ -120,7 +122,7 @@ export default function HomeScreen() {
     mode: 'Cash',
     category: 'Food',
     date: formatDateLabel(new Date()),
-    time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+    time: formatDisplayTime(new Date()),
     notes: '',
     tag: 'General',
     currency: DEFAULT_CURRENCY,
@@ -184,7 +186,7 @@ export default function HomeScreen() {
       title: prompt.title,
       amount: prompt.amount.toFixed(2),
       date: formatDateLabel(now),
-      time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      time: formatDisplayTime(now),
       mode: prompt.mode,
       category: prompt.category,
     });
@@ -439,7 +441,7 @@ export default function HomeScreen() {
           mode: formData.mode,
           category: formData.category,
           notes: formData.notes.trim(),
-          date: parsedDate ? parsedDate.toISOString().split('T')[0] : formData.date,
+          date: parsedDate ? formatApiDate(parsedDate) : formData.date,
           tag: trimmedTag.length > 0 ? trimmedTag : null,
           merchant: formData.merchant.trim(),
           title: formData.title.trim() || 'Untitled Transaction',
@@ -497,8 +499,8 @@ export default function HomeScreen() {
           name: fileName,
           type: extension === 'wav' ? 'audio/wav' : 'audio/m4a',
         } as unknown as Blob);
-        formData.append('tz', 'Asia/Kolkata');
       }
+      formData.append('tz', getClientTimeZone());
       const response = await fetch(`${API_BASE_URL}/v1/parse`, {
         method: 'POST',
         headers: {

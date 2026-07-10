@@ -1,3 +1,4 @@
+import { getClientTimeZone } from './datetime';
 import { API_BASE_URL, type ApiEntry } from './transactions';
 
 export type DashboardSummary = {
@@ -52,7 +53,7 @@ export const fetchDashboard = async (
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
-    params.append('tz', 'Asia/Kolkata');
+    params.append('tz', getClientTimeZone());
 
     const response = await fetch(`${API_BASE_URL}/v1/dashboard?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },

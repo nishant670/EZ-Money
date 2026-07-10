@@ -17,6 +17,7 @@ import {
     fetchDashboard,
 } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
+import { formatApiDate } from '@/lib/transactions';
 
 const formatMoney = (value: number) =>
     `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -45,8 +46,8 @@ export default function InsightScreen() {
         if (!isRefresh) setLoading(true);
         setError(null);
         try {
-            const start = currentRange.start?.toISOString().split('T')[0];
-            const end = currentRange.end?.toISOString().split('T')[0];
+            const start = currentRange.start ? formatApiDate(currentRange.start) : undefined;
+            const end = currentRange.end ? formatApiDate(currentRange.end) : undefined;
             setDashboard(await fetchDashboard(token, start, end));
         } catch (loadError) {
             setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard.');

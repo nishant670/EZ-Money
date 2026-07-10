@@ -14,7 +14,8 @@ import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { readApiError } from '@/lib/api-error';
 import { notifyTransactionsChanged } from '@/lib/transaction-events';
-import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
+import { API_BASE_URL, formatApiDate, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
+import { formatDisplayTime } from '@/lib/datetime';
 
 const entryFieldLabels: Record<string, string> = {
     account_id: 'Account',
@@ -93,7 +94,7 @@ export default function TransactionDetailsScreen() {
                     title: data.title,
                     type: data.type,
                     amount: Number(data.amount),
-                    date: data.date ? formatDateLabel(new Date(data.date)) : params.dateLabel,
+                    date: data.date ? normalizeDateLabel(data.date) : params.dateLabel,
                     rawDate: data.date,
                     time: data.time,
                     tag: data.tag ? toTitleCase(data.tag) : data.tag,
@@ -175,7 +176,7 @@ export default function TransactionDetailsScreen() {
             // Backend expects YYYY-MM-DD.
             const parsedDate = parseDateLabel(formData.date);
             if (parsedDate) {
-                payload.date = parsedDate.toISOString().split('T')[0];
+                payload.date = formatApiDate(parsedDate);
             }
             if (formData.time) {
                 payload.time = formData.time; // "10:30 PM" - backend stores as string
@@ -214,7 +215,7 @@ export default function TransactionDetailsScreen() {
         mode: displayData.mode || 'Cash',
         category: displayData.category || 'Food',
         date: displayData.date || formatDateLabel(new Date()),
-        time: displayData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+        time: displayData.time || formatDisplayTime(new Date()),
         notes: displayData.notes || '',
         tag: displayData.tag || 'General',
         currency: displayData.currency || DEFAULT_CURRENCY,
