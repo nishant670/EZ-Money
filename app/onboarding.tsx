@@ -1,12 +1,9 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAuthStore } from '@/hooks/use-auth-store';
-import { guestCheckin } from '@/lib/auth';
-import { getDeviceId } from '@/lib/device';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
     SlideInLeft,
     SlideInRight,
@@ -33,13 +30,10 @@ const SCREENS = [
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { setAuth } = useAuthStore();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
-  const [guestError, setGuestError] = useState<string | null>(null);
-  const [isGuestChecking, setIsGuestChecking] = useState(false);
 
   const CurrentScreen = SCREENS[activeIndex].component;
 
@@ -63,25 +57,6 @@ export default function OnboardingScreen() {
     router.replace('/auth');
   };
 
-  const handleGuestContinue = async () => {
-    setGuestError(null);
-    setIsGuestChecking(true);
-    try {
-      const deviceId = await getDeviceId();
-      const response = await guestCheckin({
-        device_id: deviceId,
-      });
-      if (response?.user) {
-        setAuth(response.user, response.token);
-      }
-      router.replace('/(tabs)');
-    } catch (error) {
-      setGuestError(error instanceof Error ? error.message : 'Unable to continue as guest.');
-    } finally {
-      setIsGuestChecking(false);
-    }
-  };
-
   const enteringAnimation = direction === 'forward' ? SlideInRight.duration(400) : SlideInLeft.duration(400);
   const exitingAnimation = direction === 'forward' ? SlideOutLeft.duration(400) : SlideOutRight.duration(400);
 
@@ -90,11 +65,9 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         {/* Progress Bar */}
         <View style={styles.header}>
-            {/* {activeIndex < SCREENS.length - 1 && (
-                <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
-                    <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
-                </TouchableOpacity>
-            ) || <View style={styles.skipButton} />} */}
+            <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
+                <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
+            </TouchableOpacity>
             
             <View style={styles.progressContainer}>
                 {SCREENS.map((_, index) => (
@@ -149,26 +122,6 @@ export default function OnboardingScreen() {
                     />
                 </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-                onPress={handleGuestContinue}
-                disabled={isGuestChecking}
-                style={[
-                    styles.guestButton,
-                    {
-                        borderColor: theme.border,
-                        backgroundColor: theme.card,
-                        opacity: isGuestChecking ? 0.7 : 1,
-                    },
-                ]}
-            >
-                {isGuestChecking ? (
-                    <ActivityIndicator color={theme.accent} />
-                ) : (
-                    <Text style={[styles.guestButtonText, { color: theme.text }]}>Continue as guest</Text>
-                )}
-            </TouchableOpacity>
-            {guestError ? <Text style={styles.errorText}>{guestError}</Text> : null}
         </View>
 
         {/* {activeIndex === SCREENS.length - 1 && (
@@ -251,24 +204,6 @@ const styles = StyleSheet.create({
   primaryButtonText: {
       fontSize: 16,
       fontWeight: 'bold',
-  },
-  guestButton: {
-      width: '100%',
-      minHeight: 54,
-      borderRadius: 27,
-      borderWidth: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-  },
-  guestButtonText: {
-      fontSize: 16,
-      fontWeight: '700',
-  },
-  errorText: {
-      marginTop: 10,
-      fontSize: 12,
-      color: '#D32F2F',
-      textAlign: 'center',
   },
   skipForNow: {
       alignItems: 'center',

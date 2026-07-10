@@ -13,13 +13,14 @@ import Animated, {
 import {
   AuthOTPVerificationScreen,
   AuthPinLoginScreen,
+  AuthPinSetupScreen,
   AuthScreen1,
   AuthScreen2,
   AuthScreen3,
   AuthScreen4,
   AuthSecuritySetupScreen
 } from '@/components/auth';
-import { guestCheckin, identifyUser, loginUser, registerUser } from '@/lib/auth';
+import { authOtpSend, guestCheckin, identifyUser, loginUser, registerUser, resetPin } from '@/lib/auth';
 import { getDeviceId } from '@/lib/device';
 
 export default function AuthFlow() {
@@ -36,6 +37,9 @@ export default function AuthFlow() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isSendingResetOtp, setIsSendingResetOtp] = useState(false);
+  const [isResettingPin, setIsResettingPin] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const handleFinish = () => {
     router.replace('/(tabs)');
@@ -110,12 +114,58 @@ export default function AuthFlow() {
     }
   };
 
+  const handleForgotPin = async () => {
+    if (!identifier) {
+      changeStep(2, 'back');
+      return;
+    }
+
+    setLoginError(null);
+    setResetError(null);
+    setClaimToken(null);
+    setIsSendingResetOtp(true);
+    try {
+      await authOtpSend(identifier);
+      changeStep(8, 'forward');
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Unable to send reset code.');
+    } finally {
+      setIsSendingResetOtp(false);
+    }
+  };
+
+  const handleResetPin = async (pin: string) => {
+    if (!claimToken) return;
+    setResetError(null);
+    setIsResettingPin(true);
+    try {
+      const deviceId = await getDeviceId();
+      const response = await resetPin({
+        claim_token: claimToken,
+        pin,
+        device_id: deviceId,
+      });
+      setAuth(response.user, response.token);
+      handleFinish();
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : 'Unable to reset PIN.');
+    } finally {
+      setIsResettingPin(false);
+    }
+  };
+
   const handleIdentify = async (id: string) => {
     setIdentifyError(null);
+    setLoginError(null);
+    setResetError(null);
+    setClaimToken(null);
     setIsIdentifying(true);
     try {
       const result = await identifyUser(id);
       setIdentifier(id);
+      if (!result.exists) {
+        await authOtpSend(id);
+      }
       changeStep(result.exists ? 7 : 3, 'forward');
     } catch (error) {
       setIdentifyError(error instanceof Error ? error.message : 'Unable to verify that identifier.');
@@ -156,8 +206,9 @@ export default function AuthFlow() {
           <AuthPinLoginScreen
             onContinue={handleLogin}
             onSecondary={() => changeStep(2, 'back')}
+            onForgotPin={handleForgotPin}
             errorMessage={loginError}
-            isLoading={isLoggingIn}
+            isLoading={isLoggingIn || isSendingResetOtp}
           />
         );
       case 3:
@@ -169,6 +220,26 @@ export default function AuthFlow() {
               changeStep(4, 'forward');
             }}
             onSecondary={() => changeStep(2, 'back')}
+          />
+        );
+      case 8:
+        return (
+          <AuthOTPVerificationScreen
+            data={identifier}
+            onContinue={(token: string) => {
+              setClaimToken(token);
+              changeStep(9, 'forward');
+            }}
+            onSecondary={() => changeStep(7, 'back')}
+          />
+        );
+      case 9:
+        return (
+          <AuthPinSetupScreen
+            onComplete={handleResetPin}
+            onCancel={() => changeStep(7, 'back')}
+            isLoading={isResettingPin}
+            errorMessage={resetError}
           />
         );
       case 4:

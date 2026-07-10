@@ -3,15 +3,16 @@ import {
   DefaultTheme,
   ThemeProvider,
 } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
 import { FinnriSplashScreen } from '@/components/SplashScreen';
-
+import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { installApiSessionGuard } from '@/lib/api-session';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -20,16 +21,12 @@ export const unstable_settings = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-import { useAuthStore } from '@/hooks/use-auth-store';
-import { useRouter, useSegments } from 'expo-router';
-
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [isAppReady, setIsAppReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
-  const { user } = useAuthStore();
+  const { user, clearAuth } = useAuthStore();
   const router = useRouter();
-  const segments = useSegments();
 
   useEffect(() => {
     // Simulate asset loading or just wait for the custom splash
@@ -68,15 +65,12 @@ export default function RootLayout() {
     }
   }, [isAppReady]);
 
-  // Session check logic
   useEffect(() => {
-    if (!isAppReady || showCustomSplash) return;
-
-    // Check if user is logged in via store
-    // We need to import the store here, but hooks inside component is fine.
-    // However, we need to be careful with navigation readiness.
-    // The RootLayout is a component, so we can use hooks.
-  }, [isAppReady, showCustomSplash]);
+    return installApiSessionGuard(() => {
+      clearAuth();
+      router.replace('/auth');
+    });
+  }, [clearAuth, router]);
 
   if (!isAppReady) {
     return null;

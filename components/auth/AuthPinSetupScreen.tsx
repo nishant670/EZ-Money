@@ -1,5 +1,3 @@
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -8,16 +6,15 @@ type AuthPinSetupScreenProps = {
     onComplete: (pin: string) => void;
     onCancel: () => void;
     isLoading?: boolean;
+    errorMessage?: string | null;
 };
 
 export const AuthPinSetupScreen = ({
     onComplete,
     onCancel,
     isLoading,
+    errorMessage,
 }: AuthPinSetupScreenProps) => {
-    const colorScheme = useColorScheme() ?? 'light';
-    const theme = Colors[colorScheme];
-
     const [step, setStep] = useState<'create' | 'confirm'>('create');
     const [pin, setPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
@@ -108,9 +105,9 @@ export const AuthPinSetupScreen = ({
                 })}
             </View>
 
-            {error ? (
+            {error || errorMessage ? (
                 <View style={localStyles.errorContainer}>
-                    <Text style={localStyles.errorText}>{error}</Text>
+                    <Text style={localStyles.errorText}>{error || errorMessage}</Text>
                 </View>
             ) : null}
 
