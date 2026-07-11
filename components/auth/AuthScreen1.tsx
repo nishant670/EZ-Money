@@ -24,6 +24,7 @@ export const AuthScreen1 = ({
   return (
     <ScrollView
       contentContainerStyle={[styles.authScrollContent, { flexGrow: 1, justifyContent: 'center' }]}
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.topSection}>
@@ -72,23 +73,20 @@ export const AuthScreen1 = ({
           {isLoading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.primaryButtonText}>Continue as Guest</Text>
+            <Text style={styles.primaryButtonText}>Sign in / Create account</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.secondaryButton, { borderColor: theme.border }]}
+          style={styles.textButton}
           onPress={() => onSecondary?.()}
         >
-          <Text style={[styles.secondaryButtonText, { color: theme.text }]}>
-            Sign in / Create account
+          <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.75 }]}>
+            Continue as Guest
           </Text>
         </TouchableOpacity>
 
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-        <Text style={[styles.footerText, { color: theme.text, opacity: 0.4 }]}>
-          You can sign in anytime to back up your data.
-        </Text>
       </View>
     </ScrollView>
   );
