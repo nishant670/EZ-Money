@@ -34,7 +34,7 @@ export default function Screen5() {
 
         <View style={styles.textGroup}>
           <Text style={[styles.title, { color: theme.text, fontFamily: Fonts.title }]}>
-            You're all set to take <Text style={{ color: theme.accent }}>control!</Text>
+            You&apos;re all set to take <Text style={{ color: theme.accent }}>control!</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
             Start tracking, save more, and feel great about your money.

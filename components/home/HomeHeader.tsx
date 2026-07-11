@@ -1,15 +1,13 @@
 import { ThemedText } from '@/components/themed-text';
-import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image, Pressable, View } from 'react-native';
 // Note: We'll use the local asset saved earlier
 const LOGO_IMG = require('@/assets/images/logo-white.png');
 
 export function HomeHeader() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const theme = useThemeTokens();
   const { user } = useAuthStore();
   const displayName = user?.username ? `${user.username}!` : 'Hey there!';
 
@@ -19,8 +17,9 @@ export function HomeHeader() {
         {/* Finnri Logo - Brand Identity */}
         <View
           className="h-12 w-12 items-center justify-center rounded-2xl shadow-sm"
-          style={{ backgroundColor: theme.text === '#2D2D2D' ? '#2D2D2D' : theme.card }}
-        >
+          style={{
+            backgroundColor: theme.mode === 'light' ? theme.colors.text : theme.colors.card,
+          }}>
           <Image
             source={LOGO_IMG}
             className="h-8 w-8"
@@ -30,17 +29,15 @@ export function HomeHeader() {
         </View>
 
         <View>
-          <ThemedText className="text-xs text-black/60 dark:text-white/60">
-            Hey there,
-          </ThemedText>
-          <ThemedText className="text-xl font-bold" style={{ color: theme.text }}>
+          <ThemedText className="text-xs text-black/60 dark:text-white/60">Hey there,</ThemedText>
+          <ThemedText variant="sectionTitle" style={{ color: theme.colors.text }}>
             {displayName}
           </ThemedText>
         </View>
       </View>
 
       <Pressable>
-        <MaterialCommunityIcons name="bell" size={24} color={theme.text} />
+        <MaterialCommunityIcons name="bell" size={24} color={theme.colors.text} />
       </Pressable>
     </View>
   );

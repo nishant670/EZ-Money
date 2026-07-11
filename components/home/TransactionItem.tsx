@@ -1,9 +1,8 @@
 import { ThemedText } from '@/components/themed-text';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Pressable, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 // Simplified props for UI matching
 interface TransactionItemProps {
@@ -17,6 +16,8 @@ interface TransactionItemProps {
   bgColor?: string;
   isIncome?: boolean;
   onPress?: () => void;
+  variant?: 'card' | 'list';
+  showDivider?: boolean;
 }
 
 export function TransactionItem({
@@ -29,73 +30,192 @@ export function TransactionItem({
   color,
   bgColor,
   isIncome,
-  onPress
+  onPress,
+  variant = 'card',
+  showDivider = false,
 }: TransactionItemProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const theme = useThemeTokens();
+  const isList = variant === 'list';
+  const titleColor = theme.mode === 'dark' ? '#F3F4F6' : '#1F2933';
+  const mutedColor = theme.mode === 'dark' ? 'rgba(255,255,255,0.5)' : '#9A9697';
 
   return (
-    <Pressable
-      onPress={onPress}
-      className="flex-row items-center bg-white dark:bg-gray-800 p-4 rounded-3xl mb-3 shadow-sm"
-      style={{
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 15,
-        elevation: 2,
-      }}
-    >
-      {/* Icon Box */}
-      <View
-        className="h-12 w-12 rounded-full items-center justify-center mr-4"
-        style={{ backgroundColor: bgColor || (isIncome ? '#E8F5E9' : '#FFEBEE') }}
-      >
-        <MaterialCommunityIcons
-          name={icon as any}
-          size={24}
-          color={color || (isIncome ? '#27AE60' : '#E57373')}
-        />
-      </View>
-
-      {/* Details */}
-      <View className="flex-1">
-        <ThemedText className="text-base font-bold text-gray-800 dark:text-gray-100">
-          {title}
-        </ThemedText>
-        <View className="flex-row items-center pt-1">
-          <View
-            className="px-2.5 rounded-full mr-2"
-            style={{ backgroundColor: bgColor || '#F3F4F6' }}
-          >
-            <ThemedText
-              className="text-[10px] font-bold uppercase tracking-tight"
-              style={{ color: color || '#6B7280' }}
-            >
-              {category}
-            </ThemedText>
-          </View>
-          {subtitle && (
-            <ThemedText className="text-xs text-gray-400 font-medium">
-              • {subtitle}
-            </ThemedText>
-          )}
+    <View>
+      <Pressable
+        onPress={onPress}
+        style={[
+          styles.itemBase,
+          isList ? styles.listItem : styles.cardItem,
+          !isList ? { backgroundColor: theme.mode === 'dark' ? '#1F2937' : '#FFFFFF' } : undefined,
+          !isList ? theme.shadows.soft : undefined,
+        ]}>
+        <View
+          style={[
+            isList ? styles.listIcon : styles.cardIcon,
+            { backgroundColor: bgColor || (isIncome ? '#E8F5E9' : '#FFEBEE') },
+          ]}>
+          <MaterialCommunityIcons
+            name={icon as any}
+            size={isList ? 20 : 24}
+            color={color || (isIncome ? '#27AE60' : '#E57373')}
+          />
         </View>
-      </View>
 
-      {/* Amount & Date */}
-      <View className="items-end">
-        <ThemedText
-          className="text-base font-black"
-          style={{ color: isIncome ? '#27AE60' : theme.text }}
-        >
-          {isIncome ? '+' : '-'}{CURRENCY_SYMBOL}{amount}
-        </ThemedText>
-        <ThemedText className="text-[11px] text-gray-400 font-medium pt-1">
-          {date}
-        </ThemedText>
-      </View>
+        <View style={styles.details}>
+          <ThemedText
+            numberOfLines={1}
+            variant={isList ? 'bodyStrong' : 'sectionTitle'}
+            style={[
+              styles.title,
+              {
+                color: titleColor,
+              },
+            ]}>
+            {title}
+          </ThemedText>
+          <View style={styles.metaRow}>
+            <View
+              style={[
+                isList ? styles.listPill : styles.cardPill,
+                { backgroundColor: bgColor || '#F3F4F6' },
+              ]}>
+              <ThemedText
+                numberOfLines={1}
+                variant="micro"
+                style={[
+                  styles.category,
+                  {
+                    color: color || '#6B7280',
+                  },
+                ]}>
+                {category}
+              </ThemedText>
+            </View>
+            {subtitle && (
+              <ThemedText
+                numberOfLines={1}
+                variant="caption"
+                style={[
+                  styles.subtitle,
+                  {
+                    color: mutedColor,
+                  },
+                ]}>
+                {isList ? subtitle : `• ${subtitle}`}
+              </ThemedText>
+            )}
+          </View>
+        </View>
 
-    </Pressable>
+        <View style={styles.amountBlock}>
+          <ThemedText
+            numberOfLines={1}
+            variant="amount"
+            style={[
+              styles.amount,
+              {
+                color: isIncome ? '#27AE60' : theme.colors.text,
+              },
+            ]}>
+            {isIncome ? '+' : '-'}
+            {CURRENCY_SYMBOL}
+            {amount}
+          </ThemedText>
+          {date ? (
+            <ThemedText
+              numberOfLines={1}
+              variant="micro"
+              style={[
+                styles.date,
+                {
+                  color: mutedColor,
+                },
+              ]}>
+              {date}
+            </ThemedText>
+          ) : null}
+        </View>
+      </Pressable>
+      {showDivider ? <View style={styles.divider} /> : null}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  itemBase: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardItem: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 24,
+    marginBottom: 12,
+  },
+  listItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  cardIcon: {
+    height: 48,
+    width: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  listIcon: {
+    height: 40,
+    width: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  details: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  title: {},
+  metaRow: {
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  cardPill: {
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  listPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 1,
+    borderRadius: 10,
+    marginRight: 8,
+    maxWidth: 118,
+  },
+  category: {
+    textTransform: 'uppercase',
+  },
+  subtitle: {
+    flex: 1,
+  },
+  amountBlock: {
+    minWidth: 88,
+    marginLeft: 10,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  amount: {},
+  date: {
+    marginTop: 5,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 66,
+    backgroundColor: 'rgba(45,45,45,0.08)',
+  },
+});

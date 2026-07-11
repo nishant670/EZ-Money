@@ -72,20 +72,37 @@ export default function TransactionsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate, debouncedSearchQuery]);
+  }, [
+    token,
+    filterType,
+    selectedCategory,
+    selectedMethod,
+    selectedAccountId,
+    minAmount,
+    maxAmount,
+    startDate,
+    endDate,
+    debouncedSearchQuery,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
       void load();
       if (token) {
-        void fetchAccounts(token).then(setAccounts).catch(() => setAccounts([]));
+        void fetchAccounts(token)
+          .then(setAccounts)
+          .catch(() => setAccounts([]));
       }
     }, [load, token])
   );
 
-  useEffect(() => subscribeTransactionsChanged(() => {
-    void load();
-  }), [load]);
+  useEffect(
+    () =>
+      subscribeTransactionsChanged(() => {
+        void load();
+      }),
+    [load]
+  );
 
   const isFilterActive = useMemo(() => {
     return (
@@ -98,7 +115,16 @@ export default function TransactionsScreen() {
       startDate !== null ||
       endDate !== null
     );
-  }, [filterType, selectedCategory, selectedMethod, selectedAccountId, minAmount, maxAmount, startDate, endDate]);
+  }, [
+    filterType,
+    selectedCategory,
+    selectedMethod,
+    selectedAccountId,
+    minAmount,
+    maxAmount,
+    startDate,
+    endDate,
+  ]);
 
   const hasSearchQuery = searchQuery.trim().length > 0 || debouncedSearchQuery.length > 0;
   const hasActiveConstraints = isFilterActive || hasSearchQuery;
@@ -116,69 +142,67 @@ export default function TransactionsScreen() {
     setEndDate(null);
   }, []);
 
-  const sections = useMemo(
-    () => groupTransactionsBySection(transactions),
-    [transactions],
-  );
+  const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
 
   const calculateDailyTotal = (items: Transaction[]) => {
     return items.reduce((sum, item) => sum + item.amount, 0);
   };
 
-  const renderTransactionCard = useCallback(
-    (item: Transaction) => {
-      const isIncome = item.entryType === 'income' || item.amount >= 0;
-      const displayAmount = Math.abs(item.amount).toFixed(2);
-      // Date formatting for subtitle or similar if needed, 
-      // but the design shows specific layout. Reusing TransactionItem for consistency.
+  const renderTransactionCard = useCallback((item: Transaction) => {
+    const isIncome = item.entryType === 'income' || item.amount >= 0;
+    const displayAmount = Math.abs(item.amount).toFixed(2);
+    // Date formatting for subtitle or similar if needed,
+    // but the design shows specific layout. Reusing TransactionItem for consistency.
 
-      return (
-        <TransactionItem
-          key={item.id}
-          icon={item.icon as any}
-          title={item.name}
-          category={item.category}
-          subtitle={item.accountName ?? item.mode ?? ''}
-          amount={`${displayAmount}`}
-          date={""}
-          color={item.color}
-          bgColor={item.bgColor}
-          isIncome={isIncome}
-          onPress={() =>
-            router.push({
-              pathname: '/entry/[id]',
-              params: {
-                id: item.id,
-                name: item.name,
-                category: item.category,
-                amount: displayAmount,
-                entryType: item.entryType ?? 'expense',
-                section: item.section,
-                mode: item.mode ?? '',
-                notes: item.notes ?? '',
-                merchant: item.merchant ?? '',
-                dateLabel: item.dateLabel ?? '',
-                rawDate: item.rawDate ?? '',
-                tag: item.tag ?? '',
-              },
-            })
-          }
-        />
-      );
-    },
-    [],
-  );
+    return (
+      <TransactionItem
+        key={item.id}
+        icon={item.icon as any}
+        title={item.name}
+        category={item.category}
+        subtitle={item.accountName ?? item.mode ?? ''}
+        amount={`${displayAmount}`}
+        date={''}
+        color={item.color}
+        bgColor={item.bgColor}
+        isIncome={isIncome}
+        onPress={() =>
+          router.push({
+            pathname: '/entry/[id]',
+            params: {
+              id: item.id,
+              name: item.name,
+              category: item.category,
+              amount: displayAmount,
+              entryType: item.entryType ?? 'expense',
+              section: item.section,
+              mode: item.mode ?? '',
+              notes: item.notes ?? '',
+              merchant: item.merchant ?? '',
+              dateLabel: item.dateLabel ?? '',
+              rawDate: item.rawDate ?? '',
+              tag: item.tag ?? '',
+            },
+          })
+        }
+      />
+    );
+  }, []);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      edges={['top', 'left', 'right']}>
       <Stack.Screen options={{ headerShown: false }} />
       {/* Header */}
       <View className="flex-row items-center justify-between px-6 py-4">
-        <Pressable onPress={() => router.back()} className="h-10 w-10 items-center justify-center rounded-full bg-white dark:bg-gray-800 shadow-sm">
+        <Pressable
+          onPress={() => router.back()}
+          className="h-10 w-10 items-center justify-center rounded-full bg-white dark:bg-gray-800 shadow-sm">
           <MaterialCommunityIcons name="chevron-left" size={28} color={theme.text} />
         </Pressable>
 
-        <ThemedText className="text-lg font-bold" style={{ color: theme.text }}>
+        <ThemedText className="text-base font-bold" style={{ color: theme.text }}>
           &nbsp; Your Money Story&nbsp;
         </ThemedText>
         <View className="h-10 w-10"></View>
@@ -192,16 +216,18 @@ export default function TransactionsScreen() {
             <TextInput
               placeholder="Search transactions..."
               placeholderTextColor="#9CA3AF"
-              className="flex-1 ml-3 text-base text-gray-900 font-medium"
+              className="flex-1 ml-3 text-sm text-gray-900 font-medium"
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
           </View>
           <TouchableOpacity
             onPress={() => setIsFilterOpen(true)}
-            className={`w-12 h-12 rounded-2xl items-center justify-center shadow-sm ${isFilterActive ? 'bg-orange-50 border border-orange-100' : 'bg-white border border-gray-100'
-              }`}
-          >
+            className={`w-12 h-12 rounded-2xl items-center justify-center shadow-sm ${
+              isFilterActive
+                ? 'bg-orange-50 border border-orange-100'
+                : 'bg-white border border-gray-100'
+            }`}>
             <View>
               <Ionicons
                 name="options-outline"
@@ -215,12 +241,18 @@ export default function TransactionsScreen() {
           </TouchableOpacity>
         </View>
       </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}>
         {error && transactions.length > 0 && (
           <View className="mx-6 mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
-            <ThemedText className="text-center text-sm font-semibold text-red-600 dark:text-red-300">{error}</ThemedText>
+            <ThemedText className="text-center text-sm font-semibold text-red-600 dark:text-red-300">
+              {error}
+            </ThemedText>
             <TouchableOpacity className="mt-2 items-center" onPress={() => void load()}>
-              <ThemedText className="text-sm font-bold" style={{ color: theme.accent }}>Retry</ThemedText>
+              <ThemedText className="text-sm font-bold" style={{ color: theme.accent }}>
+                Retry
+              </ThemedText>
             </TouchableOpacity>
           </View>
         )}
@@ -254,40 +286,39 @@ export default function TransactionsScreen() {
           />
         ) : (
           <>
-        {/* Dynamic Sections */}
-        {sections.map((section) => {
-          const total = calculateDailyTotal(section.data);
-          const totalColor = total >= 0 ? '#27AE60' : '#808080';
+            {/* Dynamic Sections */}
+            {sections.map((section) => {
+              const total = calculateDailyTotal(section.data);
+              const totalColor = total >= 0 ? '#27AE60' : '#808080';
 
-          return (
-            <View key={section.title} className="mb-6">
-              <View className="flex-row justify-between items-center px-6 mb-3">
-                <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                  {section.title.toUpperCase()}
-                </ThemedText>
-                <View className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg">
-                  <ThemedText className="text-xs font-bold" style={{ color: totalColor }}>
-                    {total >= 0 ? '+' : ''}₹{Math.abs(total).toFixed(2)}
-                  </ThemedText>
+              return (
+                <View key={section.title} className="mb-6">
+                  <View className="flex-row justify-between items-center px-6 mb-3">
+                    <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                      {section.title.toUpperCase()}
+                    </ThemedText>
+                    <View className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg">
+                      <ThemedText className="text-xs font-bold" style={{ color: totalColor }}>
+                        {total >= 0 ? '+' : ''}₹{Math.abs(total).toFixed(2)}
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <View className="px-6">{section.data.map(renderTransactionCard)}</View>
                 </View>
-              </View>
-              <View className="px-6">
-                {section.data.map(renderTransactionCard)}
-              </View>
-            </View>
-          );
-        })}
+              );
+            })}
 
-        {/* Footer */}
-        <View className="items-center py-8 gap-3 opacity-50">
-          <View className="h-10 w-10 rounded-full bg-gray-200 dark:bg-gray-700 items-center justify-center">
-            <MaterialCommunityIcons name="history" size={20} color={theme.text} />
-          </View>
-          <ThemedText className="text-xs" style={{ color: theme.text }}>End of your story for now!</ThemedText>
-        </View>
+            {/* Footer */}
+            <View className="items-center py-8 gap-3 opacity-50">
+              <View className="h-10 w-10 rounded-full bg-gray-200 dark:bg-gray-700 items-center justify-center">
+                <MaterialCommunityIcons name="history" size={20} color={theme.text} />
+              </View>
+              <ThemedText className="text-xs" style={{ color: theme.text }}>
+                End of your story for now!
+              </ThemedText>
+            </View>
           </>
         )}
-
       </ScrollView>
 
       {/* Advanced Filters Bottom Sheet */}
@@ -295,8 +326,7 @@ export default function TransactionsScreen() {
         transparent
         animationType="slide"
         visible={isFilterOpen}
-        onRequestClose={() => setIsFilterOpen(false)}
-      >
+        onRequestClose={() => setIsFilterOpen(false)}>
         <View className="flex-1 justify-end bg-black/40">
           <Pressable className="absolute inset-0" onPress={() => setIsFilterOpen(false)} />
           <AdvancedFilter

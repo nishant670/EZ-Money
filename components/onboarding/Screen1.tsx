@@ -68,15 +68,23 @@ export default function Screen1() {
                   <View key={i} style={[styles.waveItem, { backgroundColor: theme.accent, height: 10 + Math.random() * 10 }]} />
               ))}
           </View>
-          <Text style={[styles.speechText, { color: theme.text }]}>"Spent ₹250 on lunch via UPI"</Text>
+          <Text style={[styles.speechText, { color: theme.text }]}>Spent ₹250 on lunch via UPI</Text>
+        </View>
+
+        <View style={styles.languageRow}>
+          {['English', 'Hindi', 'Hinglish'].map(language => (
+            <View key={language} style={[styles.languageChip, { backgroundColor: theme.accent + '14' }]}>
+              <Text style={[styles.languageText, { color: theme.accent }]}>{language}</Text>
+            </View>
+          ))}
         </View>
 
         <View style={styles.textGroup}>
           <Text style={[styles.title, { color: theme.text, fontFamily: Fonts.title }]}>
-            Just speak your <Text style={{ color: theme.accent }}>expenses</Text>
+            Speak money in <Text style={{ color: theme.accent }}>your language</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
-            Tell Finnri what you spent or earned. No forms, no effort.
+            Finnri understands English, Hindi, and Hinglish, so you can capture spends the way you naturally talk.
           </Text>
         </View>
       </View>
@@ -131,7 +139,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 3,
-    marginBottom: 40,
+    marginBottom: 16,
   },
   waveform: {
       flexDirection: 'row',
@@ -146,6 +154,21 @@ const styles = StyleSheet.create({
   speechText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  languageRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 40,
+  },
+  languageChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  languageText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   textGroup: {
     alignItems: 'center',
