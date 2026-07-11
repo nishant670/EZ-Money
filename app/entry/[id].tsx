@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -90,16 +90,7 @@ export default function TransactionDetailsScreen() {
     // missing fields from params will be undefined
   };
 
-  useEffect(() => {
-    fetchTransactionDetails();
-    if (token) {
-      fetchAccounts(token)
-        .then(setAccounts)
-        .catch(() => setAccounts([]));
-    }
-  }, [params.id, token]);
-
-  const fetchTransactionDetails = async () => {
+  const fetchTransactionDetails = useCallback(async () => {
     if (!token || !params.id) return;
     try {
       const response = await fetch(`${API_BASE_URL}/v1/entries/${params.id}`, {
@@ -126,10 +117,17 @@ export default function TransactionDetailsScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.dateLabel, params.id, token]);
 
-  const entryType =
-    (displayData.type || 'expense').toLowerCase() === 'income' ? 'income' : 'expense';
+  useEffect(() => {
+    fetchTransactionDetails();
+    if (token) {
+      fetchAccounts(token)
+        .then(setAccounts)
+        .catch(() => setAccounts([]));
+    }
+  }, [fetchTransactionDetails, token]);
+
   const amountValue = Math.abs(Number(displayData.amount || 0));
 
   const meta = resolveCategoryMetadata(displayData.category, displayData.type);
@@ -160,7 +158,7 @@ export default function TransactionDetailsScreen() {
             } else {
               Alert.alert('Error', 'Could not delete transaction.');
             }
-          } catch (e) {
+          } catch {
             Alert.alert('Error', 'Network error.');
           } finally {
             setIsDeleting(false);
@@ -248,6 +246,15 @@ export default function TransactionDetailsScreen() {
     merchant: displayData.merchant || '',
     attachment: null,
   };
+
+  if (isLoading && !transaction) {
+    return (
+      <SafeAreaView
+        style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.background }}>
+        <ActivityIndicator color={theme.accent} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>

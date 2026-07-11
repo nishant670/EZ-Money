@@ -260,7 +260,10 @@ export function TransactionFormModal({
         setShowModal(false);
       });
     }
-  }, [visible, SCREEN_HEIGHT]); // removed initialData to prevent reset on type change if needed, but keeping for now as it syncs parent state
+    // Keep this tied to the visibility transition. Adding initialData would
+    // reset in-progress edits whenever the parent re-renders with a new object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, SCREEN_HEIGHT, backdropAnim, panelAnim, resolveEntryFormAccount, typeSwitchAnim]);
 
   useEffect(() => {
     if (!visible || mode === 'quick-prompt') {

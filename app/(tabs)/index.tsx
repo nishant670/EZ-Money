@@ -140,8 +140,6 @@ export default function HomeScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
-  const [isSavingEntry, setIsSavingEntry] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
   const [aiSourceText, setAiSourceText] = useState('');
@@ -154,27 +152,6 @@ export default function HomeScreen() {
     import('@/components/home/QuickPrompts').QuickPrompt | null
   >(null);
   const [modalMode, setModalMode] = useState<'audio' | 'manual' | 'quick-prompt'>('manual');
-
-  const onMicStop = useCallback(
-    (data: {
-      title?: string;
-      amount?: string;
-      category?: string;
-      date?: string;
-      type?: string;
-      mode?: string;
-    }) => {
-      const blank = createBlankForm();
-      setForm({
-        ...blank,
-        ...data,
-        amount: data.amount ? parseFloat(data.amount).toFixed(2) : '',
-      });
-      setModalMode('audio');
-      setIsEditOpen(true);
-    },
-    [createBlankForm]
-  );
 
   const handleQuickPromptSelect = useCallback(
     (prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
@@ -353,7 +330,6 @@ export default function HomeScreen() {
   );
 
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
-  const visibleSections = useMemo(() => sections.slice(0, 3), [sections]);
   const hasTransactions = sections.length > 0;
 
   const ensureMicPermission = useCallback(async () => {
@@ -507,8 +483,6 @@ export default function HomeScreen() {
 
   const handleConfirmEntry = useCallback(
     async (formData: EntryForm) => {
-      setFormError(null);
-      setIsSavingEntry(true);
       try {
         const resolvedAccount = await ensureAccountForEntry(formData);
         const parsedDate = parseDateLabel(formData.date);
@@ -567,10 +541,7 @@ export default function HomeScreen() {
           error instanceof Error
             ? error
             : new Error('Unable to save your entry. Please try again.');
-        setFormError(saveError.message);
         throw saveError;
-      } finally {
-        setIsSavingEntry(false);
       }
     },
     [aiInputSource, aiSourceText, createBlankForm, ensureAccountForEntry, modalMode, token]
@@ -585,7 +556,6 @@ export default function HomeScreen() {
     }
     setIsSubmitting(true);
     setErrorMessage(null);
-    setFormError(null);
     try {
       const formData = new FormData();
       if (trimmed) {

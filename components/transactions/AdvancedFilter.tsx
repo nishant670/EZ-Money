@@ -4,12 +4,11 @@ import type { Account } from '@/lib/accounts';
 import { formatApiDate, parseDateLabel } from '@/lib/transactions';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Dimensions,
   PanResponder,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -68,8 +67,6 @@ export const AdvancedFilter = ({
   // Amount Slider States
   const [minAmount, setMinAmount] = React.useState(currentFilters.amountRange.min);
   const [maxAmount, setMaxAmount] = React.useState(currentFilters.amountRange.max);
-
-  const sliderWidth = Dimensions.get('window').width - 48; // Horizontal padding
 
   const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
     const currentDate = selectedDate || (showPicker === 'start' ? startDate : endDate);

@@ -29,7 +29,7 @@ export default function Screen1() {
       false
     );
     
-    setTimeout(() => {
+    const pulse2Timer = setTimeout(() => {
       pulse2.value = withRepeat(
         withSequence(
           withTiming(1.4, { duration: 1800, easing: Easing.out(Easing.quad) }),
@@ -39,7 +39,9 @@ export default function Screen1() {
         false
       );
     }, 500);
-  }, []);
+
+    return () => clearTimeout(pulse2Timer);
+  }, [pulse1, pulse2]);
 
   const animatedStyle1 = useAnimatedStyle(() => ({
     transform: [{ scale: pulse1.value }],
