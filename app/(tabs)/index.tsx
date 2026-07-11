@@ -13,6 +13,7 @@ import { StateView } from '@/components/ui/StateView';
 import { Card, Screen, SectionHeader } from '@/components/ui/theme-primitives';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { readApiError } from '@/lib/api-error';
+import { fetchUnreadNotificationCount } from '@/lib/notifications';
 import {
   API_BASE_URL,
   formatApiDate,
@@ -277,6 +278,7 @@ export default function HomeScreen() {
   };
 
   const [quickPromptKey, setQuickPromptKey] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const getInitialPromptData = (): Partial<
     import('@/components/transactions/TransactionFormModal').EntryForm
@@ -329,11 +331,17 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  const fetchNotificationCount = useCallback(async () => {
+    const count = await fetchUnreadNotificationCount(token);
+    setUnreadNotifications(count);
+  }, [token]);
+
   useFocusEffect(
     useCallback(() => {
       void fetchEntries();
       void fetchAccountOptions();
-    }, [fetchAccountOptions, fetchEntries])
+      void fetchNotificationCount();
+    }, [fetchAccountOptions, fetchEntries, fetchNotificationCount])
   );
 
   useEffect(
@@ -764,7 +772,10 @@ export default function HomeScreen() {
   return (
     <Screen>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <HomeHeader />
+        <HomeHeader
+          unreadCount={unreadNotifications}
+          onNotificationsPress={() => router.push('/notifications')}
+        />
 
         <View className="px-6 pb-4">
           <ThemedText className="text-xs text-gray-500 font-medium text-center">

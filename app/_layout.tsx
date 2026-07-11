@@ -115,6 +115,7 @@ export default function RootLayout() {
         <Stack.Screen name="security" options={{ headerShown: false }} />
         <Stack.Screen name="app-mood" options={{ headerShown: false }} />
         <Stack.Screen name="change-pin" options={{ headerShown: false }} />
+        <Stack.Screen name="notifications" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
