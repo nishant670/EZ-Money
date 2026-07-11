@@ -28,11 +28,14 @@ import { TransactionItem } from '@/components/home/TransactionItem';
 import { VoiceInputCard } from '@/components/home/VoiceInputCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { StateView } from '@/components/ui/StateView';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { readApiError } from '@/lib/api-error';
 import {
   API_BASE_URL,
+  formatApiDate,
   formatDateLabel,
   groupTransactionsBySection,
   loadTransactions,
@@ -46,7 +49,8 @@ import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { Account, fetchAccounts as loadAccounts } from '@/lib/accounts';
-import * as DocumentPicker from 'expo-document-picker';
+import { formatDisplayTime, getClientTimeZone } from '@/lib/datetime';
+import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import {
   TransactionFormModal,
   type AiReviewMetadata,
@@ -92,6 +96,18 @@ const cardShadow = {
   elevation: 2,
 };
 
+const entryFieldLabels: Record<string, string> = {
+  account_id: 'Account',
+  amount: 'Amount',
+  category: 'Category',
+  currency: 'Currency',
+  date: 'Date',
+  mode: 'Payment method',
+  source: 'Source',
+  title: 'Title',
+  type: 'Transaction type',
+};
+
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
@@ -106,7 +122,7 @@ export default function HomeScreen() {
     mode: 'Cash',
     category: 'Food',
     date: formatDateLabel(new Date()),
-    time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+    time: formatDisplayTime(new Date()),
     notes: '',
     tag: 'General',
     currency: DEFAULT_CURRENCY,
@@ -170,7 +186,7 @@ export default function HomeScreen() {
       title: prompt.title,
       amount: prompt.amount.toFixed(2),
       date: formatDateLabel(now),
-      time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      time: formatDisplayTime(now),
       mode: prompt.mode,
       category: prompt.category,
     });
@@ -300,6 +316,10 @@ export default function HomeScreen() {
     }, [fetchAccountOptions, fetchEntries])
   );
 
+  useEffect(() => subscribeTransactionsChanged(() => {
+    void fetchEntries(true);
+  }), [fetchEntries]);
+
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
   const visibleSections = useMemo(() => sections.slice(0, 3), [sections]);
   const hasTransactions = sections.length > 0;
@@ -399,35 +419,6 @@ export default function HomeScreen() {
     setFormError(null);
     setIsSavingEntry(true);
     try {
-      let attachmentUrl = formData.attachment;
-
-      if (formData.attachment && (formData.attachment.startsWith('file://') || formData.attachment.startsWith('content://'))) {
-        const uploadData = new FormData();
-        const filename = formData.attachment.split('/').pop() || 'file';
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : 'application/octet-stream';
-
-        uploadData.append('file', {
-          uri: formData.attachment,
-          name: filename,
-          type,
-        } as any);
-
-        const uploadRes = await fetch(`${API_BASE_URL}/v1/upload`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          body: uploadData,
-        });
-
-        if (uploadRes.ok) {
-          const data = await uploadRes.json();
-          attachmentUrl = data.url;
-        }
-      }
-
       const parsedDate = parseDateLabel(formData.date);
       const trimmedTag = formData.tag.trim();
       if (!createIdempotencyKey.current) {
@@ -450,18 +441,16 @@ export default function HomeScreen() {
           mode: formData.mode,
           category: formData.category,
           notes: formData.notes.trim(),
-          date: parsedDate ? parsedDate.toISOString().split('T')[0] : formData.date,
+          date: parsedDate ? formatApiDate(parsedDate) : formData.date,
           tag: trimmedTag.length > 0 ? trimmedTag : null,
           merchant: formData.merchant.trim(),
           title: formData.title.trim() || 'Untitled Transaction',
           time: formData.time,
-          attachment: attachmentUrl,
         }),
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Unable to save the entry right now.');
+        throw await readApiError(response, 'Unable to save the entry right now.', entryFieldLabels);
       }
 
       const createdEntry = await response.json() as ApiEntry;
@@ -476,7 +465,7 @@ export default function HomeScreen() {
       setForm(createBlankForm());
       setAiSourceText('');
       setIsEditOpen(false);
-      void fetchEntries(true);
+      notifyTransactionsChanged();
     } catch (error) {
       const saveError = error instanceof Error
         ? error
@@ -486,7 +475,7 @@ export default function HomeScreen() {
     } finally {
       setIsSavingEntry(false);
     }
-  }, [aiInputSource, aiSourceText, createBlankForm, fetchEntries, modalMode, token]);
+  }, [aiInputSource, aiSourceText, createBlankForm, modalMode, token]);
 
   const handleSubmitPrompt = useCallback(async () => {
     if (isSubmitting) return;
@@ -510,8 +499,8 @@ export default function HomeScreen() {
           name: fileName,
           type: extension === 'wav' ? 'audio/wav' : 'audio/m4a',
         } as unknown as Blob);
-        formData.append('tz', 'Asia/Kolkata');
       }
+      formData.append('tz', getClientTimeZone());
       const response = await fetch(`${API_BASE_URL}/v1/parse`, {
         method: 'POST',
         headers: {
@@ -618,12 +607,27 @@ export default function HomeScreen() {
       );
     }
 
+    if (entriesError) {
+      return (
+        <StateView
+          icon="wifi-off"
+          title="Activity did not load"
+          message={entriesError}
+          actionLabel="Try again"
+          onAction={() => void fetchEntries()}
+        />
+      );
+    }
+
     if (!hasTransactions) {
       return (
-        <View className="items-center py-10 bg-white/40 dark:bg-gray-800/40 rounded-[32px] border border-dashed border-gray-200 dark:border-gray-700 mx-6">
-          <MaterialCommunityIcons name="receipt" size={48} color={theme.text} opacity={0.1} />
-          <ThemedText className="mt-4 text-gray-400 font-bold text-center">No activity yet.{"\n"}Try recording a spend!</ThemedText>
-        </View>
+        <StateView
+          icon="receipt-text-plus-outline"
+          title="No activity yet"
+          message="Record, type, or add your first transaction to start building your money story."
+          actionLabel="Add manually"
+          onAction={handleOpenManualEntry}
+        />
       );
     }
 

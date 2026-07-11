@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 
 import { Transaction } from '@/types/transaction';
+import { formatApiDate } from './datetime';
 
 export type ApiEntry = {
   id?: string | number;
@@ -72,6 +73,17 @@ export const parseDateLabel = (label?: string | null) => {
   if (!label) {
     return null;
   }
+  const apiDateMatch = label.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (apiDateMatch) {
+    const [, yearStr, monthStr, dayStr] = apiDateMatch;
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    const day = Number(dayStr);
+    const parsed = new Date(year, month - 1, day);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
   const parsed = new Date(label);
   if (!Number.isNaN(parsed.getTime())) {
     return parsed;
@@ -99,6 +111,8 @@ export const normalizeDateLabel = (value?: string | null, fallback?: string) => 
   }
   return value ?? fallback ?? formatDateLabel(new Date());
 };
+
+export { formatApiDate };
 
 export type CategoryMetadata = {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;

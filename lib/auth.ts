@@ -85,6 +85,28 @@ export type LoginPayload = {
   device_id: string;
 };
 
+const readAuthError = async (response: Response, fallback: string) => {
+  try {
+    const payload = await response.json() as {
+      error?: string;
+      attempts_remaining?: number;
+      locked_until?: string;
+    };
+    if (payload.error === 'login_locked') {
+      return 'Too many wrong PIN attempts. Try again in 15 minutes or reset your PIN.';
+    }
+    if (payload.error === 'invalid_credentials' && typeof payload.attempts_remaining === 'number') {
+      if (payload.attempts_remaining > 0) {
+        return `Incorrect PIN. ${payload.attempts_remaining} attempts remaining.`;
+      }
+      return 'Incorrect PIN.';
+    }
+    return payload.error || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 export const loginUser = async (payload: LoginPayload): Promise<AuthResponse> => {
   const response = await fetch(`${API_BASE_URL}/v1/auth/login`, {
     method: 'POST',
@@ -95,8 +117,30 @@ export const loginUser = async (payload: LoginPayload): Promise<AuthResponse> =>
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || 'Invalid credentials.');
+    throw new Error(await readAuthError(response, 'Invalid credentials.'));
+  }
+
+  return response.json();
+};
+
+export type ResetPinPayload = {
+  claim_token: string;
+  pin: string;
+  device_id: string;
+  biometrics_enabled?: boolean;
+};
+
+export const resetPin = async (payload: ResetPinPayload): Promise<AuthResponse> => {
+  const response = await fetch(`${API_BASE_URL}/v1/auth/pin/reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readAuthError(response, 'Unable to reset PIN right now.'));
   }
 
   return response.json();

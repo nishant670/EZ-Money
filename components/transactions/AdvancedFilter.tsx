@@ -1,6 +1,7 @@
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { Account } from '@/lib/accounts';
+import { formatApiDate, parseDateLabel } from '@/lib/transactions';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import React, { useState } from 'react';
@@ -51,10 +52,10 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, accounts, cou
 
     // Date Picker States
     const [startDate, setStartDate] = React.useState<Date | null>(
-        currentFilters.dateRange.from ? new Date(currentFilters.dateRange.from) : null
+        parseDateLabel(currentFilters.dateRange.from)
     );
     const [endDate, setEndDate] = React.useState<Date | null>(
-        currentFilters.dateRange.to ? new Date(currentFilters.dateRange.to) : null
+        parseDateLabel(currentFilters.dateRange.to)
     );
     const [showPicker, setShowPicker] = React.useState<'start' | 'end' | null>(null);
 
@@ -81,7 +82,7 @@ export const AdvancedFilter = ({ onClose, onApply, currentFilters, accounts, cou
 
     const formatToApiDate = (date: Date | null) => {
         if (!date) return null;
-        return date.toISOString().split('T')[0];
+        return formatApiDate(date);
     };
 
     // Slider PanResponder Logic

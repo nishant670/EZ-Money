@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native';
@@ -6,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DateRange, PeriodPicker } from '@/components/insights/PeriodPicker';
 import { ThemedText } from '@/components/themed-text';
+import { StateView } from '@/components/ui/StateView';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -14,6 +16,8 @@ import {
     InsightCard,
     fetchDashboard,
 } from '@/lib/insights';
+import { subscribeTransactionsChanged } from '@/lib/transaction-events';
+import { formatApiDate } from '@/lib/transactions';
 
 const formatMoney = (value: number) =>
     `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -42,8 +46,8 @@ export default function InsightScreen() {
         if (!isRefresh) setLoading(true);
         setError(null);
         try {
-            const start = currentRange.start?.toISOString().split('T')[0];
-            const end = currentRange.end?.toISOString().split('T')[0];
+            const start = currentRange.start ? formatApiDate(currentRange.start) : undefined;
+            const end = currentRange.end ? formatApiDate(currentRange.end) : undefined;
             setDashboard(await fetchDashboard(token, start, end));
         } catch (loadError) {
             setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard.');
@@ -53,26 +57,39 @@ export default function InsightScreen() {
         }
     }, [currentRange.end, currentRange.start, token]);
 
-    useEffect(() => {
-        void loadData();
-    }, [loadData]);
+    useFocusEffect(
+        useCallback(() => {
+            void loadData(true);
+        }, [loadData]),
+    );
+
+    useEffect(() => subscribeTransactionsChanged(() => {
+        void loadData(true);
+    }), [loadData]);
 
     if (loading && !dashboard) {
         return (
-            <View className="flex-1 items-center justify-center" style={{ backgroundColor: theme.background }}>
-                <ActivityIndicator size="large" color={theme.accent} />
+            <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
+                <StateView
+                    icon="chart-box-outline"
+                    title="Loading dashboard"
+                    message="Preparing your spending summary."
+                    loading
+                />
             </View>
         );
     }
 
     if (!dashboard) {
         return (
-            <View className="flex-1 items-center justify-center gap-4 p-8" style={{ backgroundColor: theme.background }}>
-                <MaterialCommunityIcons name="chart-box-outline" size={48} color={theme.text} />
-                <ThemedText className="text-center text-base">{error || 'No dashboard data is available yet.'}</ThemedText>
-                <TouchableOpacity className="rounded-full px-6 py-3" style={{ backgroundColor: theme.accent }} onPress={() => void loadData()}>
-                    <ThemedText className="font-bold text-white">Retry</ThemedText>
-                </TouchableOpacity>
+            <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
+                <StateView
+                    icon={error ? 'wifi-off' : 'chart-box-outline'}
+                    title={error ? 'Dashboard did not load' : 'No dashboard data yet'}
+                    message={error || 'Capture a transaction to start seeing insights.'}
+                    actionLabel="Try again"
+                    onAction={() => void loadData()}
+                />
             </View>
         );
     }
@@ -107,7 +124,21 @@ export default function InsightScreen() {
                 {error && (
                     <View className="rounded-2xl border border-red-100 bg-red-50 p-3">
                         <ThemedText className="text-center text-sm text-red-600">{error}</ThemedText>
+                        <TouchableOpacity className="mt-2 items-center" onPress={() => void loadData()}>
+                            <ThemedText className="text-sm font-bold" style={{ color: theme.accent }}>Retry</ThemedText>
+                        </TouchableOpacity>
                     </View>
+                )}
+
+                {dashboard.summary.transaction_count === 0 && (
+                    <StateView
+                        icon="chart-box-outline"
+                        title="No dashboard data for this period"
+                        message="Choose a wider period or add a transaction to populate these charts."
+                        actionLabel="Change period"
+                        onAction={() => setPickerVisible(true)}
+                        compact
+                    />
                 )}
 
                 <SummarySection dashboard={dashboard} />

@@ -1,8 +1,10 @@
 import { OnboardingScreenWrapper } from '@/components/onboarding/OnboardingScreenWrapper';
+import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { useRouter } from 'expo-router';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   SlideInLeft,
   SlideInRight,
@@ -13,30 +15,24 @@ import Animated, {
 import {
   AuthOTPVerificationScreen,
   AuthPinLoginScreen,
+  AuthPinSetupScreen,
   AuthScreen1,
   AuthScreen2,
   AuthScreen3,
   AuthScreen4,
   AuthSecuritySetupScreen
 } from '@/components/auth';
-import { guestCheckin, identifyUser, loginUser, registerUser } from '@/lib/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const DEVICE_ID_KEY = 'ez_money_device_id';
-
-const getDeviceId = async () => {
-  let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
-  if (!id) {
-    id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    await AsyncStorage.setItem(DEVICE_ID_KEY, id);
-  }
-  return id;
-};
+import { authOtpSend, guestCheckin, identifyUser, loginUser, registerUser, resetPin } from '@/lib/auth';
+import { getDeviceId } from '@/lib/device';
 
 export default function AuthFlow() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const colorScheme = useColorScheme() ?? 'light';
+  const theme = Colors[colorScheme];
   const { user, setAuth } = useAuthStore();
-  const [step, setStep] = useState(1);
+  const isGuestLinking = params.mode === 'link' && !!user?.is_guest;
+  const [step, setStep] = useState(() => (isGuestLinking ? 2 : 1));
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [identifier, setIdentifier] = useState('');
   const [claimToken, setClaimToken] = useState<string | null>(null);
@@ -47,6 +43,9 @@ export default function AuthFlow() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isSendingResetOtp, setIsSendingResetOtp] = useState(false);
+  const [isResettingPin, setIsResettingPin] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const handleFinish = () => {
     router.replace('/(tabs)');
@@ -121,13 +120,61 @@ export default function AuthFlow() {
     }
   };
 
+  const handleForgotPin = async () => {
+    if (!identifier) {
+      changeStep(2, 'back');
+      return;
+    }
+
+    setLoginError(null);
+    setResetError(null);
+    setClaimToken(null);
+    setIsSendingResetOtp(true);
+    try {
+      await authOtpSend(identifier);
+      changeStep(8, 'forward');
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Unable to send reset code.');
+    } finally {
+      setIsSendingResetOtp(false);
+    }
+  };
+
+  const handleResetPin = async (pin: string) => {
+    if (!claimToken) return;
+    setResetError(null);
+    setIsResettingPin(true);
+    try {
+      const deviceId = await getDeviceId();
+      const response = await resetPin({
+        claim_token: claimToken,
+        pin,
+        device_id: deviceId,
+      });
+      setAuth(response.user, response.token);
+      handleFinish();
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : 'Unable to reset PIN.');
+    } finally {
+      setIsResettingPin(false);
+    }
+  };
+
   const handleIdentify = async (id: string) => {
     setIdentifyError(null);
+    setLoginError(null);
+    setResetError(null);
+    setClaimToken(null);
     setIsIdentifying(true);
     try {
       const result = await identifyUser(id);
       setIdentifier(id);
-      changeStep(result.exists ? 7 : 3, 'forward');
+      if (!result.exists) {
+        await authOtpSend(id);
+        changeStep(3, 'forward');
+        return;
+      }
+      changeStep(isGuestLinking ? 10 : 7, 'forward');
     } catch (error) {
       setIdentifyError(error instanceof Error ? error.message : 'Unable to verify that identifier.');
     } finally {
@@ -154,12 +201,29 @@ export default function AuthFlow() {
           <AuthScreen2
             onContinue={handleIdentify}
             onSecondary={() => {
+              if (isGuestLinking) {
+                router.replace('/(tabs)');
+                return;
+              }
               setGuestError(null);
               changeStep(5, 'forward');
             }}
             onInputChange={() => setIdentifyError(null)}
             errorMessage={identifyError}
             isLoading={isIdentifying}
+            secondaryLabel={isGuestLinking ? 'Keep using guest' : 'Continue as Guest'}
+          />
+        );
+      case 10:
+        return (
+          <ExistingAccountPrompt
+            identifier={identifier}
+            onContinue={() => changeStep(7, 'forward')}
+            onDifferent={() => {
+              setIdentifier('');
+              changeStep(2, 'back');
+            }}
+            theme={theme}
           />
         );
       case 7:
@@ -167,8 +231,9 @@ export default function AuthFlow() {
           <AuthPinLoginScreen
             onContinue={handleLogin}
             onSecondary={() => changeStep(2, 'back')}
+            onForgotPin={handleForgotPin}
             errorMessage={loginError}
-            isLoading={isLoggingIn}
+            isLoading={isLoggingIn || isSendingResetOtp}
           />
         );
       case 3:
@@ -180,6 +245,26 @@ export default function AuthFlow() {
               changeStep(4, 'forward');
             }}
             onSecondary={() => changeStep(2, 'back')}
+          />
+        );
+      case 8:
+        return (
+          <AuthOTPVerificationScreen
+            data={identifier}
+            onContinue={(token: string) => {
+              setClaimToken(token);
+              changeStep(9, 'forward');
+            }}
+            onSecondary={() => changeStep(7, 'back')}
+          />
+        );
+      case 9:
+        return (
+          <AuthPinSetupScreen
+            onComplete={handleResetPin}
+            onCancel={() => changeStep(7, 'back')}
+            isLoading={isResettingPin}
+            errorMessage={resetError}
           />
         );
       case 4:
@@ -237,5 +322,87 @@ const styles = StyleSheet.create({
   },
   screenContainer: {
     flex: 1,
-  }
+  },
+  promptContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+  },
+  promptCard: {
+    borderRadius: 28,
+    padding: 24,
+    backgroundColor: 'white',
+  },
+  promptTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontFamily: Fonts.title,
+  },
+  promptBody: {
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+    fontFamily: Fonts.body,
+  },
+  promptPrimaryButton: {
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  promptPrimaryText: {
+    color: 'white',
+    fontSize: 17,
+    fontWeight: '800',
+    fontFamily: Fonts.title,
+  },
+  promptSecondaryButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  promptSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: Fonts.title,
+  },
 });
+
+type ExistingAccountPromptProps = {
+  identifier: string;
+  onContinue: () => void;
+  onDifferent: () => void;
+  theme: typeof Colors.light;
+};
+
+function ExistingAccountPrompt({
+  identifier,
+  onContinue,
+  onDifferent,
+  theme,
+}: ExistingAccountPromptProps) {
+  return (
+    <View style={styles.promptContainer}>
+      <View style={styles.promptCard}>
+        <Text style={[styles.promptTitle, { color: theme.text }]}>Account already exists</Text>
+        <Text style={[styles.promptBody, { color: theme.text, opacity: 0.65 }]}>
+          {identifier} is already registered. Sign in with that account to continue, or use a different email or mobile number.
+        </Text>
+        <TouchableOpacity
+          style={[styles.promptPrimaryButton, { backgroundColor: theme.accent }]}
+          onPress={onContinue}
+        >
+          <Text style={styles.promptPrimaryText}>Sign in to this account</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.promptSecondaryButton} onPress={onDifferent}>
+          <Text style={[styles.promptSecondaryText, { color: theme.text, opacity: 0.65 }]}>
+            Use different email/mobile
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}

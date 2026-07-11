@@ -13,6 +13,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 export const AuthPinLoginScreen = ({
   onContinue,
   onSecondary,
+  onForgotPin,
   errorMessage,
   isLoading,
 }: ScreenProps) => {
@@ -23,6 +24,12 @@ export const AuthPinLoginScreen = ({
   const [localError, setLocalError] = React.useState<string | null>(null);
 
   const displayError = localError || errorMessage;
+
+  React.useEffect(() => {
+    if (errorMessage) {
+      setPin('');
+    }
+  }, [errorMessage]);
 
   const handleBiometricAuth = async () => {
     try {
@@ -43,7 +50,7 @@ export const AuthPinLoginScreen = ({
       if (result.success) {
         onContinue('biometric_success');
       }
-    } catch (error) {
+    } catch {
       setLocalError('Biometric authentication failed.');
     }
   };
@@ -92,6 +99,16 @@ export const AuthPinLoginScreen = ({
           />
         ))}
       </View>
+
+      {onForgotPin ? (
+        <TouchableOpacity
+          style={styles.forgotPinButton}
+          onPress={onForgotPin}
+          disabled={isLoading}
+        >
+          <Text style={[styles.forgotPinText, { color: theme.accent }]}>Forgot PIN?</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {user?.biometrics_enabled && (
         <TouchableOpacity

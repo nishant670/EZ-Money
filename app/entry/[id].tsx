@@ -1,8 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import * as DocumentPicker from 'expo-document-picker';
 import React, { useState, useEffect } from 'react';
-import { Pressable, ScrollView, View, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { Pressable, ScrollView, View, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -13,7 +12,22 @@ import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { TransactionFormModal, type EntryForm } from '@/components/transactions/TransactionFormModal';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
-import { API_BASE_URL, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
+import { readApiError } from '@/lib/api-error';
+import { notifyTransactionsChanged } from '@/lib/transaction-events';
+import { API_BASE_URL, formatApiDate, normalizeDateLabel, parseDateLabel, formatDateLabel, toTitleCase, resolveCategoryMetadata } from '@/lib/transactions';
+import { formatDisplayTime } from '@/lib/datetime';
+
+const entryFieldLabels: Record<string, string> = {
+    account_id: 'Account',
+    amount: 'Amount',
+    category: 'Category',
+    currency: 'Currency',
+    date: 'Date',
+    mode: 'Payment method',
+    source: 'Source',
+    title: 'Title',
+    type: 'Transaction type',
+};
 
 export default function TransactionDetailsScreen() {
     const router = useRouter();
@@ -39,7 +53,6 @@ export default function TransactionDetailsScreen() {
     const [accounts, setAccounts] = useState<Account[]>([]);
 
     const [isExpanded, setIsExpanded] = useState(true);
-    const [attachment, setAttachment] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
 
     const colorScheme = useColorScheme() ?? 'light';
     const theme = Colors[colorScheme];
@@ -81,15 +94,12 @@ export default function TransactionDetailsScreen() {
                     title: data.title,
                     type: data.type,
                     amount: Number(data.amount),
-                    date: data.date ? formatDateLabel(new Date(data.date)) : params.dateLabel,
+                    date: data.date ? normalizeDateLabel(data.date) : params.dateLabel,
                     rawDate: data.date,
                     time: data.time,
                     tag: data.tag ? toTitleCase(data.tag) : data.tag,
                 };
                 setTransaction(normalized);
-
-                // If attachment exists in data (as url string), set it
-                // Note: handling remote attachment display might need update if logic differs
             }
         } catch (error) {
             console.error('Failed to fetch transaction details', error);
@@ -105,22 +115,6 @@ export default function TransactionDetailsScreen() {
     const icon = meta.icon;
     const iconColor = meta.color;
     const bgColor = meta.bgColor;
-
-    const pickReceipt = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['image/*', 'application/pdf'],
-                copyToCacheDirectory: true,
-            });
-            if (!result.canceled) {
-                setAttachment(result.assets[0]);
-                // TODO: Upload attachment to backend immediately or on save? 
-                // For now, let's assume this is just local preview until 'Tweak this' saves it or separate upload
-            }
-        } catch (err) {
-            console.warn('Document picker error:', err);
-        }
-    };
 
     const handleEdit = () => {
         setIsEditModalVisible(true);
@@ -143,6 +137,7 @@ export default function TransactionDetailsScreen() {
                                 headers: { Authorization: `Bearer ${token}` }
                             });
                             if (response.ok) {
+                                notifyTransactionsChanged();
                                 router.back();
                             } else {
                                 Alert.alert("Error", "Could not delete transaction.");
@@ -181,7 +176,7 @@ export default function TransactionDetailsScreen() {
             // Backend expects YYYY-MM-DD.
             const parsedDate = parseDateLabel(formData.date);
             if (parsedDate) {
-                payload.date = parsedDate.toISOString().split('T')[0];
+                payload.date = formatApiDate(parsedDate);
             }
             if (formData.time) {
                 payload.time = formData.time; // "10:30 PM" - backend stores as string
@@ -197,15 +192,16 @@ export default function TransactionDetailsScreen() {
             });
 
             if (!response.ok) {
-                throw new Error('Update failed');
+                throw await readApiError(response, 'Unable to update the transaction right now.', entryFieldLabels);
             }
 
             // Refresh logic
             await fetchTransactionDetails();
+            notifyTransactionsChanged();
             setIsEditModalVisible(false);
         } catch (error) {
             console.error(error);
-            throw new Error("Failed to update transaction");
+            throw error instanceof Error ? error : new Error("Failed to update transaction");
         }
     };
 
@@ -219,7 +215,7 @@ export default function TransactionDetailsScreen() {
         mode: displayData.mode || 'Cash',
         category: displayData.category || 'Food',
         date: displayData.date || formatDateLabel(new Date()),
-        time: displayData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+        time: displayData.time || formatDisplayTime(new Date()),
         notes: displayData.notes || '',
         tag: displayData.tag || 'General',
         currency: displayData.currency || DEFAULT_CURRENCY,
@@ -381,40 +377,6 @@ export default function TransactionDetailsScreen() {
                     </View>
 
                 </View>
-
-                {/* PAPER TRAIL */}
-                <ThemedText className="text-[10px] font-black uppercase tracking-[2px] text-gray-300 mb-4 ml-6">THE PAPER TRAIL</ThemedText>
-                <TouchableOpacity
-                    onPress={pickReceipt}
-                    className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-[32px] p-6 flex-row items-center justify-between mb-10 bg-white/40"
-                >
-                    <View className="flex-row items-center gap-5">
-                        <View className="h-14 w-14 rounded-full bg-white dark:bg-gray-800 items-center justify-center shadow-sm">
-                            {attachment ? (
-                                <Image
-                                    source={{ uri: attachment.uri }}
-                                    style={{ width: 40, height: 40, borderRadius: 8 }}
-                                />
-                            ) : (
-                                <MaterialCommunityIcons name="file-document-outline" size={28} color="#94A3B8" />
-                            )}
-                        </View>
-                        <View>
-                            <ThemedText className="text-base font-black text-slate-700 dark:text-gray-200">
-                                {attachment ? attachment.name : 'Attach receipt'}
-                            </ThemedText>
-                            <ThemedText className="text-xs font-bold text-gray-400">
-                                {attachment ? 'Tap to change' : 'Snap a photo or upload file'}
-                            </ThemedText>
-                        </View>
-                    </View>
-                    <MaterialCommunityIcons
-                        name={attachment ? "eye-outline" : "plus-circle"}
-                        size={28}
-                        color={attachment ? theme.accent : "#E2E8F0"}
-                    />
-                </TouchableOpacity>
-
                 {/* ACTIONS */}
                 <Pressable
                     onPress={handleEdit}

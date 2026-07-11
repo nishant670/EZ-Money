@@ -1,6 +1,7 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { API_BASE_URL } from '@/lib/transactions';
+import { authOtpSend } from '@/lib/auth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
@@ -29,6 +30,7 @@ export const AuthOTPVerificationScreen = ({
   const [otp, setOtp] = React.useState(['', '', '', '', '', '']);
   const [timer, setTimer] = React.useState(45);
   const [isVerifying, setIsVerifying] = React.useState(false);
+  const [isResending, setIsResending] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const inputRefs = React.useRef<(TextInput | null)[]>([]);
@@ -95,6 +97,25 @@ export const AuthOTPVerificationScreen = ({
     }
   };
 
+  const handleResend = async () => {
+    if (!data || timer > 0 || isResending) {
+      return;
+    }
+
+    setIsResending(true);
+    setErrorMessage(null);
+    try {
+      await authOtpSend(data);
+      setTimer(60);
+      setOtp(['', '', '', '', '', '']);
+      inputRefs.current[0]?.focus();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to resend code.');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -125,7 +146,7 @@ export const AuthOTPVerificationScreen = ({
         <View style={styles.textSection}>
           <Text style={[styles.title, { color: theme.text }]}>A quick check!</Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6 }]}>
-            We've sent a 6-digit code to
+            {"We've sent a 6-digit code to"}
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, fontWeight: 'bold' }]}>
             {data || '+91 98XXX XXXXX'}
@@ -157,11 +178,11 @@ export const AuthOTPVerificationScreen = ({
         <View style={styles.resendSection}>
           <View style={styles.resendRow}>
             <Text style={[styles.footerText, { color: theme.text, opacity: 0.6 }]}>
-              Didn't get the code?
+              {"Didn't get the code?"}
             </Text>
-            <TouchableOpacity onPress={() => timer === 0 && setTimer(60)}>
+            <TouchableOpacity onPress={handleResend} disabled={timer > 0 || isResending}>
               <Text style={[styles.resendText, { color: theme.accent }]}>
-                {timer > 0 ? `Resend in ${formatTime(timer)}` : 'Resend now'}
+                {isResending ? 'Sending...' : timer > 0 ? `Resend in ${formatTime(timer)}` : 'Resend now'}
               </Text>
             </TouchableOpacity>
           </View>

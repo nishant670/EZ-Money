@@ -2,7 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 type VoiceInputCardProps = {
   onMicPress: () => void;
@@ -27,6 +27,8 @@ export function VoiceInputCard({
 }: VoiceInputCardProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const trimmedInput = inputText.trim();
+  const canSubmitText = trimmedInput.length > 0 && !isRecording && !isProcessing;
 
   // Success State UI
   if (hasRecording && !isRecording) {
@@ -92,7 +94,7 @@ export function VoiceInputCard({
                 <>
                   <MaterialCommunityIcons name="flash" size={24} color="#FFFFFF" style={{ marginRight: 10 }} />
                   <ThemedText style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 20, fontFamily: Fonts.title }}>
-                    Let's Process This!
+                    Process this
                   </ThemedText>
                 </>
               )}
@@ -170,40 +172,103 @@ export function VoiceInputCard({
         {isRecording ? "LISTENING..." : "TELL ME YOUR SPEND!"}
       </ThemedText>
 
-      {/* Text Input Area (Initial) */}
-      {/* <View
+      <View
         style={{
           width: '100%',
           flexDirection: 'row',
-          alignItems: 'center',
+          alignItems: 'flex-end',
           backgroundColor: colorScheme === 'dark' ? 'rgba(0,0,0,0.2)' : '#FFFFFF',
-          borderRadius: 999,
-          paddingHorizontal: 16,
-          paddingVertical: 4,
+          borderRadius: 24,
+          paddingLeft: 16,
+          paddingRight: 8,
+          paddingVertical: 8,
           shadowColor: '#000',
           shadowOpacity: 0.05,
           shadowRadius: 2,
           elevation: 1
         }}
       >
-        <MaterialCommunityIcons name="pencil" size={20} color="#A0A0A0" />
+        <MaterialCommunityIcons
+          name="pencil"
+          size={20}
+          color={trimmedInput ? theme.accent : '#A0A0A0'}
+          style={styles.inputIcon}
+        />
         <TextInput
-          placeholder="Or type a quick note..."
+          placeholder="Type: spent ₹250 on lunch via UPI"
           placeholderTextColor="#A0A0A0"
           value={inputText}
           onChangeText={onChangeText}
+          editable={!isProcessing && !isRecording}
+          multiline
+          returnKeyType="send"
+          onSubmitEditing={() => {
+            if (canSubmitText) {
+              onProcess();
+            }
+          }}
           style={{
             flex: 1,
-            marginLeft: 12,
+            minHeight: 42,
+            maxHeight: 96,
             fontSize: 16,
             fontFamily: Fonts.body,
-            color: theme.text
+            color: theme.text,
+            paddingTop: 10,
+            paddingBottom: 10,
           }}
         />
-        <Pressable onPress={onProcess}>
-          <MaterialCommunityIcons name="send" size={20} color={inputText ? theme.accent : "#A0A0A0"} />
+        {trimmedInput ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Clear typed expense"
+            onPress={onClear}
+            disabled={isProcessing}
+            style={styles.iconButton}
+          >
+            <MaterialCommunityIcons name="close-circle" size={20} color="#A0A0A0" />
+          </Pressable>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Parse typed expense"
+          onPress={onProcess}
+          disabled={!canSubmitText}
+          style={[
+            styles.sendButton,
+            {
+              backgroundColor: canSubmitText ? theme.accent : '#E5E7EB',
+              opacity: isProcessing ? 0.7 : 1,
+            },
+          ]}
+        >
+          {isProcessing && trimmedInput ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <MaterialCommunityIcons name="send" size={18} color={canSubmitText ? '#FFFFFF' : '#A0A0A0'} />
+          )}
         </Pressable>
-      </View> */}
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  inputIcon: {
+    marginRight: 10,
+    marginBottom: 11,
+  },
+  iconButton: {
+    height: 42,
+    width: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButton: {
+    height: 42,
+    width: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

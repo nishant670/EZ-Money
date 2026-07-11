@@ -65,11 +65,9 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         {/* Progress Bar */}
         <View style={styles.header}>
-            {/* {activeIndex < SCREENS.length - 1 && (
-                <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
-                    <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
-                </TouchableOpacity>
-            ) || <View style={styles.skipButton} />} */}
+            <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
+                <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
+            </TouchableOpacity>
             
             <View style={styles.progressContainer}>
                 {SCREENS.map((_, index) => (
@@ -99,29 +97,31 @@ export default function OnboardingScreen() {
 
         {/* Footer */}
         <View style={styles.footer}>
-            {activeIndex > 0 ? (
-                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                    <Text style={[styles.footerBtnText, { color: theme.text, opacity: 0.6 }]}>Back</Text>
-                </TouchableOpacity>
-            ) : <View style={styles.footerBtnPlaceholder} />}
+            <View style={styles.navRow}>
+                {activeIndex > 0 ? (
+                    <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                        <Text style={[styles.footerBtnText, { color: theme.text, opacity: 0.6 }]}>Back</Text>
+                    </TouchableOpacity>
+                ) : <View style={styles.footerBtnPlaceholder} />}
 
-            <TouchableOpacity 
-                onPress={handleNext} 
-                style={[
-                    styles.primaryButton, 
-                    { backgroundColor: activeIndex === SCREENS.length - 1 ? theme.accent : theme.text }
-                ]}
-            >
-                <Text style={[styles.primaryButtonText, { color: activeIndex === SCREENS.length - 1 ? 'white' : theme.background }]}>
-                    {activeIndex === SCREENS.length - 1 ? 'Get started' : 'Next'}
-                </Text>
-                <MaterialCommunityIcons 
-                    name="arrow-right" 
-                    size={18} 
-                    color={activeIndex === SCREENS.length - 1 ? 'white' : theme.background} 
-                    style={{ marginLeft: 8 }}
-                />
-            </TouchableOpacity>
+                <TouchableOpacity
+                    onPress={handleNext}
+                    style={[
+                        styles.primaryButton,
+                        { backgroundColor: activeIndex === SCREENS.length - 1 ? theme.accent : theme.text }
+                    ]}
+                >
+                    <Text style={[styles.primaryButtonText, { color: activeIndex === SCREENS.length - 1 ? 'white' : theme.background }]}>
+                        {activeIndex === SCREENS.length - 1 ? 'Sign in' : 'Next'}
+                    </Text>
+                    <MaterialCommunityIcons
+                        name="arrow-right"
+                        size={18}
+                        color={activeIndex === SCREENS.length - 1 ? 'white' : theme.background}
+                        style={{ marginLeft: 8 }}
+                    />
+                </TouchableOpacity>
+            </View>
         </View>
 
         {/* {activeIndex === SCREENS.length - 1 && (
@@ -169,11 +169,14 @@ const styles = StyleSheet.create({
       flex: 1,
   },
   footer: {
+      paddingHorizontal: 24,
+      paddingBottom: 40,
+  },
+  navRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 24,
-      paddingBottom: 40,
+      marginBottom: 12,
   },
   footerBtnPlaceholder: {
       width: 60,

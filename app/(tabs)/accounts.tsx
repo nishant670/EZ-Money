@@ -2,11 +2,12 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { StateView } from '@/components/ui/StateView';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -133,9 +134,13 @@ export default function AccountsScreen() {
   if (isLoading && accounts.length === 0) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-        <View style={styles.centeredState}>
-          <ActivityIndicator size="large" color={theme.accent} />
-          <TText style={[styles.stateMessage, { color: theme.text }]}>Loading your accounts...</TText>
+        <View className="flex-1 justify-center">
+          <StateView
+            icon="wallet-outline"
+            title="Loading accounts"
+            message="Fetching your payment sources."
+            loading
+          />
         </View>
       </SafeAreaView>
     );
@@ -144,12 +149,14 @@ export default function AccountsScreen() {
   if (error && accounts.length === 0) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-        <View style={styles.centeredState}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={theme.accent} />
-          <TText style={[styles.stateMessage, { color: theme.text }]}>{error}</TText>
-          <Pressable accessibilityRole="button" onPress={() => void loadAccounts()} style={[styles.retryButton, { backgroundColor: theme.accent }]}>
-            <TText style={styles.primaryButtonText}>Try again</TText>
-          </Pressable>
+        <View className="flex-1 justify-center">
+          <StateView
+            icon="wifi-off"
+            title="Accounts did not load"
+            message={error}
+            actionLabel="Try again"
+            onAction={() => void loadAccounts()}
+          />
         </View>
       </SafeAreaView>
     );
@@ -157,67 +164,16 @@ export default function AccountsScreen() {
 
   if (accounts.length === 0) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F7FC' }}>
-        <TView style={{ flex: 1 }}>
-          {/* Header */}
-          {/* <View style={styles.header}>
-            <View style={styles.userInfo}>
-                <View style={styles.avatarContainer}>
-                    <View style={styles.avatar}>
-                        <MaterialCommunityIcons name="emoticon-happy" size={24} color="#1A1A1A" />
-                        <View style={styles.onlineDot} />
-                    </View>
-                </View>
-                <View>
-                    <TText style={styles.welcomeText}>Welcome back,</TText>
-                    <TText style={styles.userName}>Alex!</TText>
-                </View>
-            </View>
-            <TouchableOpacity style={styles.settingsButton}>
-                <MaterialCommunityIcons name="cog" size={24} color="#455A64" />
-            </TouchableOpacity>
-          </View> */}
-
-          <View style={styles.mainContent}>
-            {/* Illustration */}
-            <View style={styles.illustrationContainer}>
-              <View style={styles.glowEffect} />
-              <View style={styles.walletSquare}>
-                <MaterialCommunityIcons name="wallet" size={80} color="#FF8A65" />
-                {/* Plus Badge */}
-                <View style={styles.plusBadge}>
-                  <MaterialCommunityIcons name="plus" size={16} color="#1A1A1A" />
-                </View>
-                {/* Piggy Badge */}
-                <View style={styles.piggyBadge}>
-                  <MaterialCommunityIcons name="piggy-bank" size={16} color="#E64A19" />
-                </View>
-              </View>
-            </View>
-
-            {/* Text Section */}
-            <View style={styles.textContainer}>
-              <TText style={styles.oopsTitle}>Oops! No accounts here yet!</TText>
-              <TText style={styles.oopsSubtitle}>
-                It looks like your financial home is empty. Let&apos;s add an account so transactions can use the right payment source.
-              </TText>
-            </View>
-
-            {/* Actions */}
-            <View style={styles.actionContainer}>
-              <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: theme.accent }]}
-                onPress={handleAddAccount}
-              >
-                <MaterialCommunityIcons name="plus-circle" size={24} color="white" style={{ marginRight: 8 }} />
-                <TText style={styles.primaryButtonText}>Time to add your first money home!</TText>
-              </TouchableOpacity>
-              {/* <TouchableOpacity style={styles.maybeLaterButton}>
-                <TText style={styles.maybeLaterText}>MAYBE LATER</TText>
-              </TouchableOpacity> */}
-            </View>
-          </View>
-        </TView>
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+        <View className="flex-1 justify-center">
+          <StateView
+            icon="wallet-outline"
+            title="No accounts yet"
+            message="Add a cash, bank, card, wallet, or UPI source so every transaction has the right account."
+            actionLabel="Add account"
+            onAction={handleAddAccount}
+          />
+        </View>
       </SafeAreaView>
     );
   }
@@ -362,9 +318,14 @@ export default function AccountsScreen() {
           <View className="gap-3">{filteredAccounts.map(renderAccountRow)}</View>
 
           {filteredAccounts.length === 0 && (
-            <TText className="py-6 text-center text-sm text-black/50 dark:text-white/50">
-              No accounts match this filter.
-            </TText>
+            <StateView
+              icon="filter-off-outline"
+              title="No accounts match"
+              message="Clear this filter to see the rest of your accounts."
+              actionLabel="Show all accounts"
+              onAction={() => setActiveFilter('all')}
+              compact
+            />
           )}
 
           <Pressable
@@ -382,195 +343,3 @@ export default function AccountsScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  centeredState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 16,
-  },
-  stateMessage: {
-    fontSize: 16,
-    textAlign: 'center',
-    fontFamily: Fonts.body,
-  },
-  retryButton: {
-    minWidth: 140,
-    minHeight: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarContainer: {
-    marginRight: 12,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFEB3B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  onlineDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: '#F9F7FC',
-  },
-  welcomeText: {
-    fontSize: 12,
-    color: '#757575',
-    fontFamily: Fonts.body,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#1A1A1A',
-    fontFamily: Fonts.title,
-  },
-  settingsButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mainContent: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  illustrationContainer: {
-    width: 200,
-    height: 200,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 40,
-  },
-  glowEffect: {
-    position: 'absolute',
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: '#FFF9C4',
-    opacity: 0.3,
-  },
-  walletSquare: {
-    width: 140,
-    height: 140,
-    backgroundColor: 'white',
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 5,
-  },
-  plusBadge: {
-    position: 'absolute',
-    top: -10,
-    right: -10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFEB3B',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  piggyBadge: {
-    position: 'absolute',
-    bottom: -10,
-    left: -10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFEBEE',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  textContainer: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  oopsTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#1A1A1A',
-    textAlign: 'center',
-    marginBottom: 16,
-    fontFamily: Fonts.title,
-  },
-  oopsSubtitle: {
-    fontSize: 16,
-    color: '#757575',
-    textAlign: 'center',
-    lineHeight: 24,
-    fontFamily: Fonts.body,
-  },
-  actionContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  primaryButton: {
-    width: '100%',
-    height: 64,
-    borderRadius: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    elevation: 4,
-  },
-  primaryButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-    fontFamily: Fonts.title,
-  },
-  maybeLaterButton: {
-    padding: 10,
-  },
-  maybeLaterText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#FFAB91',
-    letterSpacing: 1,
-    fontFamily: Fonts.title,
-  },
-});
