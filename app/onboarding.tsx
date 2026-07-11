@@ -65,9 +65,13 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         {/* Progress Bar */}
         <View style={styles.header}>
-            <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
-                <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
-            </TouchableOpacity>
+            {activeIndex === 0 ? (
+                <View style={styles.skipButton} />
+            ) : (
+                <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
+                    <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
+                </TouchableOpacity>
+            )}
             
             <View style={styles.progressContainer}>
                 {SCREENS.map((_, index) => (
