@@ -5,16 +5,17 @@ import { Image, Pressable, ScrollView, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Fonts } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Fonts, getMoodIconName } from '@/constants/theme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/hooks/use-auth-store';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
 export default function ProfileScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const theme = useThemeTokens();
+  const colors = theme.colors;
+  const isDark = theme.mode === 'dark';
   const router = useRouter();
   const { user, clearAuth } = useAuthStore();
   const [smartSorting, setSmartSorting] = useState(true);
@@ -25,9 +26,10 @@ export default function ProfileScreen() {
   };
   const isGuest = !!user?.is_guest;
 
-  const backgroundColor = colorScheme === 'light' ? '#F9F7FB' : theme.background;
-  const cardColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
-  const borderColor = colorScheme === 'light' ? 'rgba(0,0,0,0.05)' : '#2E2E2E';
+  const backgroundColor = colors.background;
+  const cardColor = colors.card;
+  const borderColor = isDark ? colors.border : 'rgba(0,0,0,0.05)';
+  const iconStyle = theme.mood.iconStyle;
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
@@ -38,7 +40,7 @@ export default function ProfileScreen() {
           Your Playbook
         </TText>
         <Pressable onPress={() => router.push('/app-mood')} hitSlop={20}>
-          <MaterialCommunityIcons name="magic-staff" size={24} color={theme.text} />
+          <MaterialCommunityIcons name="magic-staff" size={24} color={colors.text} />
         </Pressable>
       </View>
 
@@ -59,7 +61,7 @@ export default function ProfileScreen() {
             }}>
             <View
               className="absolute top-0 left-0 right-0 h-24"
-              style={{ backgroundColor: '#FFF5F2', opacity: 0.5 }}
+              style={{ backgroundColor: colors.secondary, opacity: isDark ? 0.28 : 0.5 }}
             />
 
             <View className="relative">
@@ -72,8 +74,12 @@ export default function ProfileScreen() {
               </View>
               <View
                 className="absolute bottom-1 right-1 w-7 h-7 rounded-full border-2 border-white items-center justify-center"
-                style={{ backgroundColor: '#FF8A65' }}>
-                <MaterialCommunityIcons name="robot" size={14} color="white" />
+                style={{ backgroundColor: colors.accent }}>
+                <MaterialCommunityIcons
+                  name={getMoodIconName('robot', iconStyle, true) as any}
+                  size={14}
+                  color="white"
+                />
               </View>
             </View>
 
@@ -92,16 +98,16 @@ export default function ProfileScreen() {
             <Pressable
               onPress={() => router.push('/edit-profile')}
               className="flex-row items-center px-8 py-3 rounded-full"
-              style={{ backgroundColor: '#F0EAF5' }}>
+              style={{ backgroundColor: colors.secondary }}>
               <MaterialCommunityIcons
-                name="pencil"
+                name={getMoodIconName('pencil', iconStyle) as any}
                 size={18}
-                color="#4A148C"
+                color={colors.accent}
                 style={{ marginRight: 8 }}
               />
               <TText
                 className="font-bold text-sm"
-                style={{ color: '#4A148C', fontFamily: Fonts.title }}>
+                style={{ color: colors.accent, fontFamily: Fonts.title }}>
                 Edit My Profile
               </TText>
             </Pressable>
@@ -114,7 +120,7 @@ export default function ProfileScreen() {
               <View
                 className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
                 style={{ backgroundColor: '#E1F5FE' }}>
-                <MaterialCommunityIcons name="sync" size={20} color="#0288D1" />
+                <MaterialCommunityIcons name={getMoodIconName('sync', iconStyle) as any} size={20} color="#0288D1" />
               </View>
               <TText
                 className="text-base font-bold leading-tight"
@@ -134,7 +140,11 @@ export default function ProfileScreen() {
               <View
                 className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
                 style={{ backgroundColor: '#E8F5E9' }}>
-                <MaterialCommunityIcons name="shield-check" size={20} color="#388E3C" />
+                <MaterialCommunityIcons
+                  name={getMoodIconName('shield-check', iconStyle) as any}
+                  size={20}
+                  color="#388E3C"
+                />
               </View>
               <TText
                 className="text-base font-bold leading-tight"
@@ -155,8 +165,8 @@ export default function ProfileScreen() {
               <View className="flex-row items-center mb-4">
                 <View
                   className="w-10 h-10 rounded-2xl items-center justify-center mr-3"
-                  style={{ backgroundColor: '#FFEBEE' }}>
-                  <MaterialCommunityIcons name="creation" size={20} color="#D32F2F" />
+                  style={{ backgroundColor: colors.secondary }}>
+                  <MaterialCommunityIcons name="creation" size={20} color={colors.accent} />
                 </View>
                 <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
                   Smart Sorting
@@ -169,7 +179,7 @@ export default function ProfileScreen() {
             <Switch
               value={smartSorting}
               onValueChange={setSmartSorting}
-              trackColor={{ false: '#E0E0E0', true: '#FF8A65' }}
+              trackColor={{ false: '#E0E0E0', true: colors.accent }}
               thumbColor="white"
             />
           </View>
@@ -189,7 +199,11 @@ export default function ProfileScreen() {
                 <View
                   className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
                   style={{ backgroundColor: '#FFF3E0' }}>
-                  <MaterialCommunityIcons name="information" size={20} color="#EF6C00" />
+                  <MaterialCommunityIcons
+                    name={getMoodIconName('information', iconStyle) as any}
+                    size={20}
+                    color="#EF6C00"
+                  />
                 </View>
                 <View className="flex-1">
                   <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
@@ -202,7 +216,7 @@ export default function ProfileScreen() {
                 <MaterialCommunityIcons
                   name="chevron-right"
                   size={20}
-                  color={theme.text}
+                  color={colors.text}
                   style={{ opacity: 0.3 }}
                 />
               </Pressable>
@@ -211,7 +225,11 @@ export default function ProfileScreen() {
                 <View
                   className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
                   style={{ backgroundColor: '#F3E5F5' }}>
-                  <MaterialCommunityIcons name="help-circle" size={20} color="#7B1FA2" />
+                  <MaterialCommunityIcons
+                    name={getMoodIconName('help-circle', iconStyle) as any}
+                    size={20}
+                    color="#7B1FA2"
+                  />
                 </View>
                 <View className="flex-1">
                   <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
@@ -224,7 +242,7 @@ export default function ProfileScreen() {
                 <MaterialCommunityIcons
                   name="chevron-right"
                   size={20}
-                  color={theme.text}
+                  color={colors.text}
                   style={{ opacity: 0.3 }}
                 />
               </Pressable>
@@ -241,16 +259,16 @@ export default function ProfileScreen() {
               handleLogout();
             }}
             className="flex-row items-center justify-center h-16 rounded-[24px] mt-2 mb-2"
-            style={{ backgroundColor: isGuest ? '#F0EAF5' : '#FFF5F2' }}>
+            style={{ backgroundColor: isGuest ? colors.secondary : '#FFF5F2' }}>
             <MaterialCommunityIcons
-              name={isGuest ? 'login' : 'logout'}
+              name={getMoodIconName(isGuest ? 'login' : 'logout', iconStyle) as any}
               size={20}
-              color={isGuest ? '#4A148C' : '#D32F2F'}
+              color={isGuest ? colors.accent : '#D32F2F'}
               style={{ marginRight: 10 }}
             />
             <TText
               className="text-base font-bold"
-              style={{ color: isGuest ? '#4A148C' : '#D32F2F', fontFamily: Fonts.title }}>
+              style={{ color: isGuest ? colors.accent : '#D32F2F', fontFamily: Fonts.title }}>
               {isGuest ? 'Sign in / Create account' : 'Time to Log Out?'}
             </TText>
           </Pressable>

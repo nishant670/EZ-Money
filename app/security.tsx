@@ -110,8 +110,8 @@ export default function SecurityScreen() {
                 <View className="flex-row items-center flex-1">
                   <View
                     className="w-12 h-12 rounded-2xl items-center justify-center mr-4"
-                    style={{ backgroundColor: '#FFF0EE' }}>
-                    <MaterialCommunityIcons name="lock-outline" size={22} color="#FF8A65" />
+                    style={{ backgroundColor: theme.secondary }}>
+                    <MaterialCommunityIcons name="lock-outline" size={22} color={theme.accent} />
                   </View>
                   <View>
                     <TText
@@ -129,7 +129,7 @@ export default function SecurityScreen() {
                 <Switch
                   value={!!user?.has_pin}
                   onValueChange={toggleLock}
-                  trackColor={{ false: '#E0E0E0', true: '#FF8A65' }}
+                  trackColor={{ false: '#E0E0E0', true: theme.accent }}
                   thumbColor="white"
                 />
               </View>
@@ -200,7 +200,7 @@ export default function SecurityScreen() {
               <Switch
                 value={!!user?.biometrics_enabled}
                 onValueChange={toggleBiometrics}
-                trackColor={{ false: '#E0E0E0', true: '#FF8A65' }}
+                trackColor={{ false: '#E0E0E0', true: theme.accent }}
                 thumbColor="white"
               />
             </View>
@@ -245,7 +245,7 @@ export default function SecurityScreen() {
               <Switch
                 value={!!user?.stealth_mode}
                 onValueChange={toggleStealthMode}
-                trackColor={{ false: '#E0E0E0', true: '#FF8A65' }}
+                trackColor={{ false: '#E0E0E0', true: theme.accent }}
                 thumbColor="white"
               />
             </View>
@@ -298,7 +298,7 @@ export default function SecurityScreen() {
                     </TText>
                   </View>
                   <Pressable hitSlop={15}>
-                    <MaterialCommunityIcons name="close-circle" size={24} color="#FF8A65" />
+                    <MaterialCommunityIcons name="close-circle" size={24} color={theme.accent} />
                   </Pressable>
                 </View>
               ))}

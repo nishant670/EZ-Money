@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   },
   activeRow: {
       borderWidth: 1,
-      borderColor: '#FF886540',
+      borderColor: 'rgba(0,0,0,0.08)',
   },
   iconBox: {
       width: 32,

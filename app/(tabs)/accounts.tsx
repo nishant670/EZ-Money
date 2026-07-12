@@ -8,9 +8,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { StateView } from '@/components/ui/StateView';
-import { Colors, Fonts } from '@/constants/theme';
+import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
   Account,
   AccountApiError,
@@ -40,8 +40,9 @@ const filterOptions: { key: AccountFilter; label: string }[] = [
 
 export default function AccountsScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
+  const colorScheme = themeTokens.mode;
   const { token } = useAuthStore();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -50,12 +51,12 @@ export default function AccountsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [pendingAccountId, setPendingAccountId] = useState<number | null>(null);
   const surfaceColor = useMemo(
-    () => (colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E'),
-    [colorScheme]
+    () => theme.card,
+    [theme.card]
   );
   const borderColor = useMemo(
-    () => (colorScheme === 'light' ? theme.border : '#2E2E2E'),
-    [colorScheme, theme.border]
+    () => theme.border,
+    [theme.border]
   );
 
   const loadAccounts = useCallback(async () => {
@@ -219,7 +220,7 @@ export default function AccountsScreen() {
           <View className="flex-row items-center gap-3">
             <View
               className="h-11 w-11 items-center justify-center rounded-full"
-              style={{ backgroundColor: colorScheme === 'light' ? '#EEF2FF' : '#2B2B2B' }}>
+              style={{ backgroundColor: theme.secondary }}>
               <MaterialCommunityIcons name={iconName[accountType]} size={20} color={theme.text} />
             </View>
             <View>

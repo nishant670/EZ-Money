@@ -1,5 +1,5 @@
-import { Colors, Fonts } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Fonts } from '@/constants/theme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { Account } from '@/lib/accounts';
 import { formatApiDate, parseDateLabel } from '@/lib/transactions';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -47,8 +47,9 @@ export const AdvancedFilter = ({
   accounts,
   count = 0,
 }: AdvancedFilterProps) => {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
+  const accentSurface = themeTokens.mode === 'dark' ? theme.secondary : theme.secondary;
 
   const [type, setType] = React.useState(currentFilters.type);
   const [category, setCategory] = React.useState(currentFilters.category);
@@ -139,7 +140,7 @@ export const AdvancedFilter = ({
   ).current;
 
   return (
-    <View style={[styles.container, { backgroundColor: 'white' }]}>
+    <View style={[styles.container, { backgroundColor: theme.card }]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
@@ -158,21 +159,25 @@ export const AdvancedFilter = ({
             <Text style={styles.sectionLabel}>WHEN DID THIS HAPPEN?</Text>
           </View>
           <View style={styles.dateContainer}>
-            <TouchableOpacity onPress={() => setShowPicker('start')} style={styles.dateCard}>
+            <TouchableOpacity
+              onPress={() => setShowPicker('start')}
+              style={[styles.dateCard, { backgroundColor: accentSurface }]}>
               <View>
                 <Text style={styles.dateHeader}>FROM</Text>
                 <Text style={[styles.dateValue, { color: theme.text }]}>
                   {formatDate(startDate)}
                 </Text>
               </View>
-              <MaterialCommunityIcons name="calendar-outline" size={20} color="#FFAB91" />
+              <MaterialCommunityIcons name="calendar-outline" size={20} color={theme.accent} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowPicker('end')} style={styles.dateCard}>
+            <TouchableOpacity
+              onPress={() => setShowPicker('end')}
+              style={[styles.dateCard, { backgroundColor: accentSurface }]}>
               <View>
                 <Text style={styles.dateHeader}>TO</Text>
                 <Text style={[styles.dateValue, { color: theme.text }]}>{formatDate(endDate)}</Text>
               </View>
-              <MaterialCommunityIcons name="calendar-outline" size={20} color="#FFAB91" />
+              <MaterialCommunityIcons name="calendar-outline" size={20} color={theme.accent} />
             </TouchableOpacity>
           </View>
         </View>
@@ -192,13 +197,16 @@ export const AdvancedFilter = ({
             <MaterialCommunityIcons name="molecule" size={18} color="#90A4AE" />
             <Text style={styles.sectionLabel}>WHAT KIND OF MONEY?</Text>
           </View>
-          <View style={styles.tabContainer}>
+          <View style={[styles.tabContainer, { backgroundColor: accentSurface }]}>
             {['Expense', 'Income'].map((t) => (
               <TouchableOpacity
                 key={t}
-                style={[styles.tab, type === t && styles.activeTab]}
+                style={[
+                  styles.tab,
+                  type === t && [styles.activeTab, { backgroundColor: theme.card }],
+                ]}
                 onPress={() => setType(t)}>
-                <Text style={[styles.tabText, type === t && styles.activeTabText]}>{t}</Text>
+                <Text style={[styles.tabText, type === t && { color: theme.accent }]}>{t}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -217,7 +225,7 @@ export const AdvancedFilter = ({
           </View>
 
           <View style={styles.sliderContainer}>
-            <View style={styles.sliderTrack}>
+            <View style={[styles.sliderTrack, { backgroundColor: accentSurface }]}>
               {/* Track Fill */}
               <View
                 style={[
@@ -225,20 +233,27 @@ export const AdvancedFilter = ({
                   {
                     left: `${(minAmount / maxPossibleAmount) * 100}%`,
                     width: `${((maxAmount - minAmount) / maxPossibleAmount) * 100}%`,
+                    backgroundColor: theme.accent,
                   },
                 ]}
               />
 
               {/* Min Thumb */}
               <View
-                style={[styles.sliderThumb, { left: `${(minAmount / maxPossibleAmount) * 100}%` }]}
+                style={[
+                  styles.sliderThumb,
+                  { left: `${(minAmount / maxPossibleAmount) * 100}%`, backgroundColor: theme.accent },
+                ]}
                 hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 {...minPanResponder.panHandlers}
               />
 
               {/* Max Thumb */}
               <View
-                style={[styles.sliderThumb, { left: `${(maxAmount / maxPossibleAmount) * 100}%` }]}
+                style={[
+                  styles.sliderThumb,
+                  { left: `${(maxAmount / maxPossibleAmount) * 100}%`, backgroundColor: theme.accent },
+                ]}
                 hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 {...maxPanResponder.panHandlers}
               />
@@ -270,14 +285,20 @@ export const AdvancedFilter = ({
             ].map((cat) => (
               <TouchableOpacity
                 key={cat.name}
-                style={[styles.chip, category === cat.name && styles.activeChip]}
+                style={[
+                  styles.chip,
+                  category === cat.name && {
+                    backgroundColor: accentSurface,
+                    borderColor: theme.accent,
+                  },
+                ]}
                 onPress={() => setCategory(cat.name)}>
                 <MaterialCommunityIcons
                   name={cat.icon as any}
                   size={16}
                   color={category === cat.name ? theme.accent : '#546E7A'}
                 />
-                <Text style={[styles.chipText, category === cat.name && styles.activeChipText]}>
+                <Text style={[styles.chipText, category === cat.name && { color: theme.accent }]}>
                   {cat.name}
                 </Text>
               </TouchableOpacity>
@@ -340,16 +361,16 @@ export const AdvancedFilter = ({
                   style={[
                     styles.radioCircle,
                     paymentMethod === pm.value && {
-                      backgroundColor: '#D1C4E9',
-                      borderColor: '#D1C4E9',
+                      backgroundColor: accentSurface,
+                      borderColor: theme.accent,
                     },
                   ]}>
                   {paymentMethod === pm.value && (
-                    <MaterialCommunityIcons name="check" size={12} color="#7E57C2" />
+                    <MaterialCommunityIcons name="check" size={12} color={theme.accent} />
                   )}
                 </View>
                 <Text
-                  style={[styles.radioText, paymentMethod === pm.value && styles.activeRadioText]}>
+                  style={[styles.radioText, paymentMethod === pm.value && { color: theme.accent }]}>
                   {pm.name}
                 </Text>
               </TouchableOpacity>
@@ -496,7 +517,7 @@ const styles = StyleSheet.create({
     color: '#9E9E9E',
   },
   activeTabText: {
-    color: '#FF7043',
+    color: '#546E7A',
   },
   amountBadge: {
     backgroundColor: '#FFECB3',
@@ -521,7 +542,7 @@ const styles = StyleSheet.create({
   },
   sliderFill: {
     height: '100%',
-    backgroundColor: '#FFAB91',
+    backgroundColor: '#90A4AE',
     borderRadius: 2,
     position: 'absolute',
   },
@@ -529,7 +550,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#FF7043',
+    backgroundColor: '#90A4AE',
     borderWidth: 4,
     borderColor: 'white',
     position: 'absolute',

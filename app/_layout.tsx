@@ -4,14 +4,16 @@ import {
   ThemeProvider,
 } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
+import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 
 import { FinnriSplashScreen } from '@/components/SplashScreen';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { installApiSessionGuard } from '@/lib/api-session';
 import { hasCompletedOnboarding } from '@/lib/onboarding';
 
@@ -24,10 +26,26 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const { setColorScheme } = useNativeWindColorScheme();
+  const themeTokens = useThemeTokens();
   const [isAppReady, setIsAppReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
   const { clearAuth } = useAuthStore();
   const router = useRouter();
+  const navigationTheme = useMemo(
+    () => ({
+      ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(colorScheme === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
+        primary: themeTokens.colors.accent,
+        background: themeTokens.colors.background,
+        card: themeTokens.colors.card,
+        text: themeTokens.colors.text,
+        border: themeTokens.colors.border,
+      },
+    }),
+    [colorScheme, themeTokens.colors]
+  );
 
   useEffect(() => {
     // Simulate asset loading or just wait for the custom splash
@@ -91,13 +109,17 @@ export default function RootLayout() {
     });
   }, [clearAuth, router]);
 
+  useEffect(() => {
+    setColorScheme(colorScheme);
+  }, [colorScheme, setColorScheme]);
+
   if (!isAppReady) {
     return null;
   }
 
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={navigationTheme}>
       {showCustomSplash && (
         <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />
       )}
@@ -132,11 +154,10 @@ export default function RootLayout() {
           options={{ headerShown: false }}
         />
         <Stack.Screen name="security" options={{ headerShown: false }} />
-        <Stack.Screen name="app-mood" options={{ headerShown: false }} />
         <Stack.Screen name="change-pin" options={{ headerShown: false }} />
         <Stack.Screen name="notifications" options={{ headerShown: false }} />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
   );
 }

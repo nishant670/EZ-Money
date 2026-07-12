@@ -3,18 +3,19 @@ import React from 'react';
 import { Platform } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getMoodIconName } from '@/constants/theme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-  const theme = Colors[colorScheme ?? 'light'];
+  const theme = useThemeTokens();
+  const colors = theme.colors;
+  const iconStyle = theme.mood.iconStyle;
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: theme.tint,
+        tabBarActiveTintColor: colors.tint,
         tabBarInactiveTintColor: '#999',
         headerShown: false,
         tabBarButton: HapticTab,
@@ -25,13 +26,13 @@ export default function TabLayout() {
             elevation: 0,
             height: 80,
             paddingBottom: 20,
-            backgroundColor: theme.card,
+            backgroundColor: colors.card,
             shadowColor: '#000',
             shadowOpacity: 0.1,
             shadowRadius: 10,
           },
           default: {
-            backgroundColor: theme.card,
+            backgroundColor: colors.card,
             borderTopWidth: 0,
             elevation: 0,
             height: 70,
@@ -46,7 +47,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={focused ? 'home' : 'home-outline'}
+              name={getMoodIconName(focused ? 'home' : 'home-outline', iconStyle, focused) as any}
               color={color}
             />
           ),
@@ -59,7 +60,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={focused ? 'chart-bar' : 'chart-bar'}
+              name={getMoodIconName('chart-bar', iconStyle, focused) as any}
               color={color}
             />
           ),
@@ -72,7 +73,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={focused ? 'wallet' : 'wallet-outline'}
+              name={getMoodIconName(focused ? 'wallet' : 'wallet-outline', iconStyle, focused) as any}
               color={color}
             />
           ),
@@ -85,10 +86,17 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={focused ? 'account' : 'account-outline'}
+              name={getMoodIconName(focused ? 'account' : 'account-outline', iconStyle, focused) as any}
               color={color}
             />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="app-mood"
+        options={{
+          href: null,
+          title: 'App Mood',
         }}
       />
     </Tabs>

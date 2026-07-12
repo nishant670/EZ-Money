@@ -48,7 +48,9 @@ export function HomeHeader({ unreadCount = 0, onNotificationsPress }: HomeHeader
         hitSlop={12}>
         <MaterialCommunityIcons name="bell" size={24} color={theme.colors.text} />
         {unreadCount > 0 && (
-          <View className="absolute -right-1 -top-1 min-w-5 h-5 rounded-full bg-[#FF7043] px-1 items-center justify-center border-2 border-white">
+          <View
+            className="absolute -right-1 -top-1 h-5 min-w-5 items-center justify-center rounded-full border-2 border-white px-1"
+            style={{ backgroundColor: theme.colors.accent }}>
             <ThemedText className="text-[10px] font-black text-white">{visibleCount}</ThemedText>
           </View>
         )}

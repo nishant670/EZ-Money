@@ -18,8 +18,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import type { Account } from '@/lib/accounts';
 import {
@@ -65,6 +64,7 @@ interface TransactionFormModalProps {
   aiReview?: AiReviewMetadata | null;
   accounts?: Account[];
   onManageAccounts?: () => void;
+  onDraftChange?: (data: EntryForm) => void;
 }
 
 const requiredFields: (keyof EntryForm)[] = ['title', 'amount', 'type', 'mode', 'category', 'date'];
@@ -112,10 +112,13 @@ export function TransactionFormModal({
   aiReview,
   accounts = [],
   onManageAccounts,
+  onDraftChange,
 }: TransactionFormModalProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
+  const colorScheme = themeTokens.mode;
   const accent = theme.accent;
+  const accentSurface = colorScheme === 'dark' ? theme.secondary : theme.secondary;
 
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
   const [panelAnim] = useState(new Animated.Value(SCREEN_HEIGHT));
@@ -171,6 +174,11 @@ export function TransactionFormModal({
   const [isMoreDetailsExpanded, setIsMoreDetailsExpanded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isDiscardDialogVisible, setIsDiscardDialogVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible) onDraftChange?.(form);
+  }, [form, onDraftChange, visible]);
 
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [pendingDate, setPendingDate] = useState<Date>(parseDateLabel(form.date) ?? new Date());
@@ -362,6 +370,14 @@ export function TransactionFormModal({
     }
   };
 
+  const requestClose = useCallback(() => {
+    if (mode !== 'audio') {
+      onClose();
+      return;
+    }
+    setIsDiscardDialogVisible(true);
+  }, [mode, onClose]);
+
   if (!showModal) return null;
 
   return (
@@ -369,10 +385,10 @@ export function TransactionFormModal({
       transparent
       visible={visible}
       animationType="none" // we handle animations manually for better control
-      onRequestClose={onClose}>
+      onRequestClose={requestClose}>
       <View className="flex-1 justify-end">
         <Animated.View className="absolute inset-0 bg-black/40" style={{ opacity: backdropAnim }}>
-          <Pressable style={{ flex: 1 }} onPress={onClose} />
+          <View style={{ flex: 1 }} />
         </Animated.View>
         <Animated.View
           style={{
@@ -389,7 +405,7 @@ export function TransactionFormModal({
               <View className="items-center pt-8 pb-2 relative">
                 <View className="h-1.5 w-12 rounded-full absolute top-3 bg-gray-200" />
                 <Pressable
-                  onPress={onClose}
+                  onPress={requestClose}
                   className="absolute right-6 top-6 h-10 w-10 rounded-full bg-gray-100 items-center justify-center z-10">
                   <MaterialCommunityIcons name="close" size={20} color={theme.text} />
                 </Pressable>
@@ -483,7 +499,7 @@ export function TransactionFormModal({
                           bottom: 6,
                           left: 6,
                           width: '48%',
-                          backgroundColor: form.type === 'Expense' ? '#F97316' : '#10B981',
+                          backgroundColor: form.type === 'Expense' ? accent : '#10B981',
                           borderRadius: 20,
                           transform: [
                             {
@@ -529,7 +545,7 @@ export function TransactionFormModal({
                       <MaterialCommunityIcons
                         name="label-variant-outline"
                         size={24}
-                        color="#F97316"
+                        color={accent}
                       />
                       <TextInput
                         testID="entry-title-input"
@@ -549,7 +565,7 @@ export function TransactionFormModal({
                         Amount
                       </ThemedText>
                       <View className="flex-row items-center gap-1">
-                        <ThemedText className="text-xl font-black text-orange-400">
+                        <ThemedText className="text-xl font-black" style={{ color: accent }}>
                           {CURRENCY_SYMBOL}
                         </ThemedText>
                         <TextInput
@@ -651,15 +667,24 @@ export function TransactionFormModal({
                       </View>
                     )}
                     <Pressable
-                      onPress={() => setIsCategoryPickerVisible(true)}
-                      className={`w-full rounded-[28px] p-4 border flex-row items-center justify-between ${
-                        categoryNeedsReview
-                          ? 'bg-[#FFFCF0] dark:bg-gray-800/50 border-yellow-100'
-                          : 'bg-white dark:bg-gray-800 border-gray-100'
-                      }`}>
+                        onPress={() => setIsCategoryPickerVisible(true)}
+                      className="w-full rounded-[28px] border p-4 flex-row items-center justify-between"
+                      style={{
+                        backgroundColor: categoryNeedsReview
+                          ? colorScheme === 'dark'
+                            ? theme.secondary
+                            : '#FFFCF0'
+                          : theme.card,
+                        borderColor: categoryNeedsReview ? '#FDE68A' : theme.border,
+                      }}>
                       <View className="flex-row items-center gap-4">
-                        <View className="h-12 w-12 rounded-2xl bg-orange-100 items-center justify-center">
-                          <MaterialCommunityIcons name="car-outline" size={24} color="#F59E0B" />
+                        <View
+                          className="h-12 w-12 items-center justify-center"
+                          style={{
+                            backgroundColor: categoryNeedsReview ? '#FEF3C7' : accentSurface,
+                            borderRadius: themeTokens.icon.containerRadius,
+                          }}>
+                          <MaterialCommunityIcons name="car-outline" size={24} color={categoryNeedsReview ? '#F59E0B' : accent} />
                         </View>
                         <View>
                           <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
@@ -694,7 +719,6 @@ export function TransactionFormModal({
                       className="opacity-40"
                     />
                   </Pressable>
-
                   {isMoreDetailsExpanded && (
                     <View className="mt-6 gap-6">
                       <View className="flex-row gap-4">
@@ -730,9 +754,14 @@ export function TransactionFormModal({
                             <Pressable
                               key={tag}
                               onPress={() => setForm((p) => ({ ...p, tag }))}
-                              className={`px-4 py-2 rounded-full border ${form.tag === tag ? 'border-orange-200 bg-orange-50' : 'border-gray-100 bg-white'}`}>
+                              className="rounded-full border px-4 py-2"
+                              style={{
+                                backgroundColor: form.tag === tag ? accentSurface : theme.card,
+                                borderColor: form.tag === tag ? accent : theme.border,
+                              }}>
                               <ThemedText
-                                className={`text-xs font-bold ${form.tag === tag ? 'text-orange-400' : 'text-gray-500'}`}>
+                                className="text-xs font-bold"
+                                style={{ color: form.tag === tag ? accent : '#6B7280' }}>
                                 {tag}
                               </ThemedText>
                             </Pressable>
@@ -787,6 +816,14 @@ export function TransactionFormModal({
                       </>
                     )}
                   </Pressable>
+                  {mode === 'audio' && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={requestClose}
+                      className="w-full py-4 items-center justify-center active:opacity-50">
+                      <ThemedText className="font-bold text-gray-500">Cancel</ThemedText>
+                    </Pressable>
+                  )}
                   {onDelete && (
                     <Pressable
                       onPress={onDelete}
@@ -859,13 +896,18 @@ export function TransactionFormModal({
                       setForm((p) => resolveEntryFormAccount({ ...p, mode: m }));
                       setIsModePickerVisible(false);
                     }}
-                    className={`p-4 rounded-2xl flex-row items-center justify-between ${form.mode === m ? 'bg-orange-50 border border-orange-100' : 'bg-gray-50'}`}>
+                    className="flex-row items-center justify-between rounded-2xl border p-4"
+                    style={{
+                      backgroundColor: form.mode === m ? accentSurface : colorScheme === 'dark' ? theme.card : '#F9FAFB',
+                      borderColor: form.mode === m ? accent : 'transparent',
+                    }}>
                     <ThemedText
-                      className={`font-bold ${form.mode === m ? 'text-orange-500' : 'text-gray-700'}`}>
+                      className="font-bold"
+                      style={{ color: form.mode === m ? accent : theme.text }}>
                       {m}
                     </ThemedText>
                     {form.mode === m && (
-                      <MaterialCommunityIcons name="check" size={20} color="#F97316" />
+                      <MaterialCommunityIcons name="check" size={20} color={accent} />
                     )}
                   </Pressable>
                 ))}
@@ -893,9 +935,14 @@ export function TransactionFormModal({
                         setForm((p) => ({ ...p, category: c }));
                         setIsCategoryPickerVisible(false);
                       }}
-                      className={`w-[47%] p-4 rounded-3xl items-center gap-2 border ${form.category === c ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-transparent'}`}>
+                      className="w-[47%] items-center gap-2 rounded-3xl border p-4"
+                      style={{
+                        backgroundColor: form.category === c ? accentSurface : colorScheme === 'dark' ? theme.card : '#F9FAFB',
+                        borderColor: form.category === c ? accent : 'transparent',
+                      }}>
                       <ThemedText
-                        className={`text-xs font-bold ${form.category === c ? 'text-orange-500' : 'text-gray-700'}`}>
+                        className="text-xs font-bold"
+                        style={{ color: form.category === c ? accent : theme.text }}>
                         {c}
                       </ThemedText>
                     </Pressable>
@@ -951,7 +998,6 @@ export function TransactionFormModal({
                         accessibilityRole="button"
                         onPress={() => {
                           setIsAccountPickerVisible(false);
-                          onClose();
                           onManageAccounts();
                         }}
                         className="rounded-2xl px-5 py-3"
@@ -961,6 +1007,59 @@ export function TransactionFormModal({
                     )}
                   </View>
                 )}
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          transparent
+          animationType="fade"
+          visible={isDiscardDialogVisible}
+          statusBarTranslucent
+          onRequestClose={() => setIsDiscardDialogVisible(false)}>
+          <View className="flex-1 items-center justify-center px-6">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Keep editing"
+              className="absolute inset-0 bg-black/60"
+              onPress={() => setIsDiscardDialogVisible(false)}
+            />
+            <View
+              className="w-full max-w-sm items-center rounded-[32px] border p-6 shadow-2xl"
+              style={{ backgroundColor: theme.background, borderColor: theme.border }}>
+              <View
+                className="h-14 w-14 items-center justify-center rounded-full"
+                style={{ backgroundColor: colorScheme === 'dark' ? '#3A2424' : '#FFF0EC' }}>
+                <MaterialCommunityIcons name="delete-outline" size={27} color="#EF5B5B" />
+              </View>
+              <ThemedText
+                className="mt-4 text-center text-xl font-black"
+                style={{ color: theme.text }}>
+                Discard this transaction?
+              </ThemedText>
+              <ThemedText className="mt-2 text-center text-sm leading-5 text-gray-500">
+                Your transcribed draft and any changes you made will be lost.
+              </ThemedText>
+
+              <View className="mt-6 w-full gap-3">
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setIsDiscardDialogVisible(false)}
+                  className="w-full items-center justify-center rounded-2xl py-4"
+                  style={{ backgroundColor: accent }}>
+                  <ThemedText className="font-black text-white">Keep editing</ThemedText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setIsDiscardDialogVisible(false);
+                    onClose();
+                  }}
+                  className="w-full items-center justify-center rounded-2xl border py-4"
+                  style={{ borderColor: theme.border }}>
+                  <ThemedText className="font-black text-red-500">Discard transaction</ThemedText>
+                </Pressable>
               </View>
             </View>
           </View>

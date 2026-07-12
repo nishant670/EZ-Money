@@ -223,19 +223,22 @@ export default function TransactionsScreen() {
           </View>
           <TouchableOpacity
             onPress={() => setIsFilterOpen(true)}
-            className={`w-12 h-12 rounded-2xl items-center justify-center shadow-sm ${
-              isFilterActive
-                ? 'bg-orange-50 border border-orange-100'
-                : 'bg-white border border-gray-100'
-            }`}>
+            className="h-12 w-12 items-center justify-center rounded-2xl border shadow-sm"
+            style={{
+              backgroundColor: isFilterActive ? theme.secondary : theme.card,
+              borderColor: isFilterActive ? theme.accent : theme.border,
+            }}>
             <View>
               <Ionicons
                 name="options-outline"
                 size={22}
-                color={isFilterActive ? '#F97316' : '#6B7280'}
+                color={isFilterActive ? theme.accent : '#6B7280'}
               />
               {isFilterActive && (
-                <View className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-orange-500 rounded-full border-2 border-white" />
+                <View
+                  className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white"
+                  style={{ backgroundColor: theme.accent }}
+                />
               )}
             </View>
           </TouchableOpacity>

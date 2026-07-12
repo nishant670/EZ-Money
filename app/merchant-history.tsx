@@ -170,7 +170,7 @@ export default function MerchantHistoryScreen() {
         </TouchableOpacity>
         <ThemedText className="text-lg font-black">Merchant History</ThemedText>
         <TouchableOpacity className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-gray-800">
-          <MaterialCommunityIcons name="calendar-month-outline" size={20} color="#FF6B14" />
+          <MaterialCommunityIcons name="calendar-month-outline" size={20} color={theme.accent} />
         </TouchableOpacity>
       </View>
 
@@ -196,9 +196,11 @@ export default function MerchantHistoryScreen() {
           <ThemedText className="mt-6 text-3xl font-black text-center">
             {merchant} - {formatMoney(total)}
           </ThemedText>
-          <View className="mt-5 flex-row items-center rounded-full bg-orange-50 px-5 py-3">
-            <MaterialCommunityIcons name="receipt-text-outline" size={18} color="#FF6B14" />
-            <ThemedText className="ml-2 text-base font-black" style={{ color: '#FF6B14' }}>
+          <View
+            className="mt-5 flex-row items-center rounded-full px-5 py-3"
+            style={{ backgroundColor: theme.secondary }}>
+            <MaterialCommunityIcons name="receipt-text-outline" size={18} color={theme.accent} />
+            <ThemedText className="ml-2 text-base font-black" style={{ color: theme.accent }}>
               {filtered.length} transactions
             </ThemedText>
           </View>

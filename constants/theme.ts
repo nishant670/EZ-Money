@@ -17,32 +17,229 @@ const palette = {
   borderDark: '#3C3C3C',
 };
 
-export const Colors = {
+type MoodPalette = {
+  id: string;
+  label: string;
+  message: string;
+  preview: string;
+  accent: string;
   light: {
-    text: palette.textLight,
-    background: palette.backgroundLight,
-    tint: palette.accent,
-    accent: palette.accent,
-    secondary: palette.accentSecondary,
-    card: palette.cardLight,
-    icon: palette.textLight,
-    border: palette.borderLight,
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: palette.accent,
-  },
+    background: string;
+    text: string;
+    secondary: string;
+    card: string;
+    border: string;
+  };
   dark: {
-    text: palette.textDark,
-    background: palette.backgroundDark,
-    tint: palette.accent,
-    accent: palette.accent,
-    secondary: '#2C2C2C',
-    card: '#242424',
-    icon: palette.textDark,
-    border: palette.borderDark,
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: palette.accent,
-  },
+    background: string;
+    text: string;
+    secondary: string;
+    card: string;
+    border: string;
+  };
 };
+
+export const ThemeMoods = {
+  finnri: {
+    id: 'finnri',
+    label: 'Finnri',
+    message: 'The current Finnri look stays as your default.',
+    preview: palette.backgroundLight,
+    accent: palette.accent,
+    light: {
+      background: palette.backgroundLight,
+      text: palette.textLight,
+      secondary: palette.accentSecondary,
+      card: palette.cardLight,
+      border: palette.borderLight,
+    },
+    dark: {
+      background: palette.backgroundDark,
+      text: palette.textDark,
+      secondary: '#2C2C2C',
+      card: '#242424',
+      border: palette.borderDark,
+    },
+  },
+  mint: {
+    id: 'mint',
+    label: 'Mint',
+    message: 'Fresh green accents for a quieter money dashboard.',
+    preview: '#EAF8F1',
+    accent: '#17A978',
+    light: {
+      background: '#F3FBF7',
+      text: '#182C24',
+      secondary: '#DDF6EA',
+      card: '#FFFFFF',
+      border: '#D7EEE3',
+    },
+    dark: {
+      background: '#0F1D19',
+      text: '#F1FFF8',
+      secondary: '#17362B',
+      card: '#162621',
+      border: '#28483D',
+    },
+  },
+  sky: {
+    id: 'sky',
+    label: 'Sky',
+    message: 'Cool blue surfaces for a crisp planning feel.',
+    preview: '#EAF4FC',
+    accent: '#2F80ED',
+    light: {
+      background: '#F4F9FE',
+      text: '#172437',
+      secondary: '#DCEEFF',
+      card: '#FFFFFF',
+      border: '#D7E7F7',
+    },
+    dark: {
+      background: '#101A25',
+      text: '#F2F8FF',
+      secondary: '#172C42',
+      card: '#172331',
+      border: '#29425E',
+    },
+  },
+  plum: {
+    id: 'plum',
+    label: 'Plum',
+    message: 'Warmer contrast with richer highlight moments.',
+    preview: '#F5ECF7',
+    accent: '#A855F7',
+    light: {
+      background: '#FCF6FD',
+      text: '#2E2134',
+      secondary: '#F0DDF8',
+      card: '#FFFFFF',
+      border: '#EBDCF0',
+    },
+    dark: {
+      background: '#1F1724',
+      text: '#FFF6FF',
+      secondary: '#35213F',
+      card: '#291E30',
+      border: '#47304F',
+    },
+  },
+} as const satisfies Record<string, MoodPalette>;
+
+export type ThemeMoodId = keyof typeof ThemeMoods;
+export type IconStyle = 'whimsical' | 'minimal';
+
+export type AppMoodSettings = {
+  themeColor: ThemeMoodId;
+  nightMode: boolean;
+  iconStyle: IconStyle;
+};
+
+export const DefaultAppMood: AppMoodSettings = {
+  themeColor: 'finnri',
+  nightMode: false,
+  iconStyle: 'whimsical',
+};
+
+function createColors(mood: MoodPalette) {
+  return {
+    light: {
+      text: mood.light.text,
+      background: mood.light.background,
+      tint: mood.accent,
+      accent: mood.accent,
+      secondary: mood.light.secondary,
+      card: mood.light.card,
+      icon: mood.light.text,
+      border: mood.light.border,
+      tabIconDefault: '#9BA1A6',
+      tabIconSelected: mood.accent,
+    },
+    dark: {
+      text: mood.dark.text,
+      background: mood.dark.background,
+      tint: mood.accent,
+      accent: mood.accent,
+      secondary: mood.dark.secondary,
+      card: mood.dark.card,
+      icon: mood.dark.text,
+      border: mood.dark.border,
+      tabIconDefault: '#9BA1A6',
+      tabIconSelected: mood.accent,
+    },
+  };
+}
+
+type ThemeColors = ReturnType<typeof createColors>;
+
+let runtimeAppMood: AppMoodSettings = DefaultAppMood;
+
+export function setRuntimeAppMood(mood: Partial<AppMoodSettings>) {
+  runtimeAppMood = { ...runtimeAppMood, ...mood };
+}
+
+export function getRuntimeAppMood() {
+  return runtimeAppMood;
+}
+
+const defaultColors = createColors(ThemeMoods.finnri);
+
+export const Colors = new Proxy(defaultColors, {
+  get(target, prop: keyof ThemeColors) {
+    if (prop === 'light' || prop === 'dark') {
+      return getMoodColors(runtimeAppMood.themeColor)[prop];
+    }
+
+    return target[prop];
+  },
+}) as ThemeColors;
+
+const outlineIconNames: Record<string, string> = {
+  account: 'account-outline',
+  'account-box': 'account-box-outline',
+  bank: 'bank-outline',
+  bell: 'bell-outline',
+  cash: 'cash',
+  'chart-bar': 'chart-bar',
+  'check-circle': 'check-circle-outline',
+  'credit-card': 'credit-card-outline',
+  help: 'help-circle-outline',
+  home: 'home-outline',
+  information: 'information-outline',
+  login: 'login',
+  logout: 'logout',
+  pencil: 'pencil-outline',
+  'piggy-bank': 'piggy-bank-outline',
+  robot: 'robot-outline',
+  'shield-check': 'shield-check-outline',
+  sync: 'sync',
+  wallet: 'wallet-outline',
+};
+
+const filledIconNames: Record<string, string> = {
+  'account-outline': 'account',
+  'account-box-outline': 'account-box',
+  'bank-outline': 'bank',
+  'bell-outline': 'bell',
+  'check-circle-outline': 'check-circle',
+  'credit-card-outline': 'credit-card',
+  'help-circle-outline': 'help-circle',
+  'home-outline': 'home',
+  'information-outline': 'information',
+  'pencil-outline': 'pencil',
+  'piggy-bank-outline': 'piggy-bank',
+  'robot-outline': 'robot',
+  'shield-check-outline': 'shield-check',
+  'wallet-outline': 'wallet',
+};
+
+export function getMoodIconName(name: string, iconStyle: IconStyle, active = false) {
+  if (iconStyle === 'minimal') {
+    return outlineIconNames[name] ?? name;
+  }
+
+  return active ? filledIconNames[name] ?? name : name;
+}
 
 export const Fonts = Platform.select({
   ios: {
@@ -204,14 +401,35 @@ export const Components = {
 export type ThemeMode = keyof typeof Colors;
 export type TypographyVariant = keyof typeof Typography;
 
-export function getThemeTokens(mode: ThemeMode) {
+export function resolveThemeMode(
+  systemMode: ThemeMode | null | undefined,
+  mood: Pick<AppMoodSettings, 'nightMode'> = DefaultAppMood
+): ThemeMode {
+  return mood.nightMode ? 'dark' : 'light';
+}
+
+export function getMoodColors(themeColor: ThemeMoodId = DefaultAppMood.themeColor) {
+  return createColors(ThemeMoods[themeColor] ?? ThemeMoods[DefaultAppMood.themeColor]);
+}
+
+export function getThemeTokens(mode: ThemeMode, mood: AppMoodSettings = DefaultAppMood) {
+  const colors = getMoodColors(mood.themeColor);
+  const icon = {
+    style: mood.iconStyle,
+    containerRadius: mood.iconStyle === 'minimal' ? Radius.sm : Radius.round,
+    activeContainerRadius: mood.iconStyle === 'minimal' ? Radius.md : Radius.xl,
+    strokeBias: mood.iconStyle === 'minimal' ? 'outline' : 'filled',
+  } as const;
+
   return {
-    colors: Colors[mode],
+    colors: colors[mode],
     typography: Typography,
     spacing: Spacing,
     radius: Radius,
     shadows: Shadows,
     components: Components,
+    mood,
+    icon,
     mode,
   };
 }
