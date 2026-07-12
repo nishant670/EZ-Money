@@ -17,10 +17,14 @@ export type ApiEntry = {
   mode?: string;
   category?: string;
   date?: string;
+  time?: string;
   notes?: string;
   merchant?: string;
   title?: string;
   tag?: string;
+  currency?: string;
+  source?: string;
+  source_text?: string;
   created_at?: string;
   createdAt?: string;
   updated_at?: string;

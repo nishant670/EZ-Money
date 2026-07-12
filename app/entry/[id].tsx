@@ -22,10 +22,9 @@ import {
 } from '@/components/transactions/TransactionFormModal';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
-import { readApiError } from '@/lib/api-error';
+import { deleteEntry, fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
 import { notifyTransactionsChanged } from '@/lib/transaction-events';
 import {
-  API_BASE_URL,
   formatApiDate,
   normalizeDateLabel,
   parseDateLabel,
@@ -34,18 +33,6 @@ import {
   resolveCategoryMetadata,
 } from '@/lib/transactions';
 import { formatDisplayTime } from '@/lib/datetime';
-
-const entryFieldLabels: Record<string, string> = {
-  account_id: 'Account',
-  amount: 'Amount',
-  category: 'Category',
-  currency: 'Currency',
-  date: 'Date',
-  mode: 'Payment method',
-  source: 'Source',
-  title: 'Title',
-  type: 'Transaction type',
-};
 
 export default function TransactionDetailsScreen() {
   const router = useRouter();
@@ -93,25 +80,20 @@ export default function TransactionDetailsScreen() {
   const fetchTransactionDetails = useCallback(async () => {
     if (!token || !params.id) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/entries/${params.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // Normalize API data to match display structure
-        const normalized = {
-          ...data,
-          // Ensure consistency in naming
-          title: data.title,
-          type: data.type,
-          amount: Number(data.amount),
-          date: data.date ? normalizeDateLabel(data.date) : params.dateLabel,
-          rawDate: data.date,
-          time: data.time,
-          tag: data.tag ? toTitleCase(data.tag) : data.tag,
-        };
-        setTransaction(normalized);
-      }
+      const data = await fetchEntry(token, params.id);
+      // Normalize API data to match display structure
+      const normalized = {
+        ...data,
+        // Ensure consistency in naming
+        title: data.title,
+        type: data.type,
+        amount: Number(data.amount),
+        date: data.date ? normalizeDateLabel(data.date) : params.dateLabel,
+        rawDate: data.date,
+        time: data.time,
+        tag: data.tag ? toTitleCase(data.tag) : data.tag,
+      };
+      setTransaction(normalized);
     } catch (error) {
       console.error('Failed to fetch transaction details', error);
     } finally {
@@ -148,16 +130,10 @@ export default function TransactionDetailsScreen() {
         onPress: async () => {
           setIsDeleting(true);
           try {
-            const response = await fetch(`${API_BASE_URL}/v1/entries/${params.id}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (response.ok) {
-              notifyTransactionsChanged();
-              router.back();
-            } else {
-              Alert.alert('Error', 'Could not delete transaction.');
-            }
+            if (!token) throw new Error('Missing session.');
+            await deleteEntry(token, params.id);
+            notifyTransactionsChanged();
+            router.back();
           } catch {
             Alert.alert('Error', 'Network error.');
           } finally {
@@ -174,7 +150,7 @@ export default function TransactionDetailsScreen() {
       // Assuming we only update text fields here. File upload usually handled separately or multipart.
       // For MVP, focus on data fields.
 
-      const payload: any = {
+      const payload: EntryMutationPayload = {
         title: formData.title,
         amount: formData.amount.trim(),
         currency: formData.currency || DEFAULT_CURRENCY,
@@ -197,22 +173,8 @@ export default function TransactionDetailsScreen() {
         payload.time = formData.time; // "10:30 PM" - backend stores as string
       }
 
-      const response = await fetch(`${API_BASE_URL}/v1/entries/${params.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw await readApiError(
-          response,
-          'Unable to update the transaction right now.',
-          entryFieldLabels
-        );
-      }
+      if (!token) throw new Error('Missing session.');
+      await updateEntry(token, params.id, payload);
 
       // Refresh logic
       await fetchTransactionDetails();
