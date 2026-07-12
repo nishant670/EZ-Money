@@ -123,8 +123,11 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 13,
+    lineHeight: 18,
     fontFamily: Fonts.title,
     fontWeight: '800',
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   secondaryButton: {
     minHeight: 40,

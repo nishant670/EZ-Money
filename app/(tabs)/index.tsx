@@ -110,6 +110,7 @@ export default function HomeScreen() {
   const [aiSourceText, setAiSourceText] = useState('');
   const [aiInputSource, setAiInputSource] = useState<'text' | 'voice'>('text');
   const createIdempotencyKey = useRef<string | null>(null);
+  const resumeDraftAfterAccounts = useRef(false);
   const saveConfirmationAnim = useRef(new Animated.Value(0)).current;
 
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
@@ -280,6 +281,10 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (resumeDraftAfterAccounts.current) {
+        resumeDraftAfterAccounts.current = false;
+        setIsEditOpen(true);
+      }
       void fetchEntries();
       void fetchAccountOptions();
       void fetchNotificationCount();
@@ -602,7 +607,7 @@ export default function HomeScreen() {
           icon="receipt-text-plus-outline"
           title="No activity yet"
           message="Record, type, or add your first transaction to start building your money story."
-          actionLabel="Add manually"
+          actionLabel="Add"
           onAction={handleOpenManualEntry}
         />
       );
@@ -735,13 +740,13 @@ export default function HomeScreen() {
         <View className="h-32" />
       </ScrollView>
 
-      <Pressable
+      {hasTransactions && <Pressable
         accessibilityRole="button"
         onPress={handleOpenManualEntry}
         style={[{ backgroundColor: theme.accent }, themeTokens.shadows.soft]}
         className="h-16 w-16 rounded-full items-center justify-center absolute bottom-10 right-6 elevation-5">
         <MaterialCommunityIcons name="plus" size={32} color="white" />
-      </Pressable>
+      </Pressable>}
 
       {saveConfirmation && (
         <Animated.View
@@ -773,7 +778,12 @@ export default function HomeScreen() {
         mode={modalMode}
         aiReview={aiReview}
         accounts={accounts}
-        onManageAccounts={() => router.push('/accounts')}
+        onDraftChange={setForm}
+        onManageAccounts={() => {
+          resumeDraftAfterAccounts.current = true;
+          setIsEditOpen(false);
+          router.push('/accounts');
+        }}
       />
       <TransactionFormModal
         visible={isPromptModalOpen}

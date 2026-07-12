@@ -136,74 +136,71 @@ export function VoiceInputCard({
       <View
         style={{
           marginHorizontal: 24,
-          borderRadius: theme.radius.xl,
+          borderRadius: theme.radius.xxl,
           paddingHorizontal: theme.spacing.lg,
-          paddingVertical: 14,
-          backgroundColor: isDark ? colors.card : '#FFFFFF',
-          shadowColor: '#000',
-          shadowOpacity: 0.04,
-          shadowRadius: 12,
-          elevation: 2,
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(45,45,45,0.05)',
+          paddingTop: theme.spacing.xxl,
+          paddingBottom: theme.spacing.xl,
+          minHeight: 262,
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: theme.spacing.xl,
+          backgroundColor: isDark ? colors.card : colors.secondary,
         }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+        <View style={{ alignItems: 'center', gap: theme.spacing.xs }}>
           <View
             style={{
-              height: 42,
-              width: 42,
-              borderRadius: 21,
-              backgroundColor: colors.secondary,
+              height: 64,
+              width: 64,
+              borderRadius: 32,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
               alignItems: 'center',
               justifyContent: 'center',
             }}>
-            <MaterialCommunityIcons name="waveform" size={22} color={colors.accent} />
+            <MaterialCommunityIcons name="waveform" size={30} color={colors.accent} />
           </View>
-          <View style={{ flex: 1 }}>
-            <ThemedText
-              style={{
-                ...theme.typography.button,
-                color: colors.text,
-              }}>
-              Recording ready
-            </ThemedText>
-            <ThemedText
-              style={{
-                marginTop: 2,
-                fontSize: 11,
-                lineHeight: 15,
-                color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(45,45,45,0.54)',
-                fontFamily: theme.typography.caption.fontFamily,
-              }}>
-              Process or record again.
-            </ThemedText>
-          </View>
+          <ThemedText variant="cardTitle" style={{ color: colors.text }}>
+            Recording ready
+          </ThemedText>
+          <ThemedText style={{ ...theme.typography.caption, color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(45,45,45,0.54)' }}>
+            Process it, or cancel to record again.
+          </ThemedText>
+        </View>
 
+        <View
+          style={{
+            alignSelf: 'stretch',
+            flexDirection: 'row',
+            gap: theme.spacing.sm,
+          }}>
           <Pressable
             onPress={onProcess}
             disabled={isProcessing}
             style={({ pressed }) => ({
+              flex: 1,
+              flexBasis: 0,
+              minWidth: 0,
               opacity: pressed ? 0.9 : isProcessing ? 0.7 : 1,
               transform: [{ scale: pressed ? 0.98 : 1 }],
             })}>
             <View
               style={{
-                height: 42,
-                minWidth: 104,
-                borderRadius: 21,
-                paddingHorizontal: 14,
+                height: 40,
+                width: '100%',
+                borderRadius: 20,
+                paddingHorizontal: 8,
                 backgroundColor: colors.accent,
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 6,
+                gap: 4,
               }}>
               {isProcessing ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <>
-                  <MaterialCommunityIcons name="flash" size={17} color="#FFFFFF" />
+                  <MaterialCommunityIcons name="flash" size={15} color="#FFFFFF" />
                   <ThemedText
+                    numberOfLines={1}
                     style={{
                       color: '#FFFFFF',
                       ...theme.typography.button,
@@ -219,24 +216,27 @@ export function VoiceInputCard({
             onPress={onClear}
             disabled={isProcessing}
             style={({ pressed }) => ({
+              flex: 1,
+              flexBasis: 0,
+              minWidth: 0,
               opacity: pressed ? 0.8 : 1,
               transform: [{ scale: pressed ? 0.98 : 1 }],
             })}>
             <View
               style={{
-                height: 42,
-                width: 42,
-                borderRadius: 21,
+                height: 40,
+                width: '100%',
+                borderRadius: 20,
+                paddingHorizontal: 8,
                 backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F3F4F6',
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-              <MaterialCommunityIcons
-                name="refresh"
-                size={19}
-                color={isDark ? 'rgba(255,255,255,0.72)' : '#5E6C84'}
-              />
+              <MaterialCommunityIcons name="close" size={15} color={isDark ? 'rgba(255,255,255,0.72)' : '#5E6C84'} />
+              <ThemedText numberOfLines={1} style={{ ...theme.typography.button, color: isDark ? 'rgba(255,255,255,0.72)' : '#5E6C84' }}>
+                Cancel
+              </ThemedText>
             </View>
           </Pressable>
         </View>
