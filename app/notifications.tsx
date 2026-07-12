@@ -113,9 +113,10 @@ export default function NotificationsScreen() {
       <View className="flex-row items-center justify-between px-6 py-4">
         <Pressable
           onPress={() => router.back()}
-          className="h-10 w-10 items-center justify-center rounded-full bg-white"
+          className="h-10 w-10 items-center justify-center rounded-full"
+          style={{ backgroundColor: colors.card }}
           hitSlop={12}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1A1A1A" />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
         </Pressable>
         <View className="items-center">
           <ThemedText className="text-base font-black" style={{ fontFamily: Fonts.title }}>
@@ -126,14 +127,14 @@ export default function NotificationsScreen() {
         <Pressable
           onPress={handleMarkAllRead}
           disabled={unreadCount === 0}
-          className="h-10 w-10 items-center justify-center rounded-full bg-white"
-          style={{ opacity: unreadCount === 0 ? 0.4 : 1 }}
+          className="h-10 w-10 items-center justify-center rounded-full"
+          style={{ backgroundColor: colors.card, opacity: unreadCount === 0 ? 0.4 : 1 }}
           hitSlop={12}>
-          <MaterialCommunityIcons name="check-all" size={22} color="#FF7043" />
+          <MaterialCommunityIcons name="check-all" size={22} color={colors.accent} />
         </Pressable>
       </View>
 
-      <View className="mx-6 mb-4 flex-row rounded-2xl bg-white p-1">
+      <View className="mx-6 mb-4 flex-row rounded-2xl p-1" style={{ backgroundColor: colors.card }}>
         {(['all', 'unread', 'read'] as Filter[]).map((item) => {
           const active = filter === item;
           return (
@@ -141,10 +142,10 @@ export default function NotificationsScreen() {
               key={item}
               onPress={() => setFilter(item)}
               className="flex-1 items-center rounded-xl py-2"
-              style={{ backgroundColor: active ? '#FFF0EA' : 'transparent' }}>
+              style={{ backgroundColor: active ? colors.secondary : 'transparent' }}>
               <ThemedText
                 className="text-xs font-black uppercase"
-                style={{ color: active ? '#FF7043' : '#8C8588' }}>
+                style={{ color: active ? colors.accent : '#8C8588' }}>
                 {item}
               </ThemedText>
             </Pressable>
@@ -154,7 +155,7 @@ export default function NotificationsScreen() {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#FF7043" />
+          <ActivityIndicator color={colors.accent} />
         </View>
       ) : error ? (
         <View className="flex-1 items-center justify-center px-8">
@@ -175,18 +176,19 @@ export default function NotificationsScreen() {
                 <Pressable
                   key={notification.id}
                   onPress={() => void openNotification(notification)}
-                  className="flex-row items-start rounded-[28px] bg-white p-4"
+                  className="flex-row items-start rounded-[28px] p-4"
                   style={{
+                    backgroundColor: colors.card,
                     borderWidth: 1,
-                    borderColor: unread ? '#FFCAB8' : 'rgba(0,0,0,0.04)',
+                    borderColor: unread ? colors.accent : colors.border,
                   }}>
                   <View
                     className="mr-4 h-11 w-11 items-center justify-center rounded-2xl"
-                    style={{ backgroundColor: unread ? '#FFF0EA' : '#F4F1F3' }}>
+                    style={{ backgroundColor: unread ? colors.secondary : '#F4F1F3' }}>
                     <MaterialCommunityIcons
                       name={iconForType(notification.type)}
                       size={22}
-                      color={unread ? '#FF7043' : '#8C8588'}
+                      color={unread ? colors.accent : '#8C8588'}
                     />
                   </View>
                   <View className="flex-1">
@@ -204,7 +206,12 @@ export default function NotificationsScreen() {
                       {notification.body}
                     </ThemedText>
                   </View>
-                  {unread && <View className="ml-2 mt-2 h-2 w-2 rounded-full bg-[#FF7043]" />}
+                  {unread && (
+                    <View
+                      className="ml-2 mt-2 h-2 w-2 rounded-full"
+                      style={{ backgroundColor: colors.accent }}
+                    />
+                  )}
                 </Pressable>
               );
             })}

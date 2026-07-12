@@ -275,8 +275,10 @@ export default function TransactionDetailsScreen() {
         <View className="bg-white dark:bg-gray-800 rounded-[40px] p-8 shadow-sm mb-8">
           {/* Date */}
           <View className="flex-row gap-5 mb-8">
-            <View className="h-12 w-12 rounded-full bg-pink-50 items-center justify-center">
-              <MaterialCommunityIcons name="calendar-blank" size={24} color="#F97316" />
+            <View
+              className="h-12 w-12 items-center justify-center rounded-full"
+              style={{ backgroundColor: theme.secondary }}>
+              <MaterialCommunityIcons name="calendar-blank" size={24} color={theme.accent} />
             </View>
             <View>
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
@@ -295,7 +297,7 @@ export default function TransactionDetailsScreen() {
           <View className="flex-row gap-5 mb-8">
             <View
               className="h-12 w-12 rounded-full items-center justify-center"
-              style={{ backgroundColor: bgColor || '#F97316' }}>
+              style={{ backgroundColor: bgColor || theme.accent }}>
               <MaterialCommunityIcons name={icon as any} size={24} color={iconColor} />
             </View>
             <View>
@@ -319,13 +321,15 @@ export default function TransactionDetailsScreen() {
             activeOpacity={0.7}
             onPress={() => setIsExpanded(!isExpanded)}
             className="flex-row items-center justify-between mb-6">
-            <ThemedText className="text-[10px] uppercase font-black text-orange-400 tracking-widest">
+            <ThemedText
+              className="text-[10px] uppercase font-black tracking-widest"
+              style={{ color: theme.accent }}>
               MORE DETAILS
             </ThemedText>
             <MaterialCommunityIcons
               name={isExpanded ? 'chevron-up' : 'chevron-down'}
               size={18}
-              color="#FB923C"
+              color={theme.accent}
             />
           </TouchableOpacity>
 
@@ -373,8 +377,12 @@ export default function TransactionDetailsScreen() {
                     TAGS
                   </ThemedText>
                   <View className="flex-row gap-2">
-                    <View className="bg-orange-50 px-3 py-1 rounded-full border border-orange-100">
-                      <ThemedText className="text-[10px] font-black text-orange-400">
+                    <View
+                      className="rounded-full border px-3 py-1"
+                      style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+                      <ThemedText
+                        className="text-[10px] font-black"
+                        style={{ color: theme.accent }}>
                         {displayData.tag || 'Personal'}
                       </ThemedText>
                     </View>
@@ -389,8 +397,10 @@ export default function TransactionDetailsScreen() {
 
           {/* Notes Inside Card */}
           <View className="flex-row gap-5">
-            <View className="h-12 w-12 rounded-full bg-orange-50 items-center justify-center">
-              <MaterialCommunityIcons name="comment-text-outline" size={24} color="#F97316" />
+            <View
+              className="h-12 w-12 items-center justify-center rounded-full"
+              style={{ backgroundColor: theme.secondary }}>
+              <MaterialCommunityIcons name="comment-text-outline" size={24} color={theme.accent} />
             </View>
             <View className="flex-1">
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
@@ -406,7 +416,7 @@ export default function TransactionDetailsScreen() {
         <Pressable
           onPress={handleEdit}
           className="w-full py-5 rounded-full items-center justify-center shadow-xl mb-6 active:opacity-90"
-          style={{ backgroundColor: '#FF8A65' }}>
+          style={{ backgroundColor: theme.accent }}>
           <View className="flex-row items-center gap-3">
             <MaterialCommunityIcons name="tune-variant" size={24} color="#FFF" />
             <ThemedText className="text-white font-black text-lg">Tweak this</ThemedText>

@@ -1,6 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 type AuthPinSetupScreenProps = {
     onComplete: (pin: string) => void;
@@ -15,6 +16,7 @@ export const AuthPinSetupScreen = ({
     isLoading,
     errorMessage,
 }: AuthPinSetupScreenProps) => {
+    const theme = useThemeTokens();
     const [step, setStep] = useState<'create' | 'confirm'>('create');
     const [pin, setPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
@@ -90,13 +92,14 @@ export const AuthPinSetupScreen = ({
                             key={index}
                             style={[
                                 localStyles.dotWrapper,
-                                isActive && localStyles.dotActive
+                                isActive && [localStyles.dotActive, { borderColor: theme.colors.accent }]
                             ]}
                         >
                             <View
                                 style={[
                                     localStyles.dotInner,
                                     isFilled && localStyles.dotInnerFilled,
+                                    isFilled && { backgroundColor: theme.colors.accent },
                                     isFilled && { width: 12, height: 12, borderRadius: 6 }
                                 ]}
                             />
@@ -112,7 +115,7 @@ export const AuthPinSetupScreen = ({
             ) : null}
 
             {isLoading && (
-                <ActivityIndicator size="large" color="#FF8A65" style={{ marginBottom: 20 }} />
+                <ActivityIndicator size="large" color={theme.colors.accent} style={{ marginBottom: 20 }} />
             )}
 
             <View style={localStyles.keypadContainer}>
@@ -226,7 +229,7 @@ const localStyles = StyleSheet.create({
         elevation: 3,
     },
     dotActive: {
-        borderColor: '#FFAB91',
+        borderColor: '#90A4AE',
         borderWidth: 2.5,
     },
     dotInner: {
@@ -236,7 +239,7 @@ const localStyles = StyleSheet.create({
         backgroundColor: '#E0E0EF',
     },
     dotInnerFilled: {
-        backgroundColor: '#FF8A65',
+        backgroundColor: '#90A4AE',
     },
     errorContainer: {
         paddingHorizontal: 40,

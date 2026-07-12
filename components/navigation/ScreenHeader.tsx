@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Pressable, View } from 'react-native';
 import { ThemedText } from '../themed-text';
 import { Fonts } from '@/constants/theme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
 interface ScreenHeaderProps {
   title?: string;
@@ -20,19 +21,22 @@ export function ScreenHeader({
   rightText,
   onRightPress,
 }: ScreenHeaderProps) {
+  const theme = useThemeTokens();
+
   return (
     <View className="flex-row items-center justify-between mb-8 px-6 pt-4">
       <Pressable
         onPress={onBack}
-        className="w-10 h-10 items-center justify-center rounded-full bg-white shadow-sm">
-        <MaterialCommunityIcons name="arrow-left" size={24} color="#1A1A1A" />
+        className="h-10 w-10 items-center justify-center rounded-full shadow-sm"
+        style={{ backgroundColor: theme.colors.card }}>
+        <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.text} />
       </Pressable>
 
       <View className="items-center flex-1">
         {subtitle && (
           <ThemedText
             className="text-[10px] font-black uppercase tracking-[2px] mb-1"
-            style={{ color: '#FFAD91' }}>
+            style={{ color: theme.colors.accent }}>
             {subtitle}
           </ThemedText>
         )}

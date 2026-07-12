@@ -17,10 +17,11 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { fetchAccounts, saveAccount, updateAccount } from '@/lib/accounts';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { AccountApiError, fetchAccounts, normalizeAccountType, saveAccount, updateAccount, type AccountType } from '@/lib/accounts';
 
 type AccountTypeOption = {
-  key: string;
+  key: AccountType;
   label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   color: string;
@@ -29,8 +30,8 @@ type AccountTypeOption = {
 
 const typeOptions: AccountTypeOption[] = [
   { key: 'cash', label: 'Cash', icon: 'cash', color: '#2ECC71', bgColor: '#EAF8F0' },
-  { key: 'credit', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
-  { key: 'debit', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
+  { key: 'credit_card', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
+  { key: 'debit_card', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
   { key: 'wallet', label: 'Wallet', icon: 'wallet', color: '#FF9F43', bgColor: '#FFF4EB' },
   { key: 'upi', label: 'UPI', icon: 'qrcode-scan', color: '#00D2B4', bgColor: '#E6FBFA' },
   { key: 'bank', label: 'Bank', icon: 'bank', color: '#3B5998', bgColor: '#EBF0FF' },
@@ -77,6 +78,8 @@ const MONTHS = [
 ];
 
 export default function ManageAccountScreen() {
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
   const { token } = useAuthStore();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const accountId = id ? Number(id) : null;
@@ -85,12 +88,13 @@ export default function ManageAccountScreen() {
   const [isLoadingAccount, setIsLoadingAccount] = useState(isEditing);
   const [isDefault, setIsDefault] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [typeError, setTypeError] = useState<string | null>(null);
 
   // Step navigation
   const [step, setStep] = useState(1);
 
   // Step 1 States
-  const [selectedType, setSelectedType] = useState('bank');
+  const [selectedType, setSelectedType] = useState<AccountType>('bank');
   const [selectedColor, setSelectedColor] = useState('#54A0FF');
   const [name, setName] = useState('');
 
@@ -157,7 +161,7 @@ export default function ManageAccountScreen() {
     setSaveError(null);
     try {
       const payload = {
-        type: selectedType,
+        type: normalizeAccountType(selectedType),
         name: name,
         color: selectedColor,
         provider: selectedIssuer?.name || issuerQuery.trim(),
@@ -175,6 +179,10 @@ export default function ManageAccountScreen() {
       }
       router.back();
     } catch (err: unknown) {
+      if (err instanceof AccountApiError && err.fields?.type) {
+        setStep(1);
+        setTypeError('Choose an account type and try again.');
+      }
       setSaveError(err instanceof Error ? err.message : 'Failed to save account.');
     } finally {
       setIsSaving(false);
@@ -199,7 +207,7 @@ export default function ManageAccountScreen() {
           <View style={styles.modalHeader}>
             <ThemedText style={styles.modalTitle}>{title}</ThemedText>
             <TouchableOpacity onPress={onClose}>
-              <MaterialCommunityIcons name="close" size={24} color="#1A1A1A" />
+              <MaterialCommunityIcons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.modalList}>
@@ -239,7 +247,7 @@ export default function ManageAccountScreen() {
           </View>
           <View style={styles.mascotRow}>
             <View style={styles.mascotAvatar}>
-              <MaterialCommunityIcons name="face-woman-outline" size={24} color="#FF8A65" />
+              <MaterialCommunityIcons name="face-woman-outline" size={24} color={theme.accent} />
             </View>
             <ThemedText style={styles.mascotCaption}>
               &quot;I&apos;ll help you organize your cash flow.&quot;
@@ -255,10 +263,11 @@ export default function ManageAccountScreen() {
             return (
               <TouchableOpacity
                 key={option.key}
-                onPress={() => setSelectedType(option.key)}
+                onPress={() => { setSelectedType(option.key); setTypeError(null); }}
                 style={[
                   styles.gridItem,
                   isSelected ? styles.gridItemSelected : styles.gridItemUnselected,
+                  isSelected && { borderColor: theme.accent, backgroundColor: theme.card },
                 ]}>
                 <View style={[styles.gridIconContainer, { backgroundColor: option.bgColor }]}>
                   <MaterialCommunityIcons name={option.icon} size={24} color={option.color} />
@@ -276,6 +285,7 @@ export default function ManageAccountScreen() {
             );
           })}
         </View>
+        {typeError ? <ThemedText style={styles.errorText}>{typeError}</ThemedText> : null}
 
         {/* Name Input */}
         <ThemedText style={styles.sectionTitle}>What should we call it?</ThemedText>
@@ -283,7 +293,7 @@ export default function ManageAccountScreen() {
           <MaterialCommunityIcons
             name="tag-outline"
             size={24}
-            color="#FFAD91"
+            color={theme.accent}
             style={styles.inputIcon}
           />
           <TextInput
@@ -312,7 +322,7 @@ export default function ManageAccountScreen() {
                   { backgroundColor: color },
                   isSelected && styles.colorItemSelected,
                 ]}>
-                {isSelected && <View style={[styles.colorRing, { borderColor: '#FFAD91' }]} />}
+                {isSelected && <View style={[styles.colorRing, { borderColor: theme.accent }]} />}
               </TouchableOpacity>
             );
           })}
@@ -333,7 +343,7 @@ export default function ManageAccountScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setStep(2)}
-            style={styles.saveButton}
+            style={[styles.saveButton, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
             disabled={isSaving}>
             <ThemedText style={styles.saveButtonText}>
               {isEditing ? 'Continue' : 'Looks Good! Save'}
@@ -350,7 +360,7 @@ export default function ManageAccountScreen() {
   );
 
   const renderStep2 = () => {
-    if (selectedType === 'credit') {
+    if (selectedType === 'credit_card') {
       return (
         <View style={{ flex: 1 }}>
           <ScreenHeader
@@ -376,7 +386,7 @@ export default function ManageAccountScreen() {
                     styles.mascotAvatar,
                     { backgroundColor: '#FFEEED', width: 56, height: 56, borderRadius: 28 },
                   ]}>
-                  <MaterialCommunityIcons name="face-woman-outline" size={32} color="#FF8A65" />
+                  <MaterialCommunityIcons name="face-woman-outline" size={32} color={theme.accent} />
                 </View>
               </View>
             </View>
@@ -389,7 +399,7 @@ export default function ManageAccountScreen() {
                 <MaterialCommunityIcons
                   name="credit-card-outline"
                   size={24}
-                  color="#FFAD91"
+                  color={theme.accent}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -420,7 +430,7 @@ export default function ManageAccountScreen() {
                       <MaterialCommunityIcons
                         name={item.icon as any}
                         size={20}
-                        color="#FFAD91"
+                        color={theme.accent}
                         style={{ marginRight: 10 }}
                       />
                       <ThemedText style={styles.resultItemText}>{item.name}</ThemedText>
@@ -435,7 +445,7 @@ export default function ManageAccountScreen() {
               <MaterialCommunityIcons
                 name="numeric-4-box-outline"
                 size={24}
-                color="#FFAD91"
+                color={theme.accent}
                 style={styles.inputIcon}
               />
               <TextInput
@@ -457,7 +467,7 @@ export default function ManageAccountScreen() {
               <MaterialCommunityIcons
                 name="currency-inr"
                 size={24}
-                color="#FFAD91"
+                color={theme.accent}
                 style={styles.inputIcon}
               />
               <TextInput
@@ -479,7 +489,7 @@ export default function ManageAccountScreen() {
                   <MaterialCommunityIcons
                     name="calendar-outline"
                     size={20}
-                    color="#FFAD91"
+                    color={theme.accent}
                     style={styles.inputIcon}
                   />
                   <ThemedText style={[styles.dropdownTextSmall, !dueDay && { color: '#AAB7C6' }]}>
@@ -497,7 +507,7 @@ export default function ManageAccountScreen() {
                   <MaterialCommunityIcons
                     name="calendar-refresh-outline"
                     size={20}
-                    color="#FFAD91"
+                    color={theme.accent}
                     style={styles.inputIcon}
                   />
                   <ThemedText style={[styles.dropdownTextSmall, !feeMonth && { color: '#AAB7C6' }]}>
@@ -523,7 +533,7 @@ export default function ManageAccountScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSave}
-                style={[styles.saveButton, { backgroundColor: '#FF8A65' }]}
+                style={[styles.saveButton, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
                 disabled={isSaving}>
                 <ThemedText style={styles.saveButtonText}>
                   {isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Done 🎉'}
@@ -577,7 +587,7 @@ export default function ManageAccountScreen() {
             <MaterialCommunityIcons
               name="scale-balance"
               size={24}
-              color="#FFAD91"
+              color={theme.accent}
               style={styles.inputIcon}
             />
             <TextInput
@@ -595,7 +605,7 @@ export default function ManageAccountScreen() {
             <MaterialCommunityIcons
               name="card-text-outline"
               size={24}
-              color="#FFAD91"
+              color={theme.accent}
               style={styles.inputIcon}
             />
             <TextInput
@@ -620,7 +630,10 @@ export default function ManageAccountScreen() {
             <TouchableOpacity onPress={() => setStep(1)} style={styles.cancelButton}>
               <ThemedText style={styles.cancelText}>Back</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleSave} style={styles.saveButton} disabled={isSaving}>
+            <TouchableOpacity
+              onPress={handleSave}
+              style={[styles.saveButton, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+              disabled={isSaving}>
               <ThemedText style={styles.saveButtonText}>
                 {isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Finish Setup'}
               </ThemedText>
@@ -637,11 +650,11 @@ export default function ManageAccountScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
       <View style={styles.container}>
         {isLoadingAccount ? (
           <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color="#FF8A65" />
+            <ActivityIndicator size="large" color={theme.accent} />
             <ThemedText>Loading account...</ThemedText>
           </View>
         ) : step === 1 ? (
@@ -765,7 +778,7 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   gridItemSelected: {
-    borderColor: '#FFAD91',
+    borderColor: 'transparent',
     backgroundColor: 'white',
   },
   gridItemUnselected: {
@@ -982,13 +995,13 @@ const styles = StyleSheet.create({
     color: '#BDBDBD',
   },
   saveButton: {
-    backgroundColor: '#FFAD91',
+    backgroundColor: '#90A4AE',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 32,
     paddingVertical: 20,
     borderRadius: 32,
-    shadowColor: '#FFAD91',
+    shadowColor: '#90A4AE',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 10,

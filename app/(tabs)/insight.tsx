@@ -14,9 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateRange, PeriodPicker } from '@/components/insights/PeriodPicker';
 import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
-import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { formatApiDate, resolveCategoryMetadata } from '@/lib/transactions';
@@ -83,8 +82,8 @@ const getNeedsReview = (dashboard: DashboardResponse) =>
     .slice(0, 3);
 
 export default function InsightScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
   const { token } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -271,11 +270,14 @@ function HeaderIcon({
   name: keyof typeof MaterialCommunityIcons.glyphMap;
   onPress?: () => void;
 }) {
+  const theme = useThemeTokens();
+
   return (
     <TouchableOpacity
-      className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-gray-800"
+      className="h-10 w-10 items-center justify-center rounded-full shadow-sm"
+      style={{ backgroundColor: theme.colors.card }}
       onPress={onPress}>
-      <MaterialCommunityIcons name={name} size={20} color="#6F6965" />
+      <MaterialCommunityIcons name={name} size={20} color={theme.colors.text} />
     </TouchableOpacity>
   );
 }
@@ -287,6 +289,8 @@ function FinancialHealthCard({
   dashboard: DashboardResponse;
   insightLevel: number;
 }) {
+  const theme = useThemeTokens();
+  const accentSurface = theme.mode === 'dark' ? theme.colors.secondary : theme.colors.secondary;
   const score = getHealthScore(dashboard);
   const label = getHealthLabel(score, dashboard);
   const change = dashboard.top_categories[0]?.change ?? 0;
@@ -296,7 +300,9 @@ function FinancialHealthCard({
       : `${Math.abs(Math.round(change))}% ${change < 0 ? 'better' : 'higher'} than last period`;
 
   return (
-    <View className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <View
+      className="rounded-[24px] border p-5 shadow-sm"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
       <View className="flex-row items-start justify-between">
         <View className="flex-1 pr-4">
           <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
@@ -325,14 +331,18 @@ function FinancialHealthCard({
         />
       </View>
 
-      <View className="mt-5 rounded-2xl border border-orange-100 bg-orange-50 p-3 dark:border-orange-900/30 dark:bg-orange-900/10">
+      <View
+        className="mt-5 rounded-2xl border p-3"
+        style={{ backgroundColor: accentSurface, borderColor: theme.colors.border }}>
         <View className="flex-row items-start">
-          <View className="mr-3 h-7 w-7 items-center justify-center rounded-full bg-white">
-            <MaterialCommunityIcons name="timer-sand" size={16} color="#FF6B14" />
+          <View
+            className="mr-3 h-7 w-7 items-center justify-center rounded-full"
+            style={{ backgroundColor: theme.colors.card }}>
+            <MaterialCommunityIcons name="timer-sand" size={16} color={theme.colors.accent} />
           </View>
           <View className="flex-1">
             <ThemedText className="text-xs leading-5">
-              <ThemedText className="text-xs font-black" style={{ color: '#FF6B14' }}>
+              <ThemedText className="text-xs font-black" style={{ color: theme.colors.accent }}>
                 Burn Rate:{' '}
               </ThemedText>
               {getBurnRateCopy(dashboard)}
@@ -345,8 +355,8 @@ function FinancialHealthCard({
         <ThemedText className="text-[11px] font-bold text-gray-500">
           Insight depth grows as Finnri sees more transactions, merchants, and accounts.
         </ThemedText>
-        <View className="rounded-full bg-orange-50 px-3 py-1">
-          <ThemedText className="text-[10px] font-black" style={{ color: '#FF6B14' }}>
+        <View className="rounded-full px-3 py-1" style={{ backgroundColor: accentSurface }}>
+          <ThemedText className="text-[10px] font-black" style={{ color: theme.colors.accent }}>
             L{insightLevel}/4
           </ThemedText>
         </View>
@@ -356,10 +366,16 @@ function FinancialHealthCard({
 }
 
 function ScoreRing({ score }: { score: number }) {
+  const theme = useThemeTokens();
+
   return (
-    <View className="h-[72px] w-[72px] items-center justify-center rounded-full bg-orange-100">
-      <View className="h-[58px] w-[58px] items-center justify-center rounded-full bg-white">
-        <ThemedText className="text-xs font-black" style={{ color: '#FF6B14' }}>
+    <View
+      className="h-[72px] w-[72px] items-center justify-center rounded-full"
+      style={{ backgroundColor: theme.colors.secondary }}>
+      <View
+        className="h-[58px] w-[58px] items-center justify-center rounded-full"
+        style={{ backgroundColor: theme.colors.card }}>
+        <ThemedText className="text-xs font-black" style={{ color: theme.colors.accent }}>
           {score}%
         </ThemedText>
       </View>
@@ -394,6 +410,7 @@ function ProgressiveHint({
   dashboard: DashboardResponse;
   insightLevel: number;
 }) {
+  const theme = useThemeTokens();
   const next =
     insightLevel >= 4
       ? 'Full insight set active'
@@ -404,20 +421,22 @@ function ProgressiveHint({
           : 'Review items and richer behavior patterns unlock as data variety grows.';
 
   return (
-    <View className="rounded-2xl border border-gray-100 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+    <View
+      className="rounded-2xl border px-4 py-3"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
       <View className="flex-row items-center justify-between">
         <View className="flex-1 pr-3">
           <ThemedText className="text-xs font-black">Insights Level {insightLevel}</ThemedText>
           <ThemedText className="mt-1 text-[11px] leading-4 text-gray-500">{next}</ThemedText>
         </View>
-        <ThemedText className="text-[11px] font-black" style={{ color: '#FF6B14' }}>
+        <ThemedText className="text-[11px] font-black" style={{ color: theme.colors.accent }}>
           {dashboard.summary.transaction_count} txns
         </ThemedText>
       </View>
       <View className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
         <View
-          className="h-full rounded-full bg-orange-500"
-          style={{ width: `${Math.max(10, insightLevel * 25)}%` }}
+          className="h-full rounded-full"
+          style={{ width: `${Math.max(10, insightLevel * 25)}%`, backgroundColor: theme.colors.accent }}
         />
       </View>
     </View>
@@ -499,6 +518,8 @@ function SpendingAnalysisCard({
 }
 
 function MerchantRow({ merchant }: { merchant: DashboardResponse['top_merchants'][number] }) {
+  const theme = useThemeTokens();
+
   return (
     <TouchableOpacity
       className="flex-row items-center justify-between py-2"
@@ -509,8 +530,10 @@ function MerchantRow({ merchant }: { merchant: DashboardResponse['top_merchants'
         })
       }>
       <View className="flex-row items-center">
-        <View className="mr-3 h-8 w-8 items-center justify-center rounded-xl bg-orange-50">
-          <MaterialCommunityIcons name="storefront-outline" size={16} color="#FF6B14" />
+        <View
+          className="mr-3 h-8 w-8 items-center justify-center rounded-xl"
+          style={{ backgroundColor: theme.colors.secondary }}>
+          <MaterialCommunityIcons name="storefront-outline" size={16} color={theme.colors.accent} />
         </View>
         <View>
           <ThemedText className="text-xs font-bold">{merchant.merchant}</ThemedText>
@@ -539,8 +562,9 @@ function SmartAlerts({ cards }: { cards: InsightCard[] }) {
 }
 
 function AlertCard({ card }: { card: InsightCard }) {
+  const theme = useThemeTokens();
   const isWarning = card.severity === 'warning';
-  const color = isWarning ? '#FF6680' : card.severity === 'success' ? '#00B878' : '#FF6B14';
+  const color = isWarning ? '#FF6680' : card.severity === 'success' ? '#00B878' : theme.colors.accent;
   const icon = isWarning
     ? 'calendar-alert'
     : card.severity === 'success'
@@ -549,10 +573,17 @@ function AlertCard({ card }: { card: InsightCard }) {
 
   return (
     <View
-      className="rounded-[22px] border bg-white p-4 shadow-sm dark:bg-gray-800"
-      style={{ borderLeftColor: color, borderLeftWidth: 3, borderColor: '#F2F2F2' }}>
+      className="rounded-[22px] border p-4 shadow-sm"
+      style={{
+        backgroundColor: theme.colors.card,
+        borderLeftColor: color,
+        borderLeftWidth: 3,
+        borderColor: theme.colors.border,
+      }}>
       <View className="flex-row">
-        <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-orange-50">
+        <View
+          className="mr-3 h-10 w-10 items-center justify-center rounded-full"
+          style={{ backgroundColor: isWarning ? '#FFF3F5' : theme.colors.secondary }}>
           <MaterialCommunityIcons name={icon} size={20} color={color} />
         </View>
         <View className="flex-1">
@@ -571,13 +602,15 @@ function AlertCard({ card }: { card: InsightCard }) {
 }
 
 function PillButton({ label, muted }: { label: string; muted?: boolean }) {
+  const theme = useThemeTokens();
+
   return (
     <TouchableOpacity
       className="rounded-lg px-3 py-2"
-      style={{ backgroundColor: muted ? '#F3F3F3' : '#FF6B14' }}>
+      style={{ backgroundColor: muted ? (theme.mode === 'dark' ? '#333333' : '#F3F3F3') : theme.colors.accent }}>
       <ThemedText
         className="text-[10px] font-black"
-        style={{ color: muted ? '#161616' : '#FFFFFF' }}>
+        style={{ color: muted ? theme.colors.text : '#FFFFFF' }}>
         {label}
       </ThemedText>
     </TouchableOpacity>
@@ -585,10 +618,13 @@ function PillButton({ label, muted }: { label: string; muted?: boolean }) {
 }
 
 function AccountIntelligence({ dashboard }: { dashboard: DashboardResponse }) {
+  const theme = useThemeTokens();
   const topCategory = dashboard.top_categories[0]?.category ?? 'Not enough data';
   return (
     <SectionHeader title="Account Intelligence">
-      <View className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <View
+        className="rounded-[24px] border p-5 shadow-sm"
+        style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
         {dashboard.account_spending.slice(0, 3).map((account) => (
           <View key={account.account_id ?? account.account_name} className="mb-4">
             <View className="mb-2 flex-row items-center justify-between">
@@ -599,8 +635,11 @@ function AccountIntelligence({ dashboard }: { dashboard: DashboardResponse }) {
             </View>
             <View className="h-2 overflow-hidden rounded-full bg-gray-100">
               <View
-                className="h-full rounded-full bg-orange-500"
-                style={{ width: `${Math.min(account.percentage, 100)}%` }}
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.min(account.percentage, 100)}%`,
+                  backgroundColor: theme.colors.accent,
+                }}
               />
             </View>
           </View>
@@ -628,9 +667,13 @@ function MiniMetric({
   label: string;
   value: string;
 }) {
+  const theme = useThemeTokens();
+
   return (
-    <View className="flex-1 rounded-2xl border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      <MaterialCommunityIcons name={icon} size={20} color="#FF6B14" />
+    <View
+      className="flex-1 rounded-2xl border p-4"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+      <MaterialCommunityIcons name={icon} size={20} color={theme.colors.accent} />
       <ThemedText className="mt-3 text-[11px] text-gray-500">{label}</ThemedText>
       <ThemedText className="mt-1 text-sm font-black" numberOfLines={1}>
         {value}
@@ -640,9 +683,13 @@ function MiniMetric({
 }
 
 function NeedsReview({ entries }: { entries: DashboardResponse['recent_transactions'] }) {
+  const theme = useThemeTokens();
+
   return (
     <SectionHeader title="Needs Review" actionLabel={`${entries.length} Items`}>
-      <View className="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <View
+        className="overflow-hidden rounded-[24px] border shadow-sm"
+        style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
         {entries.map((entry, index) => (
           <View
             key={entry.id ?? `${entry.date}-${index}`}
@@ -662,7 +709,7 @@ function NeedsReview({ entries }: { entries: DashboardResponse['recent_transacti
               <ThemedText className="text-sm font-black">
                 {formatMoney(Number(entry.amount || 0))}
               </ThemedText>
-              <ThemedText className="mt-1 text-[10px] font-bold" style={{ color: '#FF6B14' }}>
+              <ThemedText className="mt-1 text-[10px] font-bold" style={{ color: theme.colors.accent }}>
                 Resolve
               </ThemedText>
             </View>
@@ -680,6 +727,7 @@ function UnlockCard({
   dashboard: DashboardResponse;
   insightLevel: number;
 }) {
+  const theme = useThemeTokens();
   const remaining = insightLevel === 1 ? 3 - dashboard.summary.transaction_count : 1;
   const copy =
     insightLevel === 1
@@ -688,8 +736,10 @@ function UnlockCard({
         ? 'Link spending to accounts to unlock account intelligence.'
         : 'More repeated behavior unlocks deeper review and pattern insights.';
   return (
-    <View className="rounded-[24px] border border-dashed border-orange-200 bg-orange-50 p-5 dark:bg-orange-900/10">
-      <ThemedText className="text-sm font-black" style={{ color: '#FF6B14' }}>
+    <View
+      className="rounded-[24px] border border-dashed p-5"
+      style={{ backgroundColor: theme.colors.secondary, borderColor: theme.colors.border }}>
+      <ThemedText className="text-sm font-black" style={{ color: theme.colors.accent }}>
         More insights are waiting
       </ThemedText>
       <ThemedText className="mt-1 text-xs leading-5 text-gray-500">{copy}</ThemedText>
@@ -708,13 +758,15 @@ function SectionHeader({
   onAction?: () => void;
   children: ReactNode;
 }) {
+  const theme = useThemeTokens();
+
   return (
     <View>
       <View className="mb-3 flex-row items-center justify-between px-1">
         <ThemedText className="text-lg font-black">{title}</ThemedText>
         {actionLabel && (
           <TouchableOpacity onPress={onAction}>
-            <ThemedText className="text-xs font-bold" style={{ color: '#FF6B14' }}>
+            <ThemedText className="text-xs font-bold" style={{ color: theme.colors.accent }}>
               {actionLabel}
             </ThemedText>
           </TouchableOpacity>

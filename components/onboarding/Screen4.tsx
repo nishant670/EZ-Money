@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 6,
-    borderColor: '#FF8865',
+    borderColor: '#90A4AE',
     marginRight: 12,
   },
   splitLabels: {

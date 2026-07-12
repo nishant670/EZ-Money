@@ -167,14 +167,14 @@ export default function EditProfileScreen() {
                 </View>
                 <Pressable
                   className="absolute bottom-1 right-1 w-10 h-10 rounded-full border-2 border-white items-center justify-center shadow-lg"
-                  style={{ backgroundColor: '#FF8A65' }}>
+                  style={{ backgroundColor: theme.accent }}>
                   <MaterialCommunityIcons name="camera" size={20} color="white" />
                 </Pressable>
               </View>
               <Pressable className="mt-4">
                 <TText
                   className="text-sm font-bold tracking-widest"
-                  style={{ color: '#FF8A65', fontFamily: Fonts.body }}>
+                  style={{ color: theme.accent, fontFamily: Fonts.body }}>
                   CHANGE PHOTO
                 </TText>
               </Pressable>
@@ -260,7 +260,7 @@ export default function EditProfileScreen() {
             {/* Info Callout */}
             <View
               className="flex-row p-5 rounded-[28px] mt-8 items-center"
-              style={{ backgroundColor: '#F5F0F9' }}>
+              style={{ backgroundColor: theme.secondary }}>
               <View
                 className="w-8 h-8 rounded-full items-center justify-center mr-4"
                 style={{ backgroundColor: '#9575CD' }}>
@@ -268,7 +268,7 @@ export default function EditProfileScreen() {
               </View>
               <Text
                 className="flex-1 text-xs leading-relaxed opacity-70"
-                style={{ fontFamily: Fonts.body, color: '#4A148C' }}>
+                style={{ fontFamily: Fonts.body, color: theme.text }}>
                 Updating your profile helps me personalize your financial insights and keeps your
                 account super secure!
               </Text>
@@ -279,7 +279,7 @@ export default function EditProfileScreen() {
               onPress={handleUpdate}
               disabled={isLoading}
               className={`flex-row items-center justify-center h-18 rounded-[32px] mt-10 shadow-lg p-4 ${isLoading ? 'opacity-70' : ''}`}
-              style={{ backgroundColor: '#FF8A65' }}>
+              style={{ backgroundColor: theme.accent }}>
               {isLoading ? (
                 <ActivityIndicator color="white" />
               ) : (

@@ -3,6 +3,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
+import { getMoodIconName } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { API_BASE_URL } from '@/lib/transactions';
@@ -95,7 +96,7 @@ export function QuickPrompts({
               onLongPress={() => onLongPress(item)}
               className="flex-row items-center bg-white dark:bg-gray-800 rounded-full px-5 py-2 gap-2 shadow-sm active:opacity-70 border border-gray-50 dark:border-gray-700">
               <MaterialCommunityIcons
-                name={(item.icon || 'lightning-bolt') as any}
+                name={getMoodIconName(item.icon || 'lightning-bolt', theme.mood.iconStyle) as any}
                 size={14}
                 color={theme.colors.accent}
               />

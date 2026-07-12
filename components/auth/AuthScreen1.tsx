@@ -38,7 +38,7 @@ export const AuthScreen1 = ({
         <View style={styles.imageContainer}>
           <View style={styles.glowCircle} />
           <View style={[styles.mainCircle, { borderColor: theme.border }]}>
-            <View style={[styles.iconBox, { backgroundColor: '#FF8A65' }]}>
+            <View style={[styles.iconBox, { backgroundColor: theme.accent }]}>
               <MaterialCommunityIcons name="wallet" size={30} color="white" />
             </View>
             <View style={[styles.smallIcon, styles.pos1, { backgroundColor: '#E1BEE7' }]}>

@@ -1,5 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
+import { getMoodIconName } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -52,10 +53,15 @@ export function TransactionItem({
         <View
           style={[
             isList ? styles.listIcon : styles.cardIcon,
-            { backgroundColor: bgColor || (isIncome ? '#E8F5E9' : '#FFEBEE') },
+            {
+              backgroundColor: bgColor || (isIncome ? '#E8F5E9' : '#FFEBEE'),
+              borderRadius: isList
+                ? Math.min(theme.icon.containerRadius, 20)
+                : theme.icon.containerRadius,
+            },
           ]}>
           <MaterialCommunityIcons
-            name={icon as any}
+            name={getMoodIconName(icon, theme.mood.iconStyle) as any}
             size={isList ? 20 : 24}
             color={color || (isIncome ? '#27AE60' : '#E57373')}
           />

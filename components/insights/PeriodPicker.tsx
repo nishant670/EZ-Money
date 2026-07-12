@@ -1,5 +1,5 @@
-import { Colors, Fonts } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Fonts } from '@/constants/theme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
@@ -46,8 +46,9 @@ const PRESETS: { key: PeriodPreset; label: string }[] = [
 ];
 
 export function PeriodPicker({ visible, onClose, onSelect, currentRange }: PeriodPickerProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const theme = Colors[colorScheme];
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
+  const accentSurface = themeTokens.mode === 'dark' ? theme.secondary : theme.secondary;
   const [view, setView] = useState<'presets' | 'custom'>('presets');
   const [selectedPreset, setSelectedPreset] = useState<PeriodPreset | undefined>(
     currentRange.preset
@@ -117,6 +118,7 @@ export function PeriodPicker({ visible, onClose, onSelect, currentRange }: Perio
               onApply={handleApplyPreset}
               onClose={onClose}
               theme={theme}
+              accentSurface={accentSurface}
             />
           ) : (
             <CustomRangeView
@@ -127,6 +129,7 @@ export function PeriodPicker({ visible, onClose, onSelect, currentRange }: Perio
               onBack={() => setView('presets')}
               onConfirm={handleConfirmCustomRange}
               theme={theme}
+              accentSurface={accentSurface}
             />
           )}
         </View>
@@ -142,6 +145,7 @@ function PresetsView({
   onApply,
   onClose,
   theme,
+  accentSurface,
 }: any) {
   return (
     <View style={styles.viewContainer}>
@@ -163,7 +167,7 @@ function PresetsView({
               key={p.key}
               style={[
                 styles.presetItem,
-                isSelected && { borderColor: theme.accent, backgroundColor: '#FFF5F2' },
+                isSelected && { borderColor: theme.accent, backgroundColor: accentSurface },
               ]}
               onPress={() => onSelectPreset(p.key)}>
               <Text
@@ -209,6 +213,7 @@ function CustomRangeView({
   onBack,
   onConfirm,
   theme,
+  accentSurface,
 }: any) {
   const months = useMemo(() => {
     const now = new Date();
@@ -279,6 +284,7 @@ function CustomRangeView({
             end={end}
             onPress={handleDatePress}
             theme={theme}
+            accentSurface={accentSurface}
           />
         ))}
       </ScrollView>
@@ -293,7 +299,7 @@ function CustomRangeView({
   );
 }
 
-function CalendarMonth({ monthDate, start, end, onPress, theme }: any) {
+function CalendarMonth({ monthDate, start, end, onPress, theme, accentSurface }: any) {
   const days = useMemo(() => {
     const year = monthDate.getFullYear();
     const month = monthDate.getMonth();
@@ -333,7 +339,7 @@ function CalendarMonth({ monthDate, start, end, onPress, theme }: any) {
                 styles.dayCell,
                 isStart && [styles.selectedDay, { backgroundColor: theme.accent }],
                 isEnd && [styles.selectedDay, { backgroundColor: theme.accent }],
-                isInRange && { backgroundColor: '#FFF5F2' },
+                isInRange && { backgroundColor: accentSurface },
               ]}
               onPress={() => onPress(d)}>
               <Text

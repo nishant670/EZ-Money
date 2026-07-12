@@ -9,6 +9,7 @@ import { StateView } from '@/components/ui/StateView';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { resolveCategoryMetadata } from '@/lib/transactions';
@@ -133,7 +134,9 @@ export default function SpendingAnalysisScreen() {
         )}
 
         <View className="mt-3 items-center">
-          <View className="mb-3 flex-row items-center rounded-full bg-orange-50 px-4 py-2">
+          <View
+            className="mb-3 flex-row items-center rounded-full px-4 py-2"
+            style={{ backgroundColor: theme.secondary }}>
             <ThemedText className="text-xs font-bold" style={{ color: theme.accent }}>
               {periodLabel}
             </ThemedText>
@@ -166,6 +169,8 @@ export default function SpendingAnalysisScreen() {
 }
 
 function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
   const points = useMemo(() => {
     const avg = dashboard.summary.daily_average;
     return [0.7, 0.62, 0.84, 1.22, 1.28, 1.2, 0.96, 0.82, 1.02, 1.42, 1.3].map((n) =>
@@ -182,7 +187,9 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
       : 0;
 
   return (
-    <View className="mx-5 mt-8 rounded-[28px] border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <View
+      className="mx-5 mt-8 rounded-[28px] border p-5 shadow-sm"
+      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
       <View className="mb-7 flex-row items-start justify-between">
         <View>
           <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
@@ -190,8 +197,8 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
           </ThemedText>
           <ThemedText className="mt-1 text-lg font-black">Daily Fluctuations</ThemedText>
         </View>
-        <View className="rounded-lg bg-orange-50 px-3 py-2">
-          <ThemedText className="text-[10px] font-black" style={{ color: '#FF6B14' }}>
+        <View className="rounded-lg px-3 py-2" style={{ backgroundColor: theme.secondary }}>
+          <ThemedText className="text-[10px] font-black" style={{ color: theme.accent }}>
             Avg {formatMoney(dashboard.summary.daily_average)}/day
           </ThemedText>
         </View>
@@ -201,10 +208,11 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
         {points.map((point, index) => (
           <View key={`${point}-${index}`} className="items-center">
             <View
-              className="w-5 rounded-t-full bg-orange-500"
+              className="w-5 rounded-t-full"
               style={{
                 height: Math.max(18, (point / maxPoint) * 130),
                 opacity: 0.16 + index * 0.07,
+                backgroundColor: theme.accent,
               }}
             />
           </View>
@@ -218,7 +226,7 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
 
       <View className="mt-5 flex-row items-center justify-between border-t border-gray-100 pt-4 dark:border-gray-700">
         <View className="flex-row items-center">
-          <View className="mr-2 h-3 w-3 rounded-full bg-orange-500" />
+          <View className="mr-2 h-3 w-3 rounded-full" style={{ backgroundColor: theme.accent }} />
           <ThemedText className="text-xs font-bold">
             Latest Spend: {formatMoney(todaySpend)}
           </ThemedText>
@@ -226,7 +234,7 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
         {delta !== 0 && (
           <ThemedText
             className="text-[10px] font-bold"
-            style={{ color: delta > 0 ? '#FF6B14' : '#00B878' }}>
+            style={{ color: delta > 0 ? theme.accent : '#00B878' }}>
             {Math.abs(delta)}% {delta > 0 ? 'Higher' : 'Lower'} than Avg
           </ThemedText>
         )}
@@ -323,6 +331,7 @@ function TopMerchants({ dashboard }: { dashboard: DashboardResponse }) {
 }
 
 function BehavioralInsights({ cards }: { cards: InsightCard[] }) {
+  const theme = useThemeTokens();
   if (cards.length === 0) return null;
 
   return (
@@ -331,14 +340,14 @@ function BehavioralInsights({ cards }: { cards: InsightCard[] }) {
       <View className="gap-4">
         {cards.slice(0, 4).map((card) => {
           const warning = card.severity === 'warning';
-          const color = warning ? '#FF6680' : '#FF6B14';
+          const color = warning ? '#FF6680' : theme.colors.accent;
           return (
             <View
               key={card.kind}
               className="flex-row rounded-[24px] border p-5"
               style={{
-                backgroundColor: warning ? '#FFF3F5' : '#FFF7ED',
-                borderColor: warning ? '#FFD3DB' : '#FFD7B8',
+                backgroundColor: warning ? '#FFF3F5' : theme.colors.secondary,
+                borderColor: warning ? '#FFD3DB' : theme.colors.border,
               }}>
               <View className="mr-4 h-11 w-11 items-center justify-center rounded-full bg-white">
                 <MaterialCommunityIcons
