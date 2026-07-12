@@ -13,6 +13,7 @@ import { FinnriSplashScreen } from '@/components/SplashScreen';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { installApiSessionGuard } from '@/lib/api-session';
+import { hasCompletedOnboarding } from '@/lib/onboarding';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -25,7 +26,7 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [isAppReady, setIsAppReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
-  const { user, clearAuth } = useAuthStore();
+  const { clearAuth } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
@@ -42,19 +43,37 @@ export default function RootLayout() {
     prepare();
   }, []);
 
-  const handleCustomSplashComplete = () => {
-    setShowCustomSplash(false);
+  const routeAfterSplash = async () => {
+    const currentUser = useAuthStore.getState().user;
 
-    // Navigation logic after splash
-    if (user) {
-      if (user.has_pin || user.biometrics_enabled) {
+    if (currentUser) {
+      if (currentUser.has_pin || currentUser.biometrics_enabled) {
         router.replace('/lock');
       } else {
         router.replace('/(tabs)');
       }
+      return;
+    }
+
+    if (await hasCompletedOnboarding()) {
+      router.replace('/auth');
     } else {
       router.replace('/onboarding');
     }
+  };
+
+  const handleCustomSplashComplete = () => {
+    setShowCustomSplash(false);
+
+    if (!useAuthStore.persist.hasHydrated()) {
+      const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
+        unsubscribe();
+        routeAfterSplash();
+      });
+      return;
+    }
+
+    routeAfterSplash();
   };
 
   useEffect(() => {

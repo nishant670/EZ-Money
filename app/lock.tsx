@@ -22,7 +22,7 @@ export default function LockScreen() {
     const handleUnlock = async (pin: string) => {
         if (!user) {
             clearAuth();
-            router.replace('/onboarding');
+            router.replace('/auth');
             return;
         }
 
@@ -69,7 +69,7 @@ export default function LockScreen() {
                 onContinue={handleUnlock}
                 onSecondary={() => {
                     clearAuth(); // Clear stale user data
-                    router.replace('/onboarding');
+                    router.replace('/auth');
                 }}
                 isLoading={isLoading}
                 errorMessage={error}
