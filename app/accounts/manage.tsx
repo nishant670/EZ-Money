@@ -17,10 +17,10 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { fetchAccounts, saveAccount, updateAccount } from '@/lib/accounts';
+import { fetchAccounts, saveAccount, updateAccount, type AccountType } from '@/lib/accounts';
 
 type AccountTypeOption = {
-  key: string;
+  key: AccountType;
   label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   color: string;
@@ -29,8 +29,8 @@ type AccountTypeOption = {
 
 const typeOptions: AccountTypeOption[] = [
   { key: 'cash', label: 'Cash', icon: 'cash', color: '#2ECC71', bgColor: '#EAF8F0' },
-  { key: 'credit', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
-  { key: 'debit', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
+  { key: 'credit_card', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
+  { key: 'debit_card', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
   { key: 'wallet', label: 'Wallet', icon: 'wallet', color: '#FF9F43', bgColor: '#FFF4EB' },
   { key: 'upi', label: 'UPI', icon: 'qrcode-scan', color: '#00D2B4', bgColor: '#E6FBFA' },
   { key: 'bank', label: 'Bank', icon: 'bank', color: '#3B5998', bgColor: '#EBF0FF' },
@@ -90,7 +90,7 @@ export default function ManageAccountScreen() {
   const [step, setStep] = useState(1);
 
   // Step 1 States
-  const [selectedType, setSelectedType] = useState('bank');
+  const [selectedType, setSelectedType] = useState<AccountType>('bank');
   const [selectedColor, setSelectedColor] = useState('#54A0FF');
   const [name, setName] = useState('');
 
@@ -350,7 +350,7 @@ export default function ManageAccountScreen() {
   );
 
   const renderStep2 = () => {
-    if (selectedType === 'credit') {
+    if (selectedType === 'credit_card') {
       return (
         <View style={{ flex: 1 }}>
           <ScreenHeader

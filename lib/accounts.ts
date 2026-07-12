@@ -3,7 +3,7 @@ import { ApiFieldErrors, readApiError } from './api-error';
 
 export type Account = {
     id: number;
-    type: string;
+    type: AccountType;
     name: string;
     color: string;
     provider?: string;
@@ -18,7 +18,7 @@ export type Account = {
 };
 
 export type AccountPayload = {
-    type: string;
+    type: AccountType;
     name: string;
     color: string;
     provider?: string;
@@ -30,11 +30,31 @@ export type AccountPayload = {
     is_default?: boolean;
 };
 
+export type AccountType = 'cash' | 'upi' | 'bank' | 'credit_card' | 'debit_card' | 'wallet' | 'other';
+
 const paymentModeAccountDefaults: Record<string, Pick<AccountPayload, 'type' | 'name' | 'color'>> = {
     Cash: { type: 'cash', name: 'Cash Account', color: '#2ECC71' },
     UPI: { type: 'upi', name: 'UPI Account', color: '#00D2B4' },
-    'Credit Card': { type: 'credit', name: 'Credit Card Account', color: '#8257E5' },
+    'Credit Card': { type: 'credit_card', name: 'Credit Card Account', color: '#8257E5' },
     Wallets: { type: 'wallet', name: 'Wallet Account', color: '#FF9F43' },
+};
+
+export const normalizeAccountType = (type?: string | null): AccountType => {
+    const normalized = type?.trim().toLowerCase();
+    if (normalized === 'credit') return 'credit_card';
+    if (normalized === 'debit') return 'debit_card';
+    if (normalized === 'wallets') return 'wallet';
+    if (
+        normalized === 'cash' ||
+        normalized === 'upi' ||
+        normalized === 'bank' ||
+        normalized === 'credit_card' ||
+        normalized === 'debit_card' ||
+        normalized === 'wallet'
+    ) {
+        return normalized;
+    }
+    return 'other';
 };
 
 export const getAccountTypeForPaymentMode = (mode?: string | null) => {
@@ -42,7 +62,7 @@ export const getAccountTypeForPaymentMode = (mode?: string | null) => {
     const normalized = mode.trim().toLowerCase();
     if (normalized === 'cash') return 'cash';
     if (normalized === 'upi') return 'upi';
-    if (normalized === 'credit card') return 'credit';
+    if (normalized === 'credit card') return 'credit_card';
     if (normalized === 'wallets' || normalized === 'wallet') return 'wallet';
     return null;
 };
@@ -50,7 +70,7 @@ export const getAccountTypeForPaymentMode = (mode?: string | null) => {
 export const getAccountsForPaymentMode = (accounts: Account[], mode?: string | null) => {
     const accountType = getAccountTypeForPaymentMode(mode);
     if (!accountType) return accounts;
-    return accounts.filter((account) => account.type?.toLowerCase() === accountType);
+    return accounts.filter((account) => normalizeAccountType(account.type) === accountType);
 };
 
 export const getPreferredAccountForPaymentMode = (accounts: Account[], mode?: string | null) => {
@@ -128,7 +148,10 @@ export const fetchAccounts = async (token: string): Promise<Account[]> => {
         throw new Error('The accounts response was invalid.');
     }
 
-    return payload as Account[];
+    return (payload as Account[]).map((account) => ({
+        ...account,
+        type: normalizeAccountType(account.type),
+    }));
 };
 
 export const saveAccount = async (token: string, payload: AccountPayload): Promise<Account> => {
@@ -182,7 +205,7 @@ export const deleteAccount = async (token: string, accountId: number): Promise<v
 };
 
 export const toAccountPayload = (account: Account): AccountPayload => ({
-    type: account.type,
+    type: normalizeAccountType(account.type),
     name: account.name,
     color: account.color,
     provider: account.provider,

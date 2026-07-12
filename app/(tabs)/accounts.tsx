@@ -14,8 +14,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
   Account,
   AccountApiError,
+  type AccountType,
   deleteAccount,
   fetchAccounts,
+  normalizeAccountType,
   toAccountPayload,
   updateAccount,
 } from '@/lib/accounts';
@@ -23,14 +25,13 @@ import {
 const TView = cssInterop(ThemedView, { className: 'style' });
 const TText = cssInterop(ThemedText, { className: 'style' });
 
-type AccountType = 'cash' | 'credit' | 'debit' | 'bank' | 'wallet' | 'upi' | 'other';
 type AccountFilter = 'all' | AccountType;
 
 const filterOptions: { key: AccountFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'cash', label: 'Cash' },
-  { key: 'credit', label: 'Credit Cards' },
-  { key: 'debit', label: 'Debit Cards' },
+  { key: 'credit_card', label: 'Credit Cards' },
+  { key: 'debit_card', label: 'Debit Cards' },
   { key: 'bank', label: 'Bank Accounts' },
   { key: 'wallet', label: 'Wallets' },
   { key: 'upi', label: 'UPI' },
@@ -85,7 +86,7 @@ export default function AccountsScreen() {
     () =>
       activeFilter === 'all'
         ? accounts
-        : accounts.filter((account) => account.type === activeFilter),
+        : accounts.filter((account) => normalizeAccountType(account.type) === activeFilter),
     [accounts, activeFilter]
   );
 
@@ -197,14 +198,14 @@ export default function AccountsScreen() {
   const renderAccountRow = (account: Account) => {
     const iconName: Record<AccountType, keyof typeof MaterialCommunityIcons.glyphMap> = {
       cash: 'cash',
-      credit: 'credit-card-outline',
-      debit: 'credit-card-outline',
+      credit_card: 'credit-card-outline',
+      debit_card: 'credit-card-outline',
       bank: 'bank-outline',
       wallet: 'wallet-outline',
       upi: 'cellphone-nfc',
       other: 'wallet-outline',
     };
-    const accountType = account.type in iconName ? (account.type as AccountType) : 'other';
+    const accountType = normalizeAccountType(account.type);
     const accountDetails =
       [account.provider, account.identifier].filter(Boolean).join(' • ') ||
       accountType.replace('_', ' ');

@@ -301,7 +301,7 @@ export const AdvancedFilter = ({
                 style={[styles.accountChip, accountId === account.id && styles.activeAccountChip]}
                 onPress={() => setAccountId(accountId === account.id ? null : account.id)}>
                 <MaterialCommunityIcons
-                  name={account.type === 'credit' ? 'credit-card' : 'bank'}
+                  name={account.type === 'credit_card' ? 'credit-card' : 'bank'}
                   size={16}
                   color="#42A5F5"
                 />
