@@ -406,7 +406,8 @@ export function TransactionFormModal({
                 <View className="h-1.5 w-12 rounded-full absolute top-3 bg-gray-200" />
                 <Pressable
                   onPress={requestClose}
-                  className="absolute right-6 top-6 h-10 w-10 rounded-full bg-gray-100 items-center justify-center z-10">
+                  className="absolute right-6 top-6 h-10 w-10 rounded-full items-center justify-center z-10"
+                  style={{ backgroundColor: colorScheme === 'dark' ? theme.card : '#F3F4F6' }}>
                   <MaterialCommunityIcons name="close" size={20} color={theme.text} />
                 </Pressable>
               </View>

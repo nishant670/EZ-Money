@@ -614,6 +614,7 @@ export default function HomeScreen() {
     }
 
     const recentTransactions = transactions.slice(0, 5);
+    const groupedRecentTransactions = groupTransactionsBySection(recentTransactions);
     const todayCount = transactions.filter(
       (item) => item.section === 'Today' || item.dateLabel === 'Today'
     ).length;
@@ -632,40 +633,64 @@ export default function HomeScreen() {
 
         <View className="px-6">
           <Card compact style={{ overflow: 'hidden', padding: 0 }}>
-            {recentTransactions.map((item, index) => (
-              <TransactionItem
-                key={item.id}
-                title={item.name}
-                icon={item.icon}
-                category={item.category}
-                subtitle={item.accountName ?? item.mode ?? ''}
-                amount={Math.abs(item.amount).toFixed(2)}
-                date={item.section}
-                color={item.color}
-                bgColor={item.bgColor}
-                isIncome={item.entryType === 'income'}
-                variant="list"
-                showDivider={index < recentTransactions.length - 1}
-                onPress={() => {
-                  router.push({
-                    pathname: '/entry/[id]',
-                    params: {
-                      id: item.id,
-                      name: item.name,
-                      category: item.category,
-                      amount: Math.abs(item.amount).toFixed(2),
-                      entryType: item.entryType ?? 'expense',
-                      section: item.section,
-                      mode: item.mode ?? '',
-                      notes: item.notes ?? '',
-                      merchant: item.merchant ?? '',
-                      dateLabel: item.dateLabel ?? '',
-                      rawDate: item.rawDate ?? '',
-                      tag: item.tag ?? '',
-                    },
-                  });
-                }}
-              />
+            {groupedRecentTransactions.map((group, groupIndex) => (
+              <View key={group.title}>
+                <View
+                  style={{
+                    paddingHorizontal: themeTokens.spacing.lg,
+                    paddingTop: groupIndex === 0 ? themeTokens.spacing.md : themeTokens.spacing.lg,
+                    paddingBottom: themeTokens.spacing.xs,
+                  }}>
+                  <ThemedText
+                    variant="micro"
+                    style={{
+                      color: isDark ? 'rgba(255,255,255,0.5)' : '#9A9697',
+                      textTransform: 'uppercase',
+                      letterSpacing: 1,
+                    }}>
+                    {group.title}
+                  </ThemedText>
+                </View>
+                {group.data.map((item, index) => {
+                  const isLastInSection = index === group.data.length - 1;
+                  const isLastSection = groupIndex === groupedRecentTransactions.length - 1;
+                  return (
+                    <TransactionItem
+                      key={item.id}
+                      title={item.name}
+                      icon={item.icon}
+                      category={item.category}
+                      subtitle={item.accountName ?? item.mode ?? ''}
+                      amount={Math.abs(item.amount).toFixed(2)}
+                      date={item.timeLabel ?? item.dateLabel ?? ''}
+                      color={item.color}
+                      bgColor={item.bgColor}
+                      isIncome={item.entryType === 'income'}
+                      variant="list"
+                      showDivider={!isLastInSection || !isLastSection}
+                      onPress={() => {
+                        router.push({
+                          pathname: '/entry/[id]',
+                          params: {
+                            id: item.id,
+                            name: item.name,
+                            category: item.category,
+                            amount: Math.abs(item.amount).toFixed(2),
+                            entryType: item.entryType ?? 'expense',
+                            section: item.section,
+                            mode: item.mode ?? '',
+                            notes: item.notes ?? '',
+                            merchant: item.merchant ?? '',
+                            dateLabel: item.dateLabel ?? '',
+                            rawDate: item.rawDate ?? '',
+                            tag: item.tag ?? '',
+                          },
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </View>
             ))}
             <View
               style={{

@@ -48,22 +48,7 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}>
         <View className="px-6 gap-6">
-          {/* Finnri Profile Card */}
-          <View
-            className="rounded-[40px] items-center py-10 overflow-hidden"
-            style={{
-              backgroundColor: cardColor,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.05,
-              shadowRadius: 10,
-              elevation: 2,
-            }}>
-            <View
-              className="absolute top-0 left-0 right-0 h-24"
-              style={{ backgroundColor: colors.secondary, opacity: isDark ? 0.28 : 0.5 }}
-            />
-
+          <View className="items-center py-2">
             <View className="relative">
               <View className="w-28 h-28 rounded-full border-4 border-white overflow-hidden shadow-sm">
                 <Image

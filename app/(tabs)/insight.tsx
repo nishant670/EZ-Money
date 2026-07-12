@@ -178,7 +178,6 @@ export default function InsightScreen() {
         <View className="flex-row items-center gap-3">
           {loading && <ActivityIndicator color={theme.accent} />}
           <HeaderIcon name="magnify" onPress={() => router.push('/transactions')} />
-          <HeaderIcon name="tune-variant" onPress={() => setPickerVisible(true)} />
         </View>
       </View>
 
@@ -351,11 +350,13 @@ function FinancialHealthCard({
         </View>
       </View>
 
-      <View className="mt-4 flex-row items-center justify-between">
-        <ThemedText className="text-[11px] font-bold text-gray-500">
+      <View className="mt-4 flex-row items-start gap-3">
+        <ThemedText className="flex-1 text-[11px] font-bold text-gray-500">
           Insight depth grows as Finnri sees more transactions, merchants, and accounts.
         </ThemedText>
-        <View className="rounded-full px-3 py-1" style={{ backgroundColor: accentSurface }}>
+        <View
+          className="rounded-full px-3 py-1"
+          style={{ backgroundColor: accentSurface, flexShrink: 0 }}>
           <ThemedText className="text-[10px] font-black" style={{ color: theme.colors.accent }}>
             L{insightLevel}/4
           </ThemedText>
@@ -450,6 +451,7 @@ function SpendingAnalysisCard({
   dashboard: DashboardResponse;
   onDetails: () => void;
 }) {
+  const theme = useThemeTokens();
   const categories = dashboard.top_categories.slice(0, 2);
   const merchants = dashboard.top_merchants.slice(0, 2);
   const primary = categories[0];
@@ -457,16 +459,20 @@ function SpendingAnalysisCard({
 
   return (
     <SectionHeader title="Spending Analysis" actionLabel="Details" onAction={onDetails}>
-      <View className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <View
+        className="rounded-[24px] p-5 shadow-sm"
+        style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border, borderWidth: 1 }}>
         <View className="flex-row items-center">
-          <View className="mr-5 h-[96px] w-[96px] items-center justify-center rounded-full bg-gray-100">
+          <View
+            className="mr-5 h-[96px] w-[96px] items-center justify-center rounded-full"
+            style={{ backgroundColor: theme.colors.secondary }}>
             <View
-              className="h-[72px] w-[72px] items-center justify-center rounded-full bg-white"
+              className="h-[72px] w-[72px] items-center justify-center rounded-full"
               style={{ borderColor: primaryMeta.color, borderWidth: 8 }}>
-              <ThemedText className="text-[9px] text-gray-400">
+              <ThemedText className="text-center text-[9px]" style={{ color: theme.mode === 'dark' ? 'rgba(255,255,255,0.58)' : '#9CA3AF' }}>
                 {primary?.category?.split(' ')[0] ?? 'Spend'}
               </ThemedText>
-              <ThemedText className="text-xs font-black">
+              <ThemedText className="text-xs font-black" style={{ color: theme.colors.text }}>
                 {Math.round(primary?.percentage ?? 0)}%
               </ThemedText>
             </View>
@@ -503,7 +509,7 @@ function SpendingAnalysisCard({
         </View>
 
         {merchants.length > 0 && (
-          <View className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-700">
+          <View className="mt-5 pt-4" style={{ borderTopWidth: 1, borderTopColor: theme.colors.border }}>
             <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
               Top Merchants
             </ThemedText>

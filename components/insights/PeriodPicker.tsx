@@ -154,7 +154,9 @@ function PresetsView({
           <Text style={[styles.title, { color: theme.text }]}>Select Period</Text>
           <Text style={styles.subtitle}>QUICK PRESETS</Text>
         </View>
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+        <TouchableOpacity
+          onPress={onClose}
+          style={[styles.closeBtn, { backgroundColor: accentSurface }]}>
           <MaterialCommunityIcons name="close" size={20} color={theme.text} />
         </TouchableOpacity>
       </View>
@@ -167,6 +169,7 @@ function PresetsView({
               key={p.key}
               style={[
                 styles.presetItem,
+                !isSelected && { backgroundColor: accentSurface, borderColor: theme.border },
                 isSelected && { borderColor: theme.accent, backgroundColor: accentSurface },
               ]}
               onPress={() => onSelectPreset(p.key)}>
@@ -187,12 +190,25 @@ function PresetsView({
           );
         })}
 
-        <TouchableOpacity style={styles.customRangeItem} onPress={onGoToCustom}>
+        <TouchableOpacity
+          style={[
+            styles.customRangeItem,
+            { backgroundColor: accentSurface, borderColor: theme.border, borderWidth: 1 },
+          ]}
+          onPress={onGoToCustom}>
           <View style={styles.customRangeMain}>
-            <MaterialCommunityIcons name="calendar-range" size={20} color="#90A4AE" />
-            <Text style={styles.customRangeText}>Custom Range</Text>
+            <MaterialCommunityIcons
+              name="calendar-range"
+              size={20}
+              color={theme.mode === 'dark' ? 'rgba(255,255,255,0.6)' : '#90A4AE'}
+            />
+            <Text style={[styles.customRangeText, { color: theme.text }]}>Custom Range</Text>
           </View>
-          <MaterialCommunityIcons name="chevron-right" size={20} color="#90A4AE" />
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={theme.mode === 'dark' ? 'rgba(255,255,255,0.6)' : '#90A4AE'}
+          />
         </TouchableOpacity>
       </ScrollView>
 
@@ -249,8 +265,12 @@ function CustomRangeView({
 
       <View style={styles.dateDisplays}>
         <View
-          style={[styles.dateBox, start && !end && { borderColor: theme.accent, borderWidth: 1 }]}>
-          <Text style={styles.dateLabel}>START DATE</Text>
+          style={[
+            styles.dateBox,
+            { backgroundColor: accentSurface, borderColor: theme.border },
+            start && !end && { borderColor: theme.accent, borderWidth: 1 },
+          ]}>
+          <Text style={[styles.dateLabel, { color: theme.mode === 'dark' ? 'rgba(255,255,255,0.6)' : '#90A4AE' }]}>START DATE</Text>
           <Text style={[styles.dateValue, { color: theme.text }]}>
             {start
               ? start.toLocaleDateString('default', {
@@ -261,8 +281,20 @@ function CustomRangeView({
               : 'Select Date'}
           </Text>
         </View>
-        <View style={[styles.dateBox, end && { borderColor: theme.accent, borderWidth: 1 }]}>
-          <Text style={[styles.dateLabel, end && { color: theme.accent }]}>END DATE</Text>
+        <View
+          style={[
+            styles.dateBox,
+            { backgroundColor: accentSurface, borderColor: theme.border },
+            end && { borderColor: theme.accent, borderWidth: 1 },
+          ]}>
+          <Text
+            style={[
+              styles.dateLabel,
+              { color: theme.mode === 'dark' ? 'rgba(255,255,255,0.6)' : '#90A4AE' },
+              end && { color: theme.accent },
+            ]}>
+            END DATE
+          </Text>
           <Text style={[styles.dateValue, { color: theme.text }]}>
             {end
               ? end.toLocaleDateString('default', {
