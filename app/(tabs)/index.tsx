@@ -12,7 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { Card, Screen, SectionHeader } from '@/components/ui/theme-primitives';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { readApiError } from '@/lib/api-error';
+import { fetchUnreadNotificationCount } from '@/lib/notifications';
 import {
   API_BASE_URL,
   formatApiDate,
@@ -23,7 +23,6 @@ import {
   normalizeDateLabel,
   parseDateLabel,
   toTitleCase,
-  type ApiEntry,
 } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -36,7 +35,9 @@ import {
   saveAccount,
   type Account,
 } from '@/lib/accounts';
-import { formatDisplayTime, getClientTimeZone } from '@/lib/datetime';
+import { createEntry } from '@/lib/entries';
+import { formatDisplayTime } from '@/lib/datetime';
+import { parseEntryDraft, type ParseResponse } from '@/lib/parse';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import {
   TransactionFormModal,
@@ -46,45 +47,10 @@ import {
 
 import '../../global.css';
 
-type ParseResponse = {
-  type: string | null;
-  title: string | null;
-  time: string | null;
-  amount: number | null;
-  currency: string | null;
-  mode: string | null;
-  card_network: string | null;
-  account_hint: string | null;
-  category: string | null;
-  merchant: string | null;
-  tag: string | null;
-  note: string | null;
-  date: string | null;
-  source_text: string | null;
-  recurring_candidate?: boolean | null;
-  split_candidate?: boolean | null;
-  confidence?: Record<string, number>;
-  needs_confirmation?: Record<string, boolean>;
-  missing_fields?: string[];
-  clarifications?: string[];
-};
-
 const formatCompactCurrency = (amount: number) => {
   if (amount >= 100000) return `${(amount / 100000).toFixed(1)}L`;
   if (amount >= 1000) return `${(amount / 1000).toFixed(1)}k`;
   return amount.toFixed(0);
-};
-
-const entryFieldLabels: Record<string, string> = {
-  account_id: 'Account',
-  amount: 'Amount',
-  category: 'Category',
-  currency: 'Currency',
-  date: 'Date',
-  mode: 'Payment method',
-  source: 'Source',
-  title: 'Title',
-  type: 'Transaction type',
 };
 
 export default function HomeScreen() {
@@ -139,8 +105,6 @@ export default function HomeScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
-  const [isSavingEntry, setIsSavingEntry] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
   const [aiSourceText, setAiSourceText] = useState('');
@@ -153,27 +117,6 @@ export default function HomeScreen() {
     import('@/components/home/QuickPrompts').QuickPrompt | null
   >(null);
   const [modalMode, setModalMode] = useState<'audio' | 'manual' | 'quick-prompt'>('manual');
-
-  const onMicStop = useCallback(
-    (data: {
-      title?: string;
-      amount?: string;
-      category?: string;
-      date?: string;
-      type?: string;
-      mode?: string;
-    }) => {
-      const blank = createBlankForm();
-      setForm({
-        ...blank,
-        ...data,
-        amount: data.amount ? parseFloat(data.amount).toFixed(2) : '',
-      });
-      setModalMode('audio');
-      setIsEditOpen(true);
-    },
-    [createBlankForm]
-  );
 
   const handleQuickPromptSelect = useCallback(
     (prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
@@ -277,6 +220,7 @@ export default function HomeScreen() {
   };
 
   const [quickPromptKey, setQuickPromptKey] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const getInitialPromptData = (): Partial<
     import('@/components/transactions/TransactionFormModal').EntryForm
@@ -329,11 +273,17 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  const fetchNotificationCount = useCallback(async () => {
+    const count = await fetchUnreadNotificationCount(token);
+    setUnreadNotifications(count);
+  }, [token]);
+
   useFocusEffect(
     useCallback(() => {
       void fetchEntries();
       void fetchAccountOptions();
-    }, [fetchAccountOptions, fetchEntries])
+      void fetchNotificationCount();
+    }, [fetchAccountOptions, fetchEntries, fetchNotificationCount])
   );
 
   useEffect(
@@ -345,7 +295,6 @@ export default function HomeScreen() {
   );
 
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
-  const visibleSections = useMemo(() => sections.slice(0, 3), [sections]);
   const hasTransactions = sections.length > 0;
 
   const ensureMicPermission = useCallback(async () => {
@@ -499,8 +448,6 @@ export default function HomeScreen() {
 
   const handleConfirmEntry = useCallback(
     async (formData: EntryForm) => {
-      setFormError(null);
-      setIsSavingEntry(true);
       try {
         const resolvedAccount = await ensureAccountForEntry(formData);
         const parsedDate = parseDateLabel(formData.date);
@@ -508,14 +455,13 @@ export default function HomeScreen() {
         if (!createIdempotencyKey.current) {
           createIdempotencyKey.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         }
-        const response = await fetch(`${API_BASE_URL}/v1/entries`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Idempotency-Key': createIdempotencyKey.current,
-          },
-          body: JSON.stringify({
+        if (!token) {
+          throw new Error('Please sign in again before saving this transaction.');
+        }
+
+        const createdEntry = await createEntry(
+          token,
+          {
             amount: formData.amount.trim(),
             currency: formData.currency || DEFAULT_CURRENCY,
             source: modalMode === 'audio' ? aiInputSource : 'manual',
@@ -530,18 +476,9 @@ export default function HomeScreen() {
             merchant: formData.merchant.trim(),
             title: formData.title.trim() || 'Untitled Transaction',
             time: formData.time,
-          }),
-        });
-
-        if (!response.ok) {
-          throw await readApiError(
-            response,
-            'Unable to save the entry right now.',
-            entryFieldLabels
-          );
-        }
-
-        const createdEntry = (await response.json()) as ApiEntry;
+          },
+          createIdempotencyKey.current
+        );
         const createdTransaction = mapEntryToTransaction(createdEntry);
         setTransactions((current) => [
           createdTransaction,
@@ -559,10 +496,7 @@ export default function HomeScreen() {
           error instanceof Error
             ? error
             : new Error('Unable to save your entry. Please try again.');
-        setFormError(saveError.message);
         throw saveError;
-      } finally {
-        setIsSavingEntry(false);
       }
     },
     [aiInputSource, aiSourceText, createBlankForm, ensureAccountForEntry, modalMode, token]
@@ -577,33 +511,26 @@ export default function HomeScreen() {
     }
     setIsSubmitting(true);
     setErrorMessage(null);
-    setFormError(null);
     try {
-      const formData = new FormData();
+      let audio:
+        | {
+            uri: string;
+            name: string;
+            type: string;
+          }
+        | undefined;
       if (trimmed) {
-        formData.append('hint_text', trimmed);
+        audio = undefined;
       } else if (recordedUri) {
         const extension = recordedUri.split('.').pop();
         const fileName = `recording.${extension ?? 'm4a'}`;
-        formData.append('audio', {
+        audio = {
           uri: recordedUri,
           name: fileName,
           type: extension === 'wav' ? 'audio/wav' : 'audio/m4a',
-        } as unknown as Blob);
+        };
       }
-      formData.append('tz', getClientTimeZone());
-      const response = await fetch(`${API_BASE_URL}/v1/parse`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Unable to parse the entry right now.');
-      }
-      const data: ParseResponse = await response.json();
+      const data: ParseResponse = await parseEntryDraft({ token, hintText: trimmed, audio });
       createIdempotencyKey.current = null;
       setAiSourceText(data.source_text ?? trimmed);
       setAiInputSource(recordedUri ? 'voice' : 'text');
@@ -764,7 +691,10 @@ export default function HomeScreen() {
   return (
     <Screen>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <HomeHeader />
+        <HomeHeader
+          unreadCount={unreadNotifications}
+          onNotificationsPress={() => router.push('/notifications')}
+        />
 
         <View className="px-6 pb-4">
           <ThemedText className="text-xs text-gray-500 font-medium text-center">

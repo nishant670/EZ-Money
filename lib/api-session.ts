@@ -74,7 +74,7 @@ const shouldInvalidateSession = (
 
   const requestToken = getBearerToken(input, init);
   const currentToken = useAuthStore.getState().token;
-  return !requestToken || !currentToken || requestToken === currentToken;
+  return !!requestToken && !!currentToken && requestToken === currentToken;
 };
 
 const handleUnauthorized = () => {

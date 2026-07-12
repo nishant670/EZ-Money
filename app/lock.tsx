@@ -1,6 +1,5 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthPinLoginScreen } from '@/components/auth/AuthPinLoginScreen';
@@ -23,7 +22,7 @@ export default function LockScreen() {
     const handleUnlock = async (pin: string) => {
         if (!user) {
             clearAuth();
-            router.replace('/onboarding');
+            router.replace('/auth');
             return;
         }
 
@@ -70,7 +69,7 @@ export default function LockScreen() {
                 onContinue={handleUnlock}
                 onSecondary={() => {
                     clearAuth(); // Clear stale user data
-                    router.replace('/onboarding');
+                    router.replace('/auth');
                 }}
                 isLoading={isLoading}
                 errorMessage={error}

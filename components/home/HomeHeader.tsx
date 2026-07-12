@@ -6,10 +6,16 @@ import { Image, Pressable, View } from 'react-native';
 // Note: We'll use the local asset saved earlier
 const LOGO_IMG = require('@/assets/images/logo-white.png');
 
-export function HomeHeader() {
+type HomeHeaderProps = {
+  unreadCount?: number;
+  onNotificationsPress?: () => void;
+};
+
+export function HomeHeader({ unreadCount = 0, onNotificationsPress }: HomeHeaderProps) {
   const theme = useThemeTokens();
   const { user } = useAuthStore();
   const displayName = user?.username ? `${user.username}!` : 'Hey there!';
+  const visibleCount = unreadCount > 99 ? '99+' : String(unreadCount);
 
   return (
     <View className="flex-row items-center justify-between px-6 pt-2 pb-6">
@@ -36,8 +42,16 @@ export function HomeHeader() {
         </View>
       </View>
 
-      <Pressable>
+      <Pressable
+        onPress={onNotificationsPress}
+        className="h-10 w-10 items-center justify-center rounded-full"
+        hitSlop={12}>
         <MaterialCommunityIcons name="bell" size={24} color={theme.colors.text} />
+        {unreadCount > 0 && (
+          <View className="absolute -right-1 -top-1 min-w-5 h-5 rounded-full bg-[#FF7043] px-1 items-center justify-center border-2 border-white">
+            <ThemedText className="text-[10px] font-black text-white">{visibleCount}</ThemedText>
+          </View>
+        )}
       </Pressable>
     </View>
   );

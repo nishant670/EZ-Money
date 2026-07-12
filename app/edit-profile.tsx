@@ -18,13 +18,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { updateProfile, authOtpSend, authOtpVerify } from '@/lib/auth';
 
-const TView = cssInterop(ThemedView, { className: 'style' });
 const TText = cssInterop(ThemedText, { className: 'style' });
 
 export default function EditProfileScreen() {
@@ -83,7 +81,7 @@ export default function EditProfileScreen() {
     try {
       await authOtpSend(identifier);
       setShowOtp(true);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to send OTP. Please try again.');
     } finally {
       setIsLoading(false);
@@ -101,7 +99,7 @@ export default function EditProfileScreen() {
       setShowOtp(false);
       setOtpCode('');
       performUpdate(res.claim_token);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Invalid OTP. Please try again.');
     } finally {
       setIsVerifying(false);

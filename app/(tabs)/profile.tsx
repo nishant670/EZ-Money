@@ -21,7 +21,7 @@ export default function ProfileScreen() {
 
   const handleLogout = () => {
     clearAuth();
-    router.replace('/onboarding');
+    router.replace('/auth');
   };
   const isGuest = !!user?.is_guest;
 

@@ -51,16 +51,43 @@ export const AuthOTPVerificationScreen = ({
   const handleOtpChange = (text: string, index: number) => {
     setErrorMessage(null);
     const newOtp = [...otp];
-    newOtp[index] = text.slice(-1);
+
+    if (text.length > 1) {
+      const pastedDigits = text.replace(/\D/g, '').slice(0, otp.length - index).split('');
+      pastedDigits.forEach((digit, pastedIndex) => {
+        newOtp[index + pastedIndex] = digit;
+      });
+      setOtp(newOtp);
+      const nextIndex = Math.min(index + pastedDigits.length, otp.length - 1);
+      inputRefs.current[nextIndex]?.focus();
+      return;
+    }
+
+    newOtp[index] = text.replace(/\D/g, '').slice(-1);
     setOtp(newOtp);
 
-    if (text.length > 0 && index < 5) {
+    if (newOtp[index] && index < otp.length - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
 
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace' && otp[index] === '' && index > 0) {
+  const handleKeyPress = (event: { nativeEvent: { key: string } }, index: number) => {
+    if (event.nativeEvent.key !== 'Backspace') {
+      return;
+    }
+
+    setErrorMessage(null);
+    const newOtp = [...otp];
+
+    if (newOtp[index]) {
+      newOtp[index] = '';
+      setOtp(newOtp);
+      return;
+    }
+
+    if (index > 0) {
+      newOtp[index - 1] = '';
+      setOtp(newOtp);
       inputRefs.current[index - 1]?.focus();
     }
   };
@@ -169,7 +196,6 @@ export const AuthOTPVerificationScreen = ({
                 value={digit}
                 onChangeText={(text) => handleOtpChange(text, index)}
                 onKeyPress={(e) => handleKeyPress(e, index)}
-                selectTextOnFocus
               />
             </View>
           ))}

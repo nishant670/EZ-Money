@@ -16,7 +16,8 @@ export function FinnriSplashScreen({ onAnimationComplete }: FinnriSplashScreenPr
   const slideAnim = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
-    Animated.parallel([
+    let completionTimer: ReturnType<typeof setTimeout> | undefined;
+    const animation = Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 800,
@@ -33,15 +34,23 @@ export function FinnriSplashScreen({ onAnimationComplete }: FinnriSplashScreenPr
         duration: 800,
         useNativeDriver: true,
       }),
-    ]).start(() => {
-      // Optional: keep splash visible for a bit longer
-      setTimeout(() => {
-        if (onAnimationComplete) {
-          onAnimationComplete();
-        }
-      }, 1500);
+    ]);
+
+    animation.start(({ finished }) => {
+      if (finished) {
+        completionTimer = setTimeout(() => {
+          onAnimationComplete?.();
+        }, 1500);
+      }
     });
-  }, []);
+
+    return () => {
+      animation.stop();
+      if (completionTimer) {
+        clearTimeout(completionTimer);
+      }
+    };
+  }, [fadeAnim, onAnimationComplete, scaleAnim, slideAnim]);
 
   const logoBackground = colorScheme === 'light' ? '#2D2D2D' : theme.card;
 

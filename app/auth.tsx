@@ -53,7 +53,7 @@ export default function AuthFlow() {
 
   const changeStep = (newStep: number, transitionDirection: 'forward' | 'back' = 'forward') => {
     setDirection(transitionDirection);
-    setTimeout(() => setStep(newStep), 0);
+    setStep(newStep);
   };
 
   const handleGuestContinue = async () => {
@@ -189,10 +189,11 @@ export default function AuthFlow() {
           <AuthScreen1
             onContinue={() => {
               setGuestError(null);
-              changeStep(5, 'forward');
+              changeStep(2, 'forward');
             }}
             onSecondary={() => {
-              changeStep(2, 'forward');
+              setGuestError(null);
+              changeStep(5, 'forward');
             }}
           />
         );

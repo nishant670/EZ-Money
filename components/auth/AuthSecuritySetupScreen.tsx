@@ -115,9 +115,9 @@ export const AuthSecuritySetupScreen = ({
         </View>
 
         <View style={styles.textSection}>
-          <Text style={[styles.title, { color: theme.text, fontSize: 26 }]}>Keep your money safe!</Text>
+          <Text style={[styles.title, { color: theme.text, fontSize: 26 }]}>Protect your Finnri data</Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6 }]}>
-            Set up a PIN or enable Biometrics for quick and secure access.
+            Set up a PIN or enable Biometrics to keep your spending records private.
           </Text>
         </View>
 

@@ -2,7 +2,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
     SlideInLeft,
@@ -17,6 +17,7 @@ import Screen2 from '@/components/onboarding/Screen2';
 import Screen3 from '@/components/onboarding/Screen3';
 import Screen4 from '@/components/onboarding/Screen4';
 import Screen5 from '@/components/onboarding/Screen5';
+import { hasCompletedOnboarding, markOnboardingComplete } from '@/lib/onboarding';
 
 const { width } = Dimensions.get('window');
 
@@ -34,8 +35,30 @@ export default function OnboardingScreen() {
   const theme = Colors[colorScheme];
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
+  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
 
   const CurrentScreen = SCREENS[activeIndex].component;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const guardCompletedOnboarding = async () => {
+      if (await hasCompletedOnboarding()) {
+        router.replace('/auth');
+        return;
+      }
+
+      if (isMounted) {
+        setIsCheckingOnboarding(false);
+      }
+    };
+
+    guardCompletedOnboarding();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const handleNext = () => {
     if (activeIndex < SCREENS.length - 1) {
@@ -53,12 +76,17 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
+    await markOnboardingComplete();
     router.replace('/auth');
   };
 
   const enteringAnimation = direction === 'forward' ? SlideInRight.duration(400) : SlideInLeft.duration(400);
   const exitingAnimation = direction === 'forward' ? SlideOutLeft.duration(400) : SlideOutRight.duration(400);
+
+  if (isCheckingOnboarding) {
+    return null;
+  }
 
   return (
     <OnboardingScreenWrapper>

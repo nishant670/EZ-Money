@@ -1,7 +1,7 @@
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
     Easing,
@@ -12,12 +12,24 @@ import Animated, {
     withTiming
 } from 'react-native-reanimated';
 
+const samplePrompts = [
+  'Spent ₹250 on lunch via UPI',
+  'लंच पर UPI से ₹250 खर्च',
+  'लंचसाठी UPI ने ₹250 खर्च',
+  'లంచ్‌కు UPIతో ₹250 ఖర్చు',
+  'লাঞ্চে UPI দিয়ে ₹250 খরচ',
+];
+
+const waveformHeights = [12, 18, 14, 20];
+
 export default function Screen1() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const [promptIndex, setPromptIndex] = useState(0);
   
   const pulse1 = useSharedValue(1);
   const pulse2 = useSharedValue(1);
+  const promptOpacity = useSharedValue(1);
 
   useEffect(() => {
     pulse1.value = withRepeat(
@@ -29,7 +41,7 @@ export default function Screen1() {
       false
     );
     
-    setTimeout(() => {
+    const pulse2Timer = setTimeout(() => {
       pulse2.value = withRepeat(
         withSequence(
           withTiming(1.4, { duration: 1800, easing: Easing.out(Easing.quad) }),
@@ -39,7 +51,29 @@ export default function Screen1() {
         false
       );
     }, 500);
-  }, []);
+
+    return () => clearTimeout(pulse2Timer);
+  }, [pulse1, pulse2]);
+
+  useEffect(() => {
+    let nextPromptTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const interval = setInterval(() => {
+      promptOpacity.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) });
+
+      nextPromptTimer = setTimeout(() => {
+        setPromptIndex(current => (current + 1) % samplePrompts.length);
+        promptOpacity.value = withTiming(1, { duration: 350, easing: Easing.in(Easing.quad) });
+      }, 280);
+    }, 2200);
+
+    return () => {
+      clearInterval(interval);
+      if (nextPromptTimer) {
+        clearTimeout(nextPromptTimer);
+      }
+    };
+  }, [promptOpacity]);
 
   const animatedStyle1 = useAnimatedStyle(() => ({
     transform: [{ scale: pulse1.value }],
@@ -49,6 +83,10 @@ export default function Screen1() {
   const animatedStyle2 = useAnimatedStyle(() => ({
     transform: [{ scale: pulse2.value }],
     opacity: 0.2 - (pulse2.value - 1) * 0.2,
+  }));
+
+  const promptAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: promptOpacity.value,
   }));
 
   return (
@@ -62,29 +100,24 @@ export default function Screen1() {
           </View>
         </View>
 
-        <View style={[styles.speechBubble, { backgroundColor: theme.card }]}>
+        <View style={[styles.speechBubble, { backgroundColor: theme.card, marginBottom: 64 }]}>
           <View style={styles.waveform}>
-              {[1, 2, 3, 4].map(i => (
-                  <View key={i} style={[styles.waveItem, { backgroundColor: theme.accent, height: 10 + Math.random() * 10 }]} />
+              {waveformHeights.map((height, index) => (
+                  <View key={index} style={[styles.waveItem, { backgroundColor: theme.accent, height }]} />
               ))}
           </View>
-          <Text style={[styles.speechText, { color: theme.text }]}>Spent ₹250 on lunch via UPI</Text>
+          <Animated.Text style={[styles.speechText, { color: theme.text }, promptAnimatedStyle]}>
+            {samplePrompts[promptIndex]}
+          </Animated.Text>
         </View>
-
-        <View style={styles.languageRow}>
-          {['English', 'Hindi', 'Hinglish'].map(language => (
-            <View key={language} style={[styles.languageChip, { backgroundColor: theme.accent + '14' }]}>
-              <Text style={[styles.languageText, { color: theme.accent }]}>{language}</Text>
-            </View>
-          ))}
-        </View>
+        
 
         <View style={styles.textGroup}>
           <Text style={[styles.title, { color: theme.text, fontFamily: Fonts.title }]}>
-            Speak money in <Text style={{ color: theme.accent }}>your language</Text>
+            Speak money in{('\n')}<Text style={{ color: theme.accent }}>your language</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
-            Finnri understands English, Hindi, and Hinglish, so you can capture spends the way you naturally talk.
+            Finnri understands any language, so you can capture spends the way you naturally talk.
           </Text>
         </View>
       </View>
@@ -131,6 +164,9 @@ const styles = StyleSheet.create({
   speechBubble: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    minHeight: 50,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 30,
@@ -152,8 +188,10 @@ const styles = StyleSheet.create({
       borderRadius: 1.5,
   },
   speechText: {
+    flexShrink: 1,
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   languageRow: {
     flexDirection: 'row',

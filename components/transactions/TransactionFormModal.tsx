@@ -260,7 +260,10 @@ export function TransactionFormModal({
         setShowModal(false);
       });
     }
-  }, [visible, SCREEN_HEIGHT]); // removed initialData to prevent reset on type change if needed, but keeping for now as it syncs parent state
+    // Keep this tied to the visibility transition. Adding initialData would
+    // reset in-progress edits whenever the parent re-renders with a new object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, SCREEN_HEIGHT, backdropAnim, panelAnim, resolveEntryFormAccount, typeSwitchAnim]);
 
   useEffect(() => {
     if (!visible || mode === 'quick-prompt') {
@@ -529,6 +532,7 @@ export function TransactionFormModal({
                         color="#F97316"
                       />
                       <TextInput
+                        testID="entry-title-input"
                         value={form.title}
                         onChangeText={(t) => setForm((p) => ({ ...p, title: t }))}
                         className="text-base font-black flex-1 p-0"
@@ -549,6 +553,7 @@ export function TransactionFormModal({
                           {CURRENCY_SYMBOL}
                         </ThemedText>
                         <TextInput
+                          testID="entry-amount-input"
                           value={form.amount}
                           onChangeText={(text) => setForm((p) => ({ ...p, amount: text }))}
                           className="text-2xl font-black p-0 flex-1"
@@ -597,6 +602,7 @@ export function TransactionFormModal({
                         <MaterialCommunityIcons name="pencil-outline" size={18} color="#D1D5DB" />
                       </Pressable>
                       <Pressable
+                        testID="entry-account-picker"
                         onPress={() => setIsAccountPickerVisible(true)}
                         className="mt-4 w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
                         <View className="flex-row items-center gap-4">
@@ -755,6 +761,7 @@ export function TransactionFormModal({
 
                 <View className="px-6 gap-4">
                   <Pressable
+                    testID="entry-save-button"
                     onPress={handleConfirmEntry}
                     disabled={isSaving}
                     style={{ backgroundColor: accent }}
