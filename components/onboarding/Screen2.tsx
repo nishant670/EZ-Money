@@ -59,10 +59,10 @@ export default function Screen2() {
 
         <View style={styles.textGroup}>
           <Text style={[styles.title, { color: theme.text, fontFamily: Fonts.title }]}>
-            Finnri understands <Text style={{ color: theme.accent }}>your words</Text>
+            Finnri understands {('\n')}<Text style={{ color: theme.accent }}>your words</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
-            Whether it is English, Hindi, or Hinglish, AI extracts amount, category, date, and account.
+            Whether it is English, Hindi, or any language, AI extracts amount, category, date, and all.
           </Text>
         </View>
       </View>
