@@ -80,6 +80,19 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="split"
+        options={{
+          title: 'Split',
+          tabBarIcon: ({ color, focused }) => (
+            <MaterialCommunityIcons
+              size={28}
+              name={getMoodIconName(focused ? 'account-multiple' : 'account-multiple-outline', iconStyle, focused) as any}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

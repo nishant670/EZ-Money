@@ -1,0 +1,260 @@
+import { ApiFieldErrors, readApiError } from './api-error';
+import { API_BASE_URL } from './transactions';
+
+export type SplitDirection = 'friend_owes_user' | 'user_owes_friend';
+export type SettlementDirection = 'friend_paid_user' | 'user_paid_friend';
+
+export type SplitFriend = {
+  id: number;
+  user_id: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  archived: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SplitParticipant = {
+  id?: number;
+  user_id?: number;
+  bill_id?: number;
+  friend_id: number;
+  friend?: SplitFriend;
+  share_amount: number;
+  direction: SplitDirection;
+};
+
+export type SplitBill = {
+  id: number;
+  user_id: number;
+  entry_id?: number | null;
+  title: string;
+  total_amount: number;
+  currency: 'INR';
+  date: string;
+  notes?: string;
+  participants: SplitParticipant[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SplitSettlement = {
+  id: number;
+  user_id: number;
+  friend_id: number;
+  friend?: SplitFriend;
+  amount: number;
+  direction: SettlementDirection;
+  date: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SplitBalance = {
+  friend: SplitFriend;
+  total_owed_by_friend: number;
+  total_owed_to_friend: number;
+  net_balance: number;
+};
+
+export type SplitFriendPayload = {
+  name: string;
+  email?: string;
+  phone?: string;
+};
+
+export type SplitBillPayload = {
+  title: string;
+  total_amount: number;
+  currency?: 'INR';
+  date: string;
+  notes?: string;
+  participants: Array<{
+    friend_id: number;
+    share_amount: number;
+    direction: SplitDirection;
+  }>;
+};
+
+export type SplitSettlementPayload = {
+  friend_id: number;
+  amount: number;
+  direction: SettlementDirection;
+  date: string;
+  notes?: string;
+};
+
+export class SplitApiError extends Error {
+  status: number;
+  code?: string;
+  fields?: ApiFieldErrors;
+
+  constructor(message: string, status: number, code?: string, fields?: ApiFieldErrors) {
+    super(message);
+    this.name = 'SplitApiError';
+    this.status = status;
+    this.code = code;
+    this.fields = fields;
+  }
+}
+
+const splitFieldLabels: Record<string, string> = {
+  name: 'Friend name',
+  email: 'Email',
+  phone: 'Phone',
+  title: 'Bill title',
+  total_amount: 'Total amount',
+  date: 'Date',
+  participants: 'Friend shares',
+  friend_id: 'Friend',
+  share_amount: 'Share amount',
+  amount: 'Settlement amount',
+  direction: 'Direction',
+};
+
+const readSplitError = async (response: Response, fallback: string): Promise<SplitApiError> => {
+  const apiError = await readApiError(response, fallback, splitFieldLabels);
+  return new SplitApiError(apiError.message, apiError.status, apiError.code, apiError.fields);
+};
+
+const authHeaders = (token: string, json = false) => ({
+  ...(json ? { 'Content-Type': 'application/json' } : {}),
+  Authorization: `Bearer ${token}`,
+});
+
+const coerceAmount = (record: Record<string, unknown>, keys: string[]) => {
+  const next = { ...record };
+  for (const key of keys) {
+    if (next[key] != null) {
+      next[key] = Number(next[key]);
+    }
+  }
+  return next;
+};
+
+export const fetchSplitFriends = async (token: string): Promise<SplitFriend[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/friends`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load split friends right now.');
+  }
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error('The split friends response was invalid.');
+  }
+  return payload as SplitFriend[];
+};
+
+export const createSplitFriend = async (
+  token: string,
+  payload: SplitFriendPayload,
+): Promise<SplitFriend> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/friends`, {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to add this friend right now.');
+  }
+  return response.json();
+};
+
+export const archiveSplitFriend = async (token: string, friendId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/friends/${friendId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to archive this friend right now.');
+  }
+};
+
+export const fetchSplitBills = async (token: string): Promise<SplitBill[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/bills`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load split bills right now.');
+  }
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error('The split bills response was invalid.');
+  }
+  return (payload as SplitBill[]).map((bill) => ({
+    ...bill,
+    total_amount: Number(bill.total_amount),
+    participants: (bill.participants ?? []).map((participant) =>
+      coerceAmount(participant as unknown as Record<string, unknown>, ['share_amount']),
+    ) as SplitParticipant[],
+  }));
+};
+
+export const createSplitBill = async (
+  token: string,
+  payload: SplitBillPayload,
+): Promise<SplitBill> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/bills`, {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ ...payload, currency: payload.currency ?? 'INR' }),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to save this split bill right now.');
+  }
+  return response.json();
+};
+
+export const fetchSplitSettlements = async (token: string): Promise<SplitSettlement[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/settlements`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load settlements right now.');
+  }
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error('The settlements response was invalid.');
+  }
+  return (payload as SplitSettlement[]).map((settlement) => ({
+    ...settlement,
+    amount: Number(settlement.amount),
+  }));
+};
+
+export const createSplitSettlement = async (
+  token: string,
+  payload: SplitSettlementPayload,
+): Promise<SplitSettlement> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/settlements`, {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to record this settlement right now.');
+  }
+  return response.json();
+};
+
+export const fetchSplitBalances = async (token: string): Promise<SplitBalance[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/balances`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load split balances right now.');
+  }
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error('The split balances response was invalid.');
+  }
+  return (payload as SplitBalance[]).map((balance) => ({
+    ...balance,
+    total_owed_by_friend: Number(balance.total_owed_by_friend),
+    total_owed_to_friend: Number(balance.total_owed_to_friend),
+    net_balance: Number(balance.net_balance),
+  }));
+};
