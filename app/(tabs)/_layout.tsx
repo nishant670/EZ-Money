@@ -41,19 +41,6 @@ export default function TabLayout() {
         }),
       }}>
       <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              size={28}
-              name={getMoodIconName(focused ? 'home' : 'home-outline', iconStyle, focused) as any}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="insight"
         options={{
           title: 'Insights',
@@ -73,7 +60,22 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={getMoodIconName(focused ? 'wallet' : 'wallet-outline', iconStyle, focused) as any}
+              name={
+                getMoodIconName(focused ? 'wallet' : 'wallet-outline', iconStyle, focused) as any
+              }
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, focused }) => (
+            <MaterialCommunityIcons
+              size={28}
+              name={getMoodIconName(focused ? 'home' : 'home-outline', iconStyle, focused) as any}
               color={color}
             />
           ),
@@ -82,11 +84,18 @@ export default function TabLayout() {
       <Tabs.Screen
         name="split"
         options={{
+          href: null,
           title: 'Split',
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={getMoodIconName(focused ? 'account-multiple' : 'account-multiple-outline', iconStyle, focused) as any}
+              name={
+                getMoodIconName(
+                  focused ? 'account-multiple' : 'account-multiple-outline',
+                  iconStyle,
+                  focused
+                ) as any
+              }
               color={color}
             />
           ),
@@ -99,7 +108,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={getMoodIconName(focused ? 'calculator-variant' : 'calculator-variant-outline', iconStyle, focused) as any}
+              name={
+                getMoodIconName(
+                  focused ? 'calculator-variant' : 'calculator-variant-outline',
+                  iconStyle,
+                  focused
+                ) as any
+              }
               color={color}
             />
           ),
@@ -112,7 +127,9 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <MaterialCommunityIcons
               size={28}
-              name={getMoodIconName(focused ? 'account' : 'account-outline', iconStyle, focused) as any}
+              name={
+                getMoodIconName(focused ? 'account' : 'account-outline', iconStyle, focused) as any
+              }
               color={color}
             />
           ),

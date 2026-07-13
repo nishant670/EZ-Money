@@ -22,10 +22,13 @@ import {
   updateAccount,
 } from '@/lib/accounts';
 
+import SplitScreen from './split';
+
 const TView = cssInterop(ThemedView, { className: 'style' });
 const TText = cssInterop(ThemedText, { className: 'style' });
 
 type AccountFilter = 'all' | AccountType;
+type AccountsSection = 'accounts' | 'splits';
 
 const filterOptions: { key: AccountFilter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -38,6 +41,11 @@ const filterOptions: { key: AccountFilter; label: string }[] = [
   { key: 'other', label: 'Other' },
 ];
 
+const sectionOptions: { key: AccountsSection; label: string }[] = [
+  { key: 'accounts', label: 'Accounts' },
+  { key: 'splits', label: 'Splits' },
+];
+
 export default function AccountsScreen() {
   const router = useRouter();
   const themeTokens = useThemeTokens();
@@ -46,18 +54,13 @@ export default function AccountsScreen() {
   const { token } = useAuthStore();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeSection, setActiveSection] = useState<AccountsSection>('accounts');
   const [activeFilter, setActiveFilter] = useState<AccountFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingAccountId, setPendingAccountId] = useState<number | null>(null);
-  const surfaceColor = useMemo(
-    () => theme.card,
-    [theme.card]
-  );
-  const borderColor = useMemo(
-    () => theme.border,
-    [theme.border]
-  );
+  const surfaceColor = useMemo(() => theme.card, [theme.card]);
+  const borderColor = useMemo(() => theme.border, [theme.border]);
 
   const loadAccounts = useCallback(async () => {
     if (!token) {
@@ -180,22 +183,6 @@ export default function AccountsScreen() {
     );
   }
 
-  if (accounts.length === 0) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-        <View className="flex-1 justify-center">
-          <StateView
-            icon="wallet-outline"
-            title="No accounts yet"
-            message="Add a cash, bank, card, wallet, or UPI source so every transaction has the right account."
-            actionLabel="Add account"
-            onAction={handleAddAccount}
-          />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   const renderAccountRow = (account: Account) => {
     const iconName: Record<AccountType, keyof typeof MaterialCommunityIcons.glyphMap> = {
       cash: 'cash',
@@ -291,9 +278,7 @@ export default function AccountsScreen() {
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
       <TView className="flex-1" style={{ backgroundColor: theme.background }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ padding: 22, gap: 20 }}>
+        <View className="gap-4 px-[22px] pb-2 pt-[22px]">
           <View className="gap-2">
             <TText className="text-xl" style={{ fontFamily: Fonts.title }}>
               Accounts
@@ -301,32 +286,27 @@ export default function AccountsScreen() {
             <TText
               className="text-sm text-black/60 dark:text-white/60"
               style={{ fontFamily: Fonts.body }}>
-              Organize the cards, bank accounts, wallets, and UPI sources you use for transactions.
+              Organize payment sources and shared money balances.
             </TText>
           </View>
 
-          {error && (
-            <View className="rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
-              <TText className="text-center text-sm text-red-600 dark:text-red-300">{error}</TText>
-            </View>
-          )}
-
-          <View className="flex-row flex-wrap gap-2">
-            {filterOptions.map((option) => {
-              const isActive = option.key === activeFilter;
+          <View
+            className="flex-row rounded-2xl border p-1"
+            style={{ backgroundColor: surfaceColor, borderColor }}>
+            {sectionOptions.map((option) => {
+              const isActive = option.key === activeSection;
               return (
                 <Pressable
                   key={option.key}
                   accessibilityRole="button"
-                  onPress={() => setActiveFilter(option.key)}
-                  className="rounded-2xl px-4 py-2"
+                  accessibilityState={{ selected: isActive }}
+                  onPress={() => setActiveSection(option.key)}
+                  className="flex-1 rounded-xl px-4 py-3"
                   style={{
                     backgroundColor: isActive ? theme.accent : 'transparent',
-                    borderColor: isActive ? 'transparent' : borderColor,
-                    borderWidth: 1,
                   }}>
                   <TText
-                    className="text-xs"
+                    className="text-center text-xs"
                     style={{
                       fontFamily: Fonts.title,
                       color: isActive ? '#FFFFFF' : theme.text,
@@ -337,30 +317,90 @@ export default function AccountsScreen() {
               );
             })}
           </View>
+        </View>
 
-          <View className="gap-3">{filteredAccounts.map(renderAccountRow)}</View>
+        {activeSection === 'splits' ? (
+          <SplitScreen embedded />
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: 22,
+              paddingTop: 16,
+              paddingBottom: 110,
+              gap: 20,
+            }}>
+            {error && (
+              <View className="rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
+                <TText className="text-center text-sm text-red-600 dark:text-red-300">
+                  {error}
+                </TText>
+              </View>
+            )}
 
-          {filteredAccounts.length === 0 && (
-            <StateView
-              icon="filter-off-outline"
-              title="No accounts match"
-              message="Clear this filter to see the rest of your accounts."
-              actionLabel="Show all accounts"
-              onAction={() => setActiveFilter('all')}
-              compact
-            />
-          )}
+            {accounts.length === 0 ? (
+              <StateView
+                icon="wallet-outline"
+                title="No accounts yet"
+                message="Add a cash, bank, card, wallet, or UPI source so every transaction has the right account."
+                actionLabel="Add account"
+                onAction={handleAddAccount}
+              />
+            ) : (
+              <>
+                <View className="flex-row flex-wrap gap-2">
+                  {filterOptions.map((option) => {
+                    const isActive = option.key === activeFilter;
+                    return (
+                      <Pressable
+                        key={option.key}
+                        accessibilityRole="button"
+                        onPress={() => setActiveFilter(option.key)}
+                        className="rounded-2xl px-4 py-2"
+                        style={{
+                          backgroundColor: isActive ? theme.accent : 'transparent',
+                          borderColor: isActive ? 'transparent' : borderColor,
+                          borderWidth: 1,
+                        }}>
+                        <TText
+                          className="text-xs"
+                          style={{
+                            fontFamily: Fonts.title,
+                            color: isActive ? '#FFFFFF' : theme.text,
+                          }}>
+                          {option.label}
+                        </TText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
 
-          <Pressable
-            accessibilityRole="button"
-            onPress={handleAddAccount}
-            className="rounded-3xl border py-3"
-            style={{ borderColor }}>
-            <TText className="text-center text-sm" style={{ fontFamily: Fonts.title }}>
-              Add another account
-            </TText>
-          </Pressable>
-        </ScrollView>
+                <View className="gap-3">{filteredAccounts.map(renderAccountRow)}</View>
+
+                {filteredAccounts.length === 0 && (
+                  <StateView
+                    icon="filter-off-outline"
+                    title="No accounts match"
+                    message="Clear this filter to see the rest of your accounts."
+                    actionLabel="Show all accounts"
+                    onAction={() => setActiveFilter('all')}
+                    compact
+                  />
+                )}
+
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={handleAddAccount}
+                  className="rounded-3xl border py-3"
+                  style={{ borderColor }}>
+                  <TText className="text-center text-sm" style={{ fontFamily: Fonts.title }}>
+                    Add another account
+                  </TText>
+                </Pressable>
+              </>
+            )}
+          </ScrollView>
+        )}
       </TView>
     </SafeAreaView>
   );

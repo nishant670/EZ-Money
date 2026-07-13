@@ -65,7 +65,11 @@ const todayApiDate = () => {
 
 const parseAmount = (value: string) => Number(value.replace(/,/g, '').trim());
 
-export default function SplitScreen() {
+type SplitScreenProps = {
+  embedded?: boolean;
+};
+
+export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const { token } = useAuthStore();
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
@@ -332,11 +336,11 @@ export default function SplitScreen() {
 
   if (loading && balances.length === 0 && friends.length === 0) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+      <SplitScreenFrame embedded={embedded} backgroundColor={theme.background}>
         <View className="flex-1 justify-center">
           <StateView icon="account-multiple-outline" title="Loading splits" loading />
         </View>
-      </SafeAreaView>
+      </SplitScreenFrame>
     );
   }
 
@@ -381,9 +385,7 @@ export default function SplitScreen() {
             <TText className="text-base" style={{ fontFamily: Fonts.title }}>
               {balance.friend.name}
             </TText>
-            <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
-              {label}
-            </TText>
+            <TText className="mt-1 text-xs text-black/60 dark:text-white/60">{label}</TText>
           </View>
           <TText className="text-base" style={{ color: amountColor, fontFamily: Fonts.title }}>
             {formatMoney(balance.net_balance)}
@@ -398,19 +400,21 @@ export default function SplitScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
+    <SplitScreenFrame embedded={embedded} backgroundColor={theme.background}>
       <TView className="flex-1" style={{ backgroundColor: theme.background }}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: 22, gap: 18, paddingBottom: 110 }}>
-          <View className="gap-2">
-            <TText className="text-xl" style={{ fontFamily: Fonts.title }}>
-              Split
-            </TText>
-            <TText className="text-sm text-black/60 dark:text-white/60">
-              Track shared bills, friend balances, and settlements.
-            </TText>
-          </View>
+          {!embedded && (
+            <View className="gap-2">
+              <TText className="text-xl" style={{ fontFamily: Fonts.title }}>
+                Split
+              </TText>
+              <TText className="text-sm text-black/60 dark:text-white/60">
+                Track shared bills, friend balances, and settlements.
+              </TText>
+            </View>
+          )}
 
           {error && (
             <View className="rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
@@ -432,7 +436,11 @@ export default function SplitScreen() {
           </View>
 
           <View className="flex-row gap-2">
-            <ActionButton icon="account-plus-outline" label="Friend" onPress={() => openModal('friend')} />
+            <ActionButton
+              icon="account-plus-outline"
+              label="Friend"
+              onPress={() => openModal('friend')}
+            />
             <ActionButton
               icon="receipt-text-plus-outline"
               label="Bill"
@@ -553,7 +561,9 @@ export default function SplitScreen() {
           <View className="gap-2">
             <TText className="text-xs text-black/60 dark:text-white/60">Friend</TText>
             <View className="flex-row flex-wrap gap-2">
-              {friends.map((friend) => renderFriendChip(friend, selectedFriendId, setSelectedFriendId))}
+              {friends.map((friend) =>
+                renderFriendChip(friend, selectedFriendId, setSelectedFriendId)
+              )}
             </View>
           </View>
           <View className="flex-row gap-2">
@@ -605,12 +615,7 @@ export default function SplitScreen() {
               })}
             </View>
           )}
-          <FormInput
-            label="Notes"
-            value={billNotes}
-            onChangeText={setBillNotes}
-            multiline
-          />
+          <FormInput label="Notes" value={billNotes} onChangeText={setBillNotes} multiline />
           <PrimaryModalButton
             label="Save bill"
             loading={saving}
@@ -659,6 +664,26 @@ export default function SplitScreen() {
           />
         </SplitModal>
       </TView>
+    </SplitScreenFrame>
+  );
+}
+
+function SplitScreenFrame({
+  embedded,
+  backgroundColor,
+  children,
+}: {
+  embedded: boolean;
+  backgroundColor: string;
+  children: ReactNode;
+}) {
+  if (embedded) {
+    return <>{children}</>;
+  }
+
+  return (
+    <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
+      {children}
     </SafeAreaView>
   );
 }
@@ -674,7 +699,9 @@ function SummaryCard({
 }) {
   const theme = useThemeTokens().colors;
   return (
-    <View className="flex-1 rounded-2xl border p-4" style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+    <View
+      className="flex-1 rounded-2xl border p-4"
+      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
       <MaterialCommunityIcons name={icon} size={22} color={theme.accent} />
       <TText className="mt-3 text-xs text-black/60 dark:text-white/60">{label}</TText>
       <TText className="mt-1 text-base" style={{ fontFamily: Fonts.title }}>
