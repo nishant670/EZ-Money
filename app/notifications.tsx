@@ -18,6 +18,8 @@ import {
 type Filter = 'all' | 'unread' | 'read';
 
 const iconForType = (type: string): keyof typeof MaterialCommunityIcons.glyphMap => {
+  if (type.includes('budget')) return 'chart-donut';
+  if (type.includes('subscription')) return 'calendar-sync-outline';
   if (type.includes('created')) return 'plus-circle-outline';
   if (type.includes('updated')) return 'pencil-circle-outline';
   if (type.includes('deleted')) return 'trash-can-outline';

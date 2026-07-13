@@ -140,6 +140,44 @@ export default function ProfileScreen() {
                 Security & Privacy{'\n'}Control
               </TText>
             </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/budgets')}
+              className="w-[48%] p-5 rounded-[32px]"
+              style={{ backgroundColor: cardColor }}>
+              <View
+                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
+                style={{ backgroundColor: '#E0F2F1' }}>
+                <MaterialCommunityIcons name="chart-donut" size={20} color="#00796B" />
+              </View>
+              <TText
+                className="text-base font-bold leading-tight"
+                style={{ fontFamily: Fonts.title }}>
+                Budget Watch
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Monthly Limits{'\n'}& In-App Alerts
+              </TText>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/subscriptions')}
+              className="w-[48%] p-5 rounded-[32px]"
+              style={{ backgroundColor: cardColor }}>
+              <View
+                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
+                style={{ backgroundColor: '#EDE7F6' }}>
+                <MaterialCommunityIcons name="calendar-sync-outline" size={20} color="#5E35B1" />
+              </View>
+              <TText
+                className="text-base font-bold leading-tight"
+                style={{ fontFamily: Fonts.title }}>
+                Subscriptions
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Bills, Apps{'\n'}& Renewal Dates
+              </TText>
+            </Pressable>
           </View>
 
           {/* Smart Sorting */}
