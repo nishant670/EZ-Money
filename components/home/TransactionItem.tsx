@@ -19,6 +19,7 @@ interface TransactionItemProps {
   onPress?: () => void;
   variant?: 'card' | 'list';
   showDivider?: boolean;
+  maskAmount?: boolean;
 }
 
 export function TransactionItem({
@@ -34,6 +35,7 @@ export function TransactionItem({
   onPress,
   variant = 'card',
   showDivider = false,
+  maskAmount = false,
 }: TransactionItemProps) {
   const theme = useThemeTokens();
   const isList = variant === 'list';
@@ -125,7 +127,7 @@ export function TransactionItem({
             ]}>
             {isIncome ? '+' : '-'}
             {CURRENCY_SYMBOL}
-            {amount}
+            {maskAmount ? '••••' : amount}
           </ThemedText>
           {date ? (
             <ThemedText

@@ -29,10 +29,29 @@ export type DashboardAccount = {
 };
 
 export type InsightCard = {
-    kind: 'period_comparison' | 'category_increase' | 'top_merchant' | 'account_usage' | 'unusual_spending';
+    kind:
+        | 'period_comparison'
+        | 'category_increase'
+        | 'top_merchant'
+        | 'account_usage'
+        | 'unusual_spending'
+        | 'recurring_candidate';
     severity: 'info' | 'warning' | 'success';
     title: string;
     body: string;
+};
+
+export type DashboardRecurringCandidate = {
+    label: string;
+    merchant: string;
+    category: string;
+    average_amount: number;
+    interval_guess: 'weekly' | 'monthly';
+    confidence: number;
+    occurrences: number;
+    last_seen_date: string;
+    next_expected_date: string;
+    review_due: boolean;
 };
 
 export type DashboardResponse = {
@@ -43,6 +62,7 @@ export type DashboardResponse = {
     account_spending: DashboardAccount[];
     recent_transactions: ApiEntry[];
     insights: InsightCard[];
+    recurring_candidates: DashboardRecurringCandidate[];
 };
 
 export const fetchDashboard = async (

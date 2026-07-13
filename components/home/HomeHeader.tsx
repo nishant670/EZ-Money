@@ -49,9 +49,22 @@ export function HomeHeader({ unreadCount = 0, onNotificationsPress }: HomeHeader
         <MaterialCommunityIcons name="bell" size={24} color={theme.colors.text} />
         {unreadCount > 0 && (
           <View
-            className="absolute -right-1 -top-1 h-5 min-w-5 items-center justify-center rounded-full border-2 border-white px-1"
-            style={{ backgroundColor: theme.colors.accent }}>
-            <ThemedText className="text-[10px] font-black text-white">{visibleCount}</ThemedText>
+            className="absolute -right-1 -top-1 h-5 min-w-5 items-center justify-center rounded-full px-1"
+            style={{
+              backgroundColor: theme.colors.accent,
+              borderWidth: 2,
+              borderColor: theme.mode === 'dark' ? theme.colors.background : '#FFFFFF',
+            }}>
+            <ThemedText
+              className="text-[10px] font-black text-white"
+              style={{
+                width: '100%',
+                textAlign: 'center',
+                lineHeight: 10,
+                includeFontPadding: false,
+              }}>
+              {visibleCount}
+            </ThemedText>
           </View>
         )}
       </Pressable>

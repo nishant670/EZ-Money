@@ -2,13 +2,15 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import React from 'react';
-import { Pressable, ScrollView, Switch, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as LocalAuthentication from 'expo-local-authentication';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { deleteLocalSecurityPin, hasLocalSecurityPin } from '@/lib/security';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
@@ -17,32 +19,80 @@ export default function SecurityScreen() {
   const theme = Colors[colorScheme];
   const router = useRouter();
   const { user, updateUser } = useAuthStore();
+  const [isCheckingLock, setIsCheckingLock] = React.useState(false);
+  const [isCheckingBiometrics, setIsCheckingBiometrics] = React.useState(false);
 
   const backgroundColor = colorScheme === 'light' ? '#FDFBFF' : theme.background;
   const cardColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
 
-  const toggleLock = () => updateUser({ has_pin: !user?.has_pin });
-  const toggleBiometrics = () => updateUser({ biometrics_enabled: !user?.biometrics_enabled });
-  const toggleStealthMode = () => updateUser({ stealth_mode: !user?.stealth_mode });
+  const showSecurityAlert = (message: string) => {
+    Alert.alert('Security settings', message);
+  };
 
-  const activeSessions = [
-    {
-      id: '1',
-      device: 'iPhone 15 Pro',
-      location: 'London, UK',
-      status: 'Current',
-      time: 'Active now',
-      icon: 'cellphone',
-    },
-    {
-      id: '2',
-      device: 'MacBook Air',
-      location: 'London, UK',
-      status: '',
-      time: '2 days ago',
-      icon: 'laptop',
-    },
-  ];
+  const toggleLock = async (enabled: boolean) => {
+    if (!user?.uuid || isCheckingLock) return;
+
+    setIsCheckingLock(true);
+    try {
+      if (enabled) {
+        if (await hasLocalSecurityPin(user.uuid)) {
+          updateUser({ has_pin: true });
+          return;
+        }
+        router.push('/change-pin');
+        return;
+      }
+
+      await deleteLocalSecurityPin(user.uuid);
+      updateUser({ has_pin: false });
+    } catch {
+      showSecurityAlert('Unable to update your app lock right now.');
+    } finally {
+      setIsCheckingLock(false);
+    }
+  };
+
+  const toggleBiometrics = async (enabled: boolean) => {
+    if (!user?.uuid || isCheckingBiometrics) return;
+
+    if (!enabled) {
+      updateUser({ biometrics_enabled: false });
+      return;
+    }
+
+    setIsCheckingBiometrics(true);
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      if (!hasHardware) {
+        showSecurityAlert('This device does not support biometric unlock.');
+        return;
+      }
+
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!isEnrolled) {
+        showSecurityAlert('Set up Face ID, Touch ID, or device biometrics before enabling this.');
+        return;
+      }
+
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Enable biometric unlock',
+        fallbackLabel: 'Use device passcode',
+      });
+
+      if (!result.success) {
+        showSecurityAlert('Biometric verification was cancelled or failed.');
+        return;
+      }
+
+      updateUser({ biometrics_enabled: true });
+    } catch {
+      showSecurityAlert('Unable to enable biometric unlock right now.');
+    } finally {
+      setIsCheckingBiometrics(false);
+    }
+  };
+
+  const toggleStealthMode = (enabled: boolean) => updateUser({ stealth_mode: enabled });
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
@@ -128,10 +178,18 @@ export default function SecurityScreen() {
                 </View>
                 <Switch
                   value={!!user?.has_pin}
-                  onValueChange={toggleLock}
+                  onValueChange={(enabled) => void toggleLock(enabled)}
+                  disabled={isCheckingLock}
                   trackColor={{ false: '#E0E0E0', true: theme.accent }}
                   thumbColor="white"
                 />
+                {isCheckingLock && (
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.accent}
+                    style={{ position: 'absolute', right: 22 }}
+                  />
+                )}
               </View>
 
               <Pressable
@@ -199,10 +257,18 @@ export default function SecurityScreen() {
               </View>
               <Switch
                 value={!!user?.biometrics_enabled}
-                onValueChange={toggleBiometrics}
+                onValueChange={(enabled) => void toggleBiometrics(enabled)}
+                disabled={isCheckingBiometrics}
                 trackColor={{ false: '#E0E0E0', true: theme.accent }}
                 thumbColor="white"
               />
+              {isCheckingBiometrics && (
+                <ActivityIndicator
+                  size="small"
+                  color={theme.accent}
+                  style={{ position: 'absolute', right: 22 }}
+                />
+              )}
             </View>
           </View>
 
@@ -248,60 +314,6 @@ export default function SecurityScreen() {
                 trackColor={{ false: '#E0E0E0', true: theme.accent }}
                 thumbColor="white"
               />
-            </View>
-          </View>
-
-          {/* ACTIVE SESSIONS Section */}
-          <View>
-            <TText
-              className="text-xs font-black tracking-widest opacity-40 mb-4 px-2"
-              style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
-              ACTIVE SESSIONS
-            </TText>
-            <View className="gap-4">
-              {activeSessions.map((session) => (
-                <View
-                  key={session.id}
-                  className="rounded-[32px] flex-row items-center p-5"
-                  style={{
-                    backgroundColor: cardColor,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.03,
-                    shadowRadius: 10,
-                    elevation: 2,
-                  }}>
-                  <View
-                    className="w-12 h-12 rounded-2xl items-center justify-center mr-4"
-                    style={{ backgroundColor: '#F5F5F5' }}>
-                    <MaterialCommunityIcons name={session.icon as any} size={22} color="#757575" />
-                  </View>
-                  <View className="flex-1">
-                    <View className="flex-row items-center">
-                      <TText
-                        className="text-sm font-black mr-2"
-                        style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
-                        {session.device}
-                      </TText>
-                      {session.status === 'Current' && (
-                        <View className="bg-emerald-100 px-2 py-0.5 rounded-md">
-                          <TText className="text-[10px] font-black text-emerald-600 uppercase">
-                            CURRENT
-                          </TText>
-                        </View>
-                      )}
-                    </View>
-                    <TText
-                      className="text-xs opacity-50 font-medium"
-                      style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
-                      {session.location} • {session.time}
-                    </TText>
-                  </View>
-                  <Pressable hitSlop={15}>
-                    <MaterialCommunityIcons name="close-circle" size={24} color={theme.accent} />
-                  </Pressable>
-                </View>
-              ))}
             </View>
           </View>
         </View>

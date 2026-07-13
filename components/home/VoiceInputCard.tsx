@@ -170,40 +170,46 @@ export function VoiceInputCard({
           style={{
             alignSelf: 'stretch',
             flexDirection: 'row',
-            gap: theme.spacing.sm,
+            flexWrap: 'wrap',
+            columnGap: theme.spacing.sm,
+            rowGap: theme.spacing.sm,
           }}>
           <Pressable
             onPress={onProcess}
             disabled={isProcessing}
             style={({ pressed }) => ({
-              flex: 1,
-              flexBasis: 0,
+              flexGrow: 1,
+              flexShrink: 1,
+              flexBasis: 132,
               minWidth: 0,
               opacity: pressed ? 0.9 : isProcessing ? 0.7 : 1,
               transform: [{ scale: pressed ? 0.98 : 1 }],
             })}>
             <View
               style={{
-                height: 40,
+                height: 38,
                 width: '100%',
-                borderRadius: 20,
-                paddingHorizontal: 8,
+                borderRadius: 19,
+                paddingHorizontal: 6,
                 backgroundColor: colors.accent,
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 4,
+                gap: 3,
               }}>
               {isProcessing ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <>
-                  <MaterialCommunityIcons name="flash" size={15} color="#FFFFFF" />
+                  <MaterialCommunityIcons name="flash" size={14} color="#FFFFFF" />
                   <ThemedText
                     numberOfLines={1}
                     style={{
                       color: '#FFFFFF',
-                      ...theme.typography.button,
+                      fontSize: 12,
+                      lineHeight: 14,
+                      fontFamily: theme.typography.button.fontFamily,
+                      fontWeight: theme.typography.button.fontWeight,
                     }}>
                     Process
                   </ThemedText>
@@ -216,25 +222,39 @@ export function VoiceInputCard({
             onPress={onClear}
             disabled={isProcessing}
             style={({ pressed }) => ({
-              flex: 1,
-              flexBasis: 0,
+              flexGrow: 1,
+              flexShrink: 1,
+              flexBasis: 132,
               minWidth: 0,
               opacity: pressed ? 0.8 : 1,
               transform: [{ scale: pressed ? 0.98 : 1 }],
             })}>
             <View
               style={{
-                height: 40,
+                height: 38,
                 width: '100%',
-                borderRadius: 20,
-                paddingHorizontal: 8,
+                borderRadius: 19,
+                paddingHorizontal: 6,
                 backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F3F4F6',
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
+                gap: 3,
               }}>
-              <MaterialCommunityIcons name="close" size={15} color={isDark ? 'rgba(255,255,255,0.72)' : '#5E6C84'} />
-              <ThemedText numberOfLines={1} style={{ ...theme.typography.button, color: isDark ? 'rgba(255,255,255,0.72)' : '#5E6C84' }}>
+              <MaterialCommunityIcons
+                name="close"
+                size={14}
+                color={isDark ? 'rgba(255,255,255,0.72)' : '#5E6C84'}
+              />
+              <ThemedText
+                numberOfLines={1}
+                style={{
+                  color: isDark ? 'rgba(255,255,255,0.72)' : '#5E6C84',
+                  fontSize: 12,
+                  lineHeight: 14,
+                  fontFamily: theme.typography.button.fontFamily,
+                  fontWeight: theme.typography.button.fontWeight,
+                }}>
                 Cancel
               </ThemedText>
             </View>
@@ -332,16 +352,11 @@ export function VoiceInputCard({
       ) : null}
 
       <TextAction
-        label="I prefer to write"
+        label="I Prefer To Write"
         onPress={onToggleTextInput}
         disabled={isProcessing || isRecording}
-        style={styles.writeToggle}>
-        <MaterialCommunityIcons
-          name={shouldShowTextInput ? 'chevron-up' : 'chevron-down'}
-          size={16}
-          color={isDark ? 'rgba(255,255,255,0.54)' : 'rgba(45,45,45,0.46)'}
-        />
-      </TextAction>
+        style={styles.writeToggle}
+      />
 
       {shouldShowTextInput ? (
         <Animated.View

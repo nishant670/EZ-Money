@@ -38,6 +38,7 @@ import {
 import { createEntry } from '@/lib/entries';
 import { formatDisplayTime } from '@/lib/datetime';
 import { parseEntryDraft, type ParseResponse } from '@/lib/parse';
+import { fetchSplitFriends, fetchSplitGroups, type SplitFriend, type SplitGroup } from '@/lib/splits';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import {
   TransactionFormModal,
@@ -58,7 +59,8 @@ export default function HomeScreen() {
   const theme = themeTokens.colors;
   const isDark = themeTokens.mode === 'dark';
   const router = useRouter();
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
+  const isStealthMode = !!user?.stealth_mode;
 
   const defaultForm = useMemo(
     () => ({
@@ -76,11 +78,17 @@ export default function HomeScreen() {
       account: '',
       merchant: '',
       attachment: null,
+      splitEnabled: false,
+      splitGroupId: null,
+      splitGroupName: '',
+      splitParticipants: [],
     }),
     []
   );
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [splitFriends, setSplitFriends] = useState<SplitFriend[]>([]);
+  const [splitGroups, setSplitGroups] = useState<SplitGroup[]>([]);
   const createBlankForm = useCallback(
     (): EntryForm => ({
       ...defaultForm,
@@ -274,6 +282,25 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  const fetchSplitOptions = useCallback(async () => {
+    if (!token) {
+      setSplitFriends([]);
+      setSplitGroups([]);
+      return;
+    }
+    try {
+      const [friends, groups] = await Promise.all([
+        fetchSplitFriends(token),
+        fetchSplitGroups(token),
+      ]);
+      setSplitFriends(friends);
+      setSplitGroups(groups);
+    } catch {
+      setSplitFriends([]);
+      setSplitGroups([]);
+    }
+  }, [token]);
+
   const fetchNotificationCount = useCallback(async () => {
     const count = await fetchUnreadNotificationCount(token);
     setUnreadNotifications(count);
@@ -287,8 +314,9 @@ export default function HomeScreen() {
       }
       void fetchEntries();
       void fetchAccountOptions();
+      void fetchSplitOptions();
       void fetchNotificationCount();
-    }, [fetchAccountOptions, fetchEntries, fetchNotificationCount])
+    }, [fetchAccountOptions, fetchEntries, fetchNotificationCount, fetchSplitOptions])
   );
 
   useEffect(
@@ -463,6 +491,20 @@ export default function HomeScreen() {
         if (!token) {
           throw new Error('Please sign in again before saving this transaction.');
         }
+        const splitPayload =
+          formData.splitEnabled && formData.type === 'Expense'
+            ? {
+                group_id: formData.splitGroupId,
+                group_name: formData.splitGroupId ? '' : formData.splitGroupName.trim(),
+                participants: formData.splitParticipants.map((participant) => ({
+                  ...(participant.friendId
+                    ? { friend_id: participant.friendId }
+                    : { friend: { name: participant.friendName.trim() } }),
+                  share_amount: participant.shareAmount.trim(),
+                  direction: participant.direction,
+                })),
+              }
+            : undefined;
 
         const createdEntry = await createEntry(
           token,
@@ -481,6 +523,7 @@ export default function HomeScreen() {
             merchant: formData.merchant.trim(),
             title: formData.title.trim() || 'Untitled Transaction',
             time: formData.time,
+            ...(splitPayload ? { split: splitPayload } : {}),
           },
           createIdempotencyKey.current
         );
@@ -496,6 +539,7 @@ export default function HomeScreen() {
         setAiSourceText('');
         setIsEditOpen(false);
         notifyTransactionsChanged();
+        void fetchSplitOptions();
       } catch (error) {
         const saveError =
           error instanceof Error
@@ -504,7 +548,7 @@ export default function HomeScreen() {
         throw saveError;
       }
     },
-    [aiInputSource, aiSourceText, createBlankForm, ensureAccountForEntry, modalMode, token]
+    [aiInputSource, aiSourceText, createBlankForm, ensureAccountForEntry, fetchSplitOptions, modalMode, token]
   );
 
   const handleSubmitPrompt = useCallback(async () => {
@@ -614,6 +658,7 @@ export default function HomeScreen() {
     }
 
     const recentTransactions = transactions.slice(0, 5);
+    const groupedRecentTransactions = groupTransactionsBySection(recentTransactions);
     const todayCount = transactions.filter(
       (item) => item.section === 'Today' || item.dateLabel === 'Today'
     ).length;
@@ -632,40 +677,65 @@ export default function HomeScreen() {
 
         <View className="px-6">
           <Card compact style={{ overflow: 'hidden', padding: 0 }}>
-            {recentTransactions.map((item, index) => (
-              <TransactionItem
-                key={item.id}
-                title={item.name}
-                icon={item.icon}
-                category={item.category}
-                subtitle={item.accountName ?? item.mode ?? ''}
-                amount={Math.abs(item.amount).toFixed(2)}
-                date={item.section}
-                color={item.color}
-                bgColor={item.bgColor}
-                isIncome={item.entryType === 'income'}
-                variant="list"
-                showDivider={index < recentTransactions.length - 1}
-                onPress={() => {
-                  router.push({
-                    pathname: '/entry/[id]',
-                    params: {
-                      id: item.id,
-                      name: item.name,
-                      category: item.category,
-                      amount: Math.abs(item.amount).toFixed(2),
-                      entryType: item.entryType ?? 'expense',
-                      section: item.section,
-                      mode: item.mode ?? '',
-                      notes: item.notes ?? '',
-                      merchant: item.merchant ?? '',
-                      dateLabel: item.dateLabel ?? '',
-                      rawDate: item.rawDate ?? '',
-                      tag: item.tag ?? '',
-                    },
-                  });
-                }}
-              />
+            {groupedRecentTransactions.map((group, groupIndex) => (
+              <View key={group.title}>
+                <View
+                  style={{
+                    paddingHorizontal: themeTokens.spacing.lg,
+                    paddingTop: groupIndex === 0 ? themeTokens.spacing.md : themeTokens.spacing.lg,
+                    paddingBottom: themeTokens.spacing.xs,
+                  }}>
+                  <ThemedText
+                    variant="micro"
+                    style={{
+                      color: isDark ? 'rgba(255,255,255,0.5)' : '#9A9697',
+                      textTransform: 'uppercase',
+                      letterSpacing: 1,
+                    }}>
+                    {group.title}
+                  </ThemedText>
+                </View>
+                {group.data.map((item, index) => {
+                  const isLastInSection = index === group.data.length - 1;
+                  const isLastSection = groupIndex === groupedRecentTransactions.length - 1;
+                  return (
+                    <TransactionItem
+                      key={item.id}
+                      title={item.name}
+                      icon={item.icon}
+                      category={item.category}
+                      subtitle={item.accountName ?? item.mode ?? ''}
+                      amount={Math.abs(item.amount).toFixed(2)}
+                      maskAmount={isStealthMode}
+                      date={item.timeLabel ?? item.dateLabel ?? ''}
+                      color={item.color}
+                      bgColor={item.bgColor}
+                      isIncome={item.entryType === 'income'}
+                      variant="list"
+                      showDivider={!isLastInSection || !isLastSection}
+                      onPress={() => {
+                        router.push({
+                          pathname: '/entry/[id]',
+                          params: {
+                            id: item.id,
+                            name: item.name,
+                            category: item.category,
+                            amount: Math.abs(item.amount).toFixed(2),
+                            entryType: item.entryType ?? 'expense',
+                            section: item.section,
+                            mode: item.mode ?? '',
+                            notes: item.notes ?? '',
+                            merchant: item.merchant ?? '',
+                            dateLabel: item.dateLabel ?? '',
+                            rawDate: item.rawDate ?? '',
+                            tag: item.tag ?? '',
+                          },
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </View>
             ))}
             <View
               style={{
@@ -683,8 +753,9 @@ export default function HomeScreen() {
                 {todayCount} today
               </ThemedText>
               <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
-                {CURRENCY_SYMBOL}
-                {formatCompactCurrency(recentExpenseTotal)} out
+                {isStealthMode
+                  ? `${CURRENCY_SYMBOL}•••• out`
+                  : `${CURRENCY_SYMBOL}${formatCompactCurrency(recentExpenseTotal)} out`}
               </ThemedText>
             </View>
           </Card>
@@ -778,6 +849,8 @@ export default function HomeScreen() {
         mode={modalMode}
         aiReview={aiReview}
         accounts={accounts}
+        splitFriends={splitFriends}
+        splitGroups={splitGroups}
         onDraftChange={setForm}
         onManageAccounts={() => {
           resumeDraftAfterAccounts.current = true;

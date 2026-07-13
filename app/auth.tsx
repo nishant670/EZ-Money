@@ -24,6 +24,7 @@ import {
 } from '@/components/auth';
 import { authOtpSend, guestCheckin, identifyUser, loginUser, registerUser, resetPin } from '@/lib/auth';
 import { getDeviceId } from '@/lib/device';
+import { saveLocalSecurityPin } from '@/lib/security';
 
 export default function AuthFlow() {
   const router = useRouter();
@@ -88,7 +89,17 @@ export default function AuthFlow() {
         device_id: deviceId,
         biometrics_enabled: data.biometricsEnabled,
       });
-      setAuth(response.user, response.token);
+      await saveLocalSecurityPin(response.user.uuid, data.pin);
+      setAuth(
+        {
+          ...response.user,
+          has_pin: true,
+          biometrics_enabled: data.biometricsEnabled,
+          email: identifier.includes('@') ? identifier : undefined,
+          phone: identifier.includes('@') ? undefined : identifier,
+        },
+        response.token
+      );
       changeStep(6, 'forward');
     } catch (error) {
       setIdentifyError(error instanceof Error ? error.message : 'Registration failed.');
@@ -111,7 +122,16 @@ export default function AuthFlow() {
         pin: pin,
         device_id: deviceId,
       });
-      setAuth(response.user, response.token);
+      await saveLocalSecurityPin(response.user.uuid, pin);
+      setAuth(
+        {
+          ...response.user,
+          has_pin: true,
+          email: identifier.includes('@') ? identifier : undefined,
+          phone: identifier.includes('@') ? undefined : identifier,
+        },
+        response.token
+      );
       handleFinish();
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed.');
@@ -151,7 +171,16 @@ export default function AuthFlow() {
         pin,
         device_id: deviceId,
       });
-      setAuth(response.user, response.token);
+      await saveLocalSecurityPin(response.user.uuid, pin);
+      setAuth(
+        {
+          ...response.user,
+          has_pin: true,
+          email: identifier.includes('@') ? identifier : undefined,
+          phone: identifier.includes('@') ? undefined : identifier,
+        },
+        response.token
+      );
       handleFinish();
     } catch (error) {
       setResetError(error instanceof Error ? error.message : 'Unable to reset PIN.');

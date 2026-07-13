@@ -195,6 +195,23 @@ const safeNumber = (value?: number | string | null) => {
   return 0;
 };
 
+const normalizeTimeLabel = (value?: string | null, fallbackDateValue?: string | null) => {
+  if (value?.trim()) {
+    return value.trim();
+  }
+  if (fallbackDateValue) {
+    const parsed = new Date(fallbackDateValue);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+    }
+  }
+  return null;
+};
+
 export const normalizeEntriesResponse = (payload: unknown): ApiEntry[] => {
   if (Array.isArray(payload)) {
     return payload as ApiEntry[];
@@ -225,6 +242,7 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   const dateSource =
     entry.date ?? entry.created_at ?? entry.createdAt ?? entry.updated_at ?? null;
   const formattedDate = dateSource ? normalizeDateLabel(dateSource) : null;
+  const timeLabel = normalizeTimeLabel(entry.time, entry.created_at ?? entry.createdAt ?? null);
   const { section, timestamp } = deriveSectionMeta(dateSource);
   const normalizedTag = entry.tag ? toTitleCase(entry.tag) ?? entry.tag : null;
 
@@ -243,6 +261,7 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
     accountName: entry.account?.name ?? null,
     notes: entry.notes ?? null,
     merchant: entry.merchant ?? null,
+    timeLabel,
     dateLabel: formattedDate,
     rawDate: dateSource ?? null,
     tag: normalizedTag,

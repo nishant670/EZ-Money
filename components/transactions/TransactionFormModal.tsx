@@ -27,7 +27,15 @@ import {
   getPreferredAccountForPaymentMode,
 } from '@/lib/accounts';
 import { formatDisplayTime } from '@/lib/datetime';
+import type { SplitFriend, SplitGroup } from '@/lib/splits';
 import { formatDateLabel, parseDateLabel } from '@/lib/transactions';
+
+export type SplitParticipantForm = {
+  friendId: number | null;
+  friendName: string;
+  shareAmount: string;
+  direction: 'friend_owes_user' | 'user_owes_friend';
+};
 
 export type EntryForm = {
   title: string;
@@ -44,6 +52,10 @@ export type EntryForm = {
   account: string;
   merchant: string;
   attachment: string | null;
+  splitEnabled: boolean;
+  splitGroupId: number | null;
+  splitGroupName: string;
+  splitParticipants: SplitParticipantForm[];
 };
 
 export type AiReviewMetadata = {
@@ -63,6 +75,8 @@ interface TransactionFormModalProps {
   mode?: 'audio' | 'manual' | 'quick-prompt';
   aiReview?: AiReviewMetadata | null;
   accounts?: Account[];
+  splitFriends?: SplitFriend[];
+  splitGroups?: SplitGroup[];
   onManageAccounts?: () => void;
   onDraftChange?: (data: EntryForm) => void;
 }
@@ -83,6 +97,10 @@ const fieldLabels: Record<keyof EntryForm, string> = {
   account: 'Account',
   merchant: 'Merchant',
   attachment: 'Attachment',
+  splitEnabled: 'Split',
+  splitGroupId: 'Split group',
+  splitGroupName: 'Split group',
+  splitParticipants: 'Split shares',
 };
 
 const modeOptions = ['Cash', 'UPI', 'Credit Card', 'Wallets'];
@@ -111,6 +129,8 @@ export function TransactionFormModal({
   mode = 'manual',
   aiReview,
   accounts = [],
+  splitFriends = [],
+  splitGroups = [],
   onManageAccounts,
   onDraftChange,
 }: TransactionFormModalProps) {
@@ -167,6 +187,10 @@ export function TransactionFormModal({
       account: '',
       merchant: '',
       attachment: null,
+      splitEnabled: false,
+      splitGroupId: null,
+      splitGroupName: '',
+      splitParticipants: [],
       ...initialData,
     })
   );
@@ -233,6 +257,10 @@ export function TransactionFormModal({
           account: '',
           merchant: '',
           attachment: null,
+          splitEnabled: false,
+          splitGroupId: null,
+          splitGroupName: '',
+          splitParticipants: [],
           ...initialData,
         })
       );
@@ -357,6 +385,33 @@ export function TransactionFormModal({
       setFormError('Please enter a valid amount.');
       return;
     }
+    if (form.splitEnabled) {
+      if (form.type !== 'Expense') {
+        setFormError('Splits can be added only to expenses.');
+        return;
+      }
+      if (form.splitParticipants.length === 0) {
+        setFormError('Add at least one friend share for the split.');
+        return;
+      }
+      const totalSplit = form.splitParticipants.reduce(
+        (sum, participant) => sum + Number(participant.shareAmount || 0),
+        0
+      );
+      const invalidParticipant = form.splitParticipants.find(
+        (participant) =>
+          Number(participant.shareAmount || 0) <= 0 ||
+          (!participant.friendId && participant.friendName.trim().length === 0)
+      );
+      if (invalidParticipant) {
+        setFormError('Each split share needs a friend and a positive amount.');
+        return;
+      }
+      if (totalSplit > amountValue) {
+        setFormError('Split shares cannot exceed the transaction amount.');
+        return;
+      }
+    }
 
     setFormError(null);
     setIsSaving(true);
@@ -368,6 +423,42 @@ export function TransactionFormModal({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const addSplitParticipant = () => {
+    const amountValue = Number(form.amount || 0);
+    const defaultShare = amountValue > 0 ? (amountValue / 2).toFixed(2) : '';
+    setForm((prev) => ({
+      ...prev,
+      splitParticipants: [
+        ...prev.splitParticipants,
+        {
+          friendId: splitFriends[0]?.id ?? null,
+          friendName: '',
+          shareAmount: defaultShare,
+          direction: 'friend_owes_user',
+        },
+      ],
+    }));
+  };
+
+  const updateSplitParticipant = (
+    index: number,
+    updates: Partial<SplitParticipantForm>
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      splitParticipants: prev.splitParticipants.map((participant, participantIndex) =>
+        participantIndex === index ? { ...participant, ...updates } : participant
+      ),
+    }));
+  };
+
+  const removeSplitParticipant = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      splitParticipants: prev.splitParticipants.filter((_, participantIndex) => participantIndex !== index),
+    }));
   };
 
   const requestClose = useCallback(() => {
@@ -406,7 +497,8 @@ export function TransactionFormModal({
                 <View className="h-1.5 w-12 rounded-full absolute top-3 bg-gray-200" />
                 <Pressable
                   onPress={requestClose}
-                  className="absolute right-6 top-6 h-10 w-10 rounded-full bg-gray-100 items-center justify-center z-10">
+                  className="absolute right-6 top-6 h-10 w-10 rounded-full items-center justify-center z-10"
+                  style={{ backgroundColor: colorScheme === 'dark' ? theme.card : '#F3F4F6' }}>
                   <MaterialCommunityIcons name="close" size={20} color={theme.text} />
                 </Pressable>
               </View>
@@ -653,6 +745,213 @@ export function TransactionFormModal({
                     </>
                   )}
                 </View>
+
+                {mode !== 'quick-prompt' && !isEdit && form.type === 'Expense' && (
+                  <View className="px-6 mb-8">
+                    <View className="rounded-[28px] border p-4" style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                      <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center gap-3">
+                          <View className="h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: accentSurface }}>
+                            <MaterialCommunityIcons name="account-multiple-outline" size={22} color={accent} />
+                          </View>
+                          <View>
+                            <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
+                              Split this expense
+                            </ThemedText>
+                            <ThemedText className="text-xs text-gray-500">
+                              Track friends who owe you back.
+                            </ThemedText>
+                          </View>
+                        </View>
+                        <Pressable
+                          accessibilityRole="switch"
+                          accessibilityState={{ checked: form.splitEnabled }}
+                          onPress={() =>
+                            setForm((prev) => ({
+                              ...prev,
+                              splitEnabled: !prev.splitEnabled,
+                              splitParticipants:
+                                !prev.splitEnabled && prev.splitParticipants.length === 0
+                                  ? [
+                                      {
+                                        friendId: splitFriends[0]?.id ?? null,
+                                        friendName: '',
+                                        shareAmount: prev.amount
+                                          ? (Number(prev.amount || 0) / 2).toFixed(2)
+                                          : '',
+                                        direction: 'friend_owes_user',
+                                      },
+                                    ]
+                                  : prev.splitParticipants,
+                            }))
+                          }
+                          className="h-8 w-14 justify-center rounded-full px-1"
+                          style={{ backgroundColor: form.splitEnabled ? accent : '#E5E7EB' }}>
+                          <View
+                            className="h-6 w-6 rounded-full bg-white"
+                            style={{ alignSelf: form.splitEnabled ? 'flex-end' : 'flex-start' }}
+                          />
+                        </Pressable>
+                      </View>
+
+                      {form.splitEnabled && (
+                        <View className="mt-5 gap-4">
+                          {splitGroups.length > 0 && (
+                            <View>
+                              <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                Group
+                              </ThemedText>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                <View className="flex-row gap-2">
+                                  <Pressable
+                                    onPress={() => setForm((p) => ({ ...p, splitGroupId: null }))}
+                                    className="rounded-full border px-4 py-2"
+                                    style={{
+                                      backgroundColor: form.splitGroupId === null ? accentSurface : 'transparent',
+                                      borderColor: form.splitGroupId === null ? accent : theme.border,
+                                    }}>
+                                    <ThemedText className="text-xs font-bold" style={{ color: form.splitGroupId === null ? accent : theme.text }}>
+                                      New
+                                    </ThemedText>
+                                  </Pressable>
+                                  {splitGroups.map((group) => (
+                                    <Pressable
+                                      key={group.id}
+                                      onPress={() =>
+                                        setForm((p) => ({
+                                          ...p,
+                                          splitGroupId: group.id,
+                                          splitGroupName: '',
+                                        }))
+                                      }
+                                      className="rounded-full border px-4 py-2"
+                                      style={{
+                                        backgroundColor: form.splitGroupId === group.id ? accentSurface : 'transparent',
+                                        borderColor: form.splitGroupId === group.id ? accent : theme.border,
+                                      }}>
+                                      <ThemedText className="text-xs font-bold" style={{ color: form.splitGroupId === group.id ? accent : theme.text }}>
+                                        {group.name}
+                                      </ThemedText>
+                                    </Pressable>
+                                  ))}
+                                </View>
+                              </ScrollView>
+                            </View>
+                          )}
+
+                          {form.splitGroupId === null && (
+                            <View className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
+                              <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                New group name
+                              </ThemedText>
+                              <TextInput
+                                value={form.splitGroupName}
+                                onChangeText={(text) => setForm((p) => ({ ...p, splitGroupName: text }))}
+                                placeholder="Trip, flatmates, dinner crew"
+                                placeholderTextColor="#9CA3AF"
+                                className="p-0 text-sm font-bold"
+                                style={{ color: theme.text }}
+                              />
+                            </View>
+                          )}
+
+                          <View className="gap-3">
+                            {form.splitParticipants.map((participant, index) => (
+                              <View key={index} className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
+                                <View className="flex-row items-center justify-between">
+                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                    Share {index + 1}
+                                  </ThemedText>
+                                  <Pressable onPress={() => removeSplitParticipant(index)}>
+                                    <MaterialCommunityIcons name="close" size={18} color={theme.text} />
+                                  </Pressable>
+                                </View>
+                                {splitFriends.length > 0 && (
+                                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
+                                    <View className="flex-row gap-2">
+                                      <Pressable
+                                        onPress={() => updateSplitParticipant(index, { friendId: null })}
+                                        className="rounded-full border px-3 py-2"
+                                        style={{
+                                          backgroundColor: participant.friendId === null ? accentSurface : 'transparent',
+                                          borderColor: participant.friendId === null ? accent : theme.border,
+                                        }}>
+                                        <ThemedText className="text-xs font-bold" style={{ color: participant.friendId === null ? accent : theme.text }}>
+                                          New friend
+                                        </ThemedText>
+                                      </Pressable>
+                                      {splitFriends.map((friend) => (
+                                        <Pressable
+                                          key={friend.id}
+                                          onPress={() => updateSplitParticipant(index, { friendId: friend.id, friendName: '' })}
+                                          className="rounded-full border px-3 py-2"
+                                          style={{
+                                            backgroundColor: participant.friendId === friend.id ? accentSurface : 'transparent',
+                                            borderColor: participant.friendId === friend.id ? accent : theme.border,
+                                          }}>
+                                          <ThemedText className="text-xs font-bold" style={{ color: participant.friendId === friend.id ? accent : theme.text }}>
+                                            {friend.name}
+                                          </ThemedText>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  </ScrollView>
+                                )}
+                                {participant.friendId === null && (
+                                  <TextInput
+                                    value={participant.friendName}
+                                    onChangeText={(text) => updateSplitParticipant(index, { friendName: text })}
+                                    placeholder="Friend name"
+                                    placeholderTextColor="#9CA3AF"
+                                    className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-bold dark:bg-gray-900"
+                                    style={{ color: theme.text }}
+                                  />
+                                )}
+                                <View className="mt-3 flex-row gap-3">
+                                  <TextInput
+                                    value={participant.shareAmount}
+                                    onChangeText={(text) => updateSplitParticipant(index, { shareAmount: text })}
+                                    keyboardType="decimal-pad"
+                                    placeholder="Amount"
+                                    placeholderTextColor="#9CA3AF"
+                                    className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-bold dark:bg-gray-900"
+                                    style={{ color: theme.text }}
+                                  />
+                                  <Pressable
+                                    onPress={() =>
+                                      updateSplitParticipant(index, {
+                                        direction:
+                                          participant.direction === 'friend_owes_user'
+                                            ? 'user_owes_friend'
+                                            : 'friend_owes_user',
+                                      })
+                                    }
+                                    className="justify-center rounded-2xl px-4"
+                                    style={{ backgroundColor: accentSurface }}>
+                                    <ThemedText className="text-xs font-black" style={{ color: accent }}>
+                                      {participant.direction === 'friend_owes_user' ? 'Owes me' : 'I owe'}
+                                    </ThemedText>
+                                  </Pressable>
+                                </View>
+                              </View>
+                            ))}
+                          </View>
+
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={addSplitParticipant}
+                            className="flex-row items-center justify-center gap-2 rounded-2xl border py-3"
+                            style={{ borderColor: theme.border }}>
+                            <MaterialCommunityIcons name="plus" size={18} color={accent} />
+                            <ThemedText className="text-sm font-black" style={{ color: accent }}>
+                              Add friend share
+                            </ThemedText>
+                          </Pressable>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
 
                 <View className="px-6 mb-8">
                   <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">

@@ -207,6 +207,10 @@ export default function TransactionDetailsScreen() {
       '',
     merchant: displayData.merchant || '',
     attachment: null,
+    splitEnabled: false,
+    splitGroupId: null,
+    splitGroupName: '',
+    splitParticipants: [],
   };
 
   if (isLoading && !transaction) {
