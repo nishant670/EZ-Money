@@ -93,6 +93,19 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="tools"
+        options={{
+          title: 'Tools',
+          tabBarIcon: ({ color, focused }) => (
+            <MaterialCommunityIcons
+              size={28}
+              name={getMoodIconName(focused ? 'calculator-variant' : 'calculator-variant-outline', iconStyle, focused) as any}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

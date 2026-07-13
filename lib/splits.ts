@@ -25,10 +25,30 @@ export type SplitParticipant = {
   direction: SplitDirection;
 };
 
+export type SplitGroupMember = {
+  id: number;
+  user_id: number;
+  group_id: number;
+  friend_id: number;
+  friend?: SplitFriend;
+};
+
+export type SplitGroup = {
+  id: number;
+  user_id: number;
+  name: string;
+  archived: boolean;
+  members?: SplitGroupMember[];
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type SplitBill = {
   id: number;
   user_id: number;
   entry_id?: number | null;
+  group_id?: number | null;
+  group?: SplitGroup | null;
   title: string;
   total_amount: number;
   currency: 'INR';
@@ -66,6 +86,7 @@ export type SplitFriendPayload = {
 };
 
 export type SplitBillPayload = {
+  group_id?: number | null;
   title: string;
   total_amount: number;
   currency?: 'INR';
@@ -76,6 +97,11 @@ export type SplitBillPayload = {
     share_amount: number;
     direction: SplitDirection;
   }>;
+};
+
+export type SplitGroupPayload = {
+  name: string;
+  friend_ids: number[];
 };
 
 export type SplitSettlementPayload = {
@@ -109,6 +135,9 @@ const splitFieldLabels: Record<string, string> = {
   date: 'Date',
   participants: 'Friend shares',
   friend_id: 'Friend',
+  group_id: 'Group',
+  group_name: 'Group',
+  friend_ids: 'Group friends',
   share_amount: 'Share amount',
   amount: 'Settlement amount',
   direction: 'Direction',
@@ -171,6 +200,35 @@ export const archiveSplitFriend = async (token: string, friendId: number): Promi
   if (!response.ok) {
     throw await readSplitError(response, 'Unable to archive this friend right now.');
   }
+};
+
+export const fetchSplitGroups = async (token: string): Promise<SplitGroup[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load split groups right now.');
+  }
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error('The split groups response was invalid.');
+  }
+  return payload as SplitGroup[];
+};
+
+export const createSplitGroup = async (
+  token: string,
+  payload: SplitGroupPayload,
+): Promise<SplitGroup> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups`, {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to create this split group right now.');
+  }
+  return response.json();
 };
 
 export const fetchSplitBills = async (token: string): Promise<SplitBill[]> => {

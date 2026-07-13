@@ -9,6 +9,23 @@ let originalFetch: typeof fetch | null = null;
 let unauthorizedHandler: UnauthorizedHandler | null = null;
 let isHandlingUnauthorized = false;
 
+const sessionInvalidationCodes = new Set([
+  'authorization_header_missing',
+  'authorization_header_invalid',
+  'invalid_token',
+  'invalid_or_expired_session',
+  'invalid_session_user',
+]);
+
+const responseHasSessionInvalidationCode = async (response: Response) => {
+  try {
+    const payload = (await response.clone().json()) as { error?: unknown };
+    return typeof payload.error === 'string' && sessionInvalidationCodes.has(payload.error);
+  } catch {
+    return false;
+  }
+};
+
 const getRequestUrl = (input: FetchInput) => {
   if (typeof input === 'string') {
     return input;
@@ -97,7 +114,11 @@ export const installApiSessionGuard = (handler: UnauthorizedHandler) => {
     globalThis.fetch = async (input, init) => {
       const response = await originalFetch!(input, init);
 
-      if (response.status === 401 && shouldInvalidateSession(input, init)) {
+      if (
+        response.status === 401 &&
+        shouldInvalidateSession(input, init) &&
+        (await responseHasSessionInvalidationCode(response))
+      ) {
         handleUnauthorized();
       }
 
@@ -107,5 +128,9 @@ export const installApiSessionGuard = (handler: UnauthorizedHandler) => {
 
   return () => {
     unauthorizedHandler = null;
+    if (originalFetch) {
+      globalThis.fetch = originalFetch;
+      originalFetch = null;
+    }
   };
 };

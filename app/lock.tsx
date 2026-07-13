@@ -7,9 +7,8 @@ import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loginUser } from '@/lib/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const DEVICE_ID_KEY = 'ez_money_device_id';
+import { getDeviceId } from '@/lib/device';
+import { saveLocalSecurityPin, verifyLocalSecurityPin } from '@/lib/security';
 
 export default function LockScreen() {
     const router = useRouter();
@@ -35,26 +34,36 @@ export default function LockScreen() {
         setError(null);
 
         try {
-            const deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY) || 'unknown_device';
+            if (await verifyLocalSecurityPin(user.uuid, pin)) {
+                router.replace('/(tabs)');
+                return;
+            }
 
-            // We use the stored user info to attempt a login
-            // For guests or users, we need an identifier.
-            // If none explicitly (like a pure guest initially), we might rely on device_id backend logic 
-            // or assume the UUID/Username is the identifier. 
-            // Adjusted loginUser logic might be needed if "identifier" isn't just email/phone.
-            // BUT per previous flow, we use email/phone. 
-            // Guests don't exactly "login" with PIN in the same way via /login endpoint unless it handles username?
-            // Let's assume for now we try to login with available info.
+            const identifier = user.email || user.phone;
+            if (!identifier) {
+                setError('Incorrect PIN.');
+                return;
+            }
 
-            const identifier = user.email || user.phone || user.username;
-
+            const deviceId = await getDeviceId();
             const response = await loginUser({
                 identifier: identifier,
                 pin: pin,
                 device_id: deviceId,
             });
 
-            setAuth(response.user, response.token);
+            await saveLocalSecurityPin(response.user.uuid, pin);
+            setAuth(
+                {
+                    ...response.user,
+                    has_pin: true,
+                    biometrics_enabled: user.biometrics_enabled,
+                    email: identifier.includes('@') ? identifier : user.email,
+                    phone: identifier.includes('@') ? user.phone : identifier,
+                    stealth_mode: user.stealth_mode,
+                },
+                response.token
+            );
             router.replace('/(tabs)');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unlock failed. If you reset your account, please Switch Account.');

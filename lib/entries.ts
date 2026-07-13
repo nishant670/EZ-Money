@@ -28,6 +28,19 @@ export type EntryMutationPayload = {
   time?: string;
   source?: 'manual' | 'text' | 'voice';
   source_text?: string;
+  split?: {
+    group_id?: number | null;
+    group_name?: string;
+    notes?: string;
+    participants: Array<{
+      friend_id?: number;
+      friend?: {
+        name: string;
+      };
+      share_amount: string | number;
+      direction?: 'friend_owes_user' | 'user_owes_friend';
+    }>;
+  };
 };
 
 const entryHeaders = (token: string, idempotencyKey?: string) => ({
