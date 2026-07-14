@@ -23,6 +23,20 @@ import {
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { deleteEntry, fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
+import {
+  createSplitBill,
+  createSplitFriend,
+  createSplitGroup,
+  deleteSplitBill,
+  fetchSplitBills,
+  fetchSplitFriends,
+  fetchSplitGroups,
+  type SplitBill,
+  type SplitBillPayload,
+  type SplitFriend,
+  type SplitGroup,
+  updateSplitBill,
+} from '@/lib/splits';
 import { notifyTransactionsChanged } from '@/lib/transaction-events';
 import {
   formatApiDate,
@@ -56,11 +70,15 @@ export default function TransactionDetailsScreen() {
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [splitBill, setSplitBill] = useState<SplitBill | null>(null);
+  const [splitFriends, setSplitFriends] = useState<SplitFriend[]>([]);
+  const [splitGroups, setSplitGroups] = useState<SplitGroup[]>([]);
 
   const [isExpanded, setIsExpanded] = useState(true);
 
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const entryID = Number(params.id);
 
   // Hydrate state from params initially, then update with API data
   const displayData = transaction || {
@@ -101,14 +119,37 @@ export default function TransactionDetailsScreen() {
     }
   }, [params.dateLabel, params.id, token]);
 
+  const fetchSplitDetails = useCallback(async () => {
+    if (!token || !Number.isFinite(entryID) || entryID <= 0) {
+      return;
+    }
+
+    try {
+      const [bills, friends, groups] = await Promise.all([
+        fetchSplitBills(token),
+        fetchSplitFriends(token),
+        fetchSplitGroups(token),
+      ]);
+      setSplitBill(bills.find((bill) => Number(bill.entry_id) === entryID) ?? null);
+      setSplitFriends(friends);
+      setSplitGroups(groups);
+    } catch (error) {
+      console.error('Failed to fetch split details', error);
+      setSplitBill(null);
+      setSplitFriends([]);
+      setSplitGroups([]);
+    }
+  }, [entryID, token]);
+
   useEffect(() => {
-    fetchTransactionDetails();
+    void fetchTransactionDetails();
     if (token) {
       fetchAccounts(token)
         .then(setAccounts)
         .catch(() => setAccounts([]));
+      void fetchSplitDetails();
     }
-  }, [fetchTransactionDetails, token]);
+  }, [fetchSplitDetails, fetchTransactionDetails, token]);
 
   const amountValue = Math.abs(Number(displayData.amount || 0));
 
@@ -176,8 +217,81 @@ export default function TransactionDetailsScreen() {
       if (!token) throw new Error('Missing session.');
       await updateEntry(token, params.id, payload);
 
+      if (formData.splitEnabled && formData.type === 'Expense') {
+        const participants: SplitBillPayload['participants'] = [];
+        const splitFriendIds: number[] = [];
+        const createdFriends: SplitFriend[] = [];
+
+        for (const participant of formData.splitParticipants) {
+          let friendId = participant.friendId;
+          if (!friendId) {
+            const friendName = participant.friendName.trim();
+            if (!friendName) {
+              throw new Error('Please add a friend name for each split share.');
+            }
+            const createdFriend = await createSplitFriend(token, { name: friendName });
+            friendId = createdFriend.id;
+            createdFriends.push(createdFriend);
+          }
+
+          splitFriendIds.push(friendId);
+          participants.push({
+            friend_id: friendId,
+            share_amount: Number(participant.shareAmount),
+            direction: participant.direction,
+          });
+        }
+
+        if (createdFriends.length > 0) {
+          setSplitFriends((current) => [
+            ...createdFriends,
+            ...current.filter(
+              (friend) => !createdFriends.some((created) => created.id === friend.id)
+            ),
+          ]);
+        }
+
+        let groupId = formData.splitGroupId;
+        const groupName = formData.splitGroupName.trim();
+        if (!groupId && groupName.length > 0) {
+          const createdGroup = await createSplitGroup(token, {
+            name: groupName,
+            friend_ids: Array.from(new Set(splitFriendIds)),
+          });
+          groupId = createdGroup.id;
+          setSplitGroups((current) => [
+            createdGroup,
+            ...current.filter((group) => group.id !== createdGroup.id),
+          ]);
+        }
+
+        const apiDate =
+          parsedDate != null
+            ? formatApiDate(parsedDate)
+            : displayData.rawDate || formatApiDate(new Date());
+        const splitPayload = {
+          entry_id: entryID,
+          group_id: groupId,
+          title: formData.title.trim() || 'Split transaction',
+          total_amount: Number(formData.amount),
+          currency: 'INR' as const,
+          date: apiDate,
+          notes: formData.notes.trim(),
+          participants,
+        };
+
+        const savedSplitBill = splitBill
+          ? await updateSplitBill(token, splitBill.id, splitPayload)
+          : await createSplitBill(token, splitPayload);
+        setSplitBill(savedSplitBill);
+      } else if (splitBill) {
+        await deleteSplitBill(token, splitBill.id);
+        setSplitBill(null);
+      }
+
       // Refresh logic
       await fetchTransactionDetails();
+      await fetchSplitDetails();
       notifyTransactionsChanged();
       setIsEditModalVisible(false);
     } catch (error) {
@@ -187,6 +301,13 @@ export default function TransactionDetailsScreen() {
   };
 
   const hasMerchant = displayData.merchant && displayData.merchant !== 'Unknown Location';
+  const splitParticipants = splitBill?.participants ?? [];
+  const splitExpectedBack = splitParticipants
+    .filter((participant) => participant.direction === 'friend_owes_user')
+    .reduce((sum, participant) => sum + Number(participant.share_amount || 0), 0);
+  const splitYouOwe = splitParticipants
+    .filter((participant) => participant.direction === 'user_owes_friend')
+    .reduce((sum, participant) => sum + Number(participant.share_amount || 0), 0);
 
   // Prepare initial form data for Modal
   const editInitialData: EntryForm = {
@@ -207,16 +328,26 @@ export default function TransactionDetailsScreen() {
       '',
     merchant: displayData.merchant || '',
     attachment: null,
-    splitEnabled: false,
-    splitGroupId: null,
+    splitEnabled: Boolean(splitBill),
+    splitGroupId: splitBill?.group_id ?? null,
     splitGroupName: '',
-    splitParticipants: [],
+    splitParticipants: splitParticipants.map((participant) => ({
+      friendId: participant.friend_id,
+      friendName: participant.friend?.name ?? '',
+      shareAmount: Number(participant.share_amount || 0).toFixed(2),
+      direction: participant.direction,
+    })),
   };
 
   if (isLoading && !transaction) {
     return (
       <SafeAreaView
-        style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.background }}>
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.background,
+        }}>
         <ActivityIndicator color={theme.accent} />
       </SafeAreaView>
     );
@@ -416,6 +547,78 @@ export default function TransactionDetailsScreen() {
             </View>
           </View>
         </View>
+
+        {splitBill && (
+          <View className="bg-white dark:bg-gray-800 rounded-[32px] p-6 shadow-sm mb-8">
+            <View className="mb-5 flex-row items-center justify-between">
+              <View className="flex-row items-center gap-3">
+                <View
+                  className="h-11 w-11 items-center justify-center rounded-2xl"
+                  style={{ backgroundColor: theme.secondary }}>
+                  <MaterialCommunityIcons
+                    name="account-multiple-outline"
+                    size={22}
+                    color={theme.accent}
+                  />
+                </View>
+                <View>
+                  <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest">
+                    BILL SPLIT
+                  </ThemedText>
+                  <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
+                    {splitBill.group?.name || 'Friends'}
+                  </ThemedText>
+                </View>
+              </View>
+              <ThemedText className="text-sm font-black" style={{ color: theme.accent }}>
+                {CURRENCY_SYMBOL}
+                {Number(splitBill.total_amount || amountValue).toFixed(2)}
+              </ThemedText>
+            </View>
+
+            <View className="gap-3">
+              {splitParticipants.map((participant) => (
+                <View
+                  key={`${participant.friend_id}-${participant.direction}`}
+                  className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-900">
+                  <View className="flex-1 pr-3">
+                    <ThemedText className="text-sm font-black text-slate-700 dark:text-gray-100">
+                      {participant.friend?.name || 'Friend'}
+                    </ThemedText>
+                    <ThemedText className="text-xs font-bold text-gray-400">
+                      {participant.direction === 'friend_owes_user' ? 'Owes you' : 'You owe'}
+                    </ThemedText>
+                  </View>
+                  <ThemedText className="text-sm font-black text-slate-700 dark:text-gray-100">
+                    {CURRENCY_SYMBOL}
+                    {Number(participant.share_amount || 0).toFixed(2)}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+
+            <View className="mt-5 flex-row gap-3">
+              <View className="flex-1 rounded-2xl bg-emerald-50 p-4">
+                <ThemedText className="text-[10px] uppercase font-black text-emerald-500">
+                  EXPECTED BACK
+                </ThemedText>
+                <ThemedText className="mt-1 text-base font-black text-emerald-700">
+                  {CURRENCY_SYMBOL}
+                  {splitExpectedBack.toFixed(2)}
+                </ThemedText>
+              </View>
+              <View className="flex-1 rounded-2xl bg-rose-50 p-4">
+                <ThemedText className="text-[10px] uppercase font-black text-rose-500">
+                  YOU OWE
+                </ThemedText>
+                <ThemedText className="mt-1 text-base font-black text-rose-700">
+                  {CURRENCY_SYMBOL}
+                  {splitYouOwe.toFixed(2)}
+                </ThemedText>
+              </View>
+            </View>
+          </View>
+        )}
         {/* ACTIONS */}
         <Pressable
           onPress={handleEdit}
@@ -448,6 +651,8 @@ export default function TransactionDetailsScreen() {
         onSave={handleSaveUpdate}
         isEdit={true}
         accounts={accounts}
+        splitFriends={splitFriends}
+        splitGroups={splitGroups}
         onManageAccounts={() => router.push('/accounts')}
       />
     </SafeAreaView>

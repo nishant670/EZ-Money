@@ -63,6 +63,7 @@ export type AiReviewMetadata = {
   needsConfirmation?: Record<string, boolean>;
   missingFields?: string[];
   clarifications?: string[];
+  smartSortingDisabled?: boolean;
 };
 
 interface TransactionFormModalProps {
@@ -218,7 +219,9 @@ export function TransactionFormModal({
     [form.mode]
   );
   const willCreateAccountOnSave =
-    mode !== 'quick-prompt' && compatibleAccounts.length === 0 && pendingAutoAccountPayload !== null;
+    mode !== 'quick-prompt' &&
+    compatibleAccounts.length === 0 &&
+    pendingAutoAccountPayload !== null;
 
   const reviewFields = useMemo(() => {
     const fields = new Set(aiReview?.missingFields ?? []);
@@ -442,10 +445,7 @@ export function TransactionFormModal({
     }));
   };
 
-  const updateSplitParticipant = (
-    index: number,
-    updates: Partial<SplitParticipantForm>
-  ) => {
+  const updateSplitParticipant = (index: number, updates: Partial<SplitParticipantForm>) => {
     setForm((prev) => ({
       ...prev,
       splitParticipants: prev.splitParticipants.map((participant, participantIndex) =>
@@ -457,7 +457,9 @@ export function TransactionFormModal({
   const removeSplitParticipant = (index: number) => {
     setForm((prev) => ({
       ...prev,
-      splitParticipants: prev.splitParticipants.filter((_, participantIndex) => participantIndex !== index),
+      splitParticipants: prev.splitParticipants.filter(
+        (_, participantIndex) => participantIndex !== index
+      ),
     }));
   };
 
@@ -491,48 +493,52 @@ export function TransactionFormModal({
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             className="flex-1">
             <View
-              className="flex-1 rounded-t-[40px] shadow-2xl relative overflow-hidden"
+              className="flex-1 rounded-t-[32px] shadow-2xl relative overflow-hidden"
               style={{ backgroundColor: theme.background }}>
-              <View className="items-center pt-8 pb-2 relative">
+              <View className="items-center pt-6 pb-1 relative">
                 <View className="h-1.5 w-12 rounded-full absolute top-3 bg-gray-200" />
                 <Pressable
                   onPress={requestClose}
-                  className="absolute right-6 top-6 h-10 w-10 rounded-full items-center justify-center z-10"
+                  className="absolute right-5 top-5 h-9 w-9 rounded-full items-center justify-center z-10"
                   style={{ backgroundColor: colorScheme === 'dark' ? theme.card : '#F3F4F6' }}>
-                  <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                  <MaterialCommunityIcons name="close" size={18} color={theme.text} />
                 </Pressable>
               </View>
 
               <ScrollView
                 showsVerticalScrollIndicator={false}
                 style={{ maxHeight: '90%' }}
-                contentContainerStyle={{ paddingBottom: 40 }}>
-                <View className="items-center px-6 mb-8">
+                contentContainerStyle={{ paddingBottom: 28 }}>
+                <View className="items-center px-5 mb-6">
                   <ThemedText
-                    className="text-xl font-black mt-6 mb-2"
+                    className="text-xl font-black mt-4 mb-1.5"
                     style={{ color: theme.text }}>
                     {isEdit
                       ? mode === 'quick-prompt'
                         ? 'Edit Quick Prompt'
                         : 'Update Details'
                       : mode === 'audio'
-                        ? "I've sorted the details!"
+                        ? aiReview?.smartSortingDisabled
+                          ? 'Review AI Draft'
+                          : "I've sorted the details!"
                         : mode === 'quick-prompt'
                           ? 'New Quick Prompt'
                           : 'New Transaction'}
                   </ThemedText>
-                  <ThemedText className="text-center text-gray-500 text-sm leading-5 px-4">
+                  <ThemedText className="text-center text-gray-500 text-sm leading-5 px-3">
                     {isEdit
                       ? 'Make your changes and confirm below.'
                       : mode === 'audio'
-                        ? "Here's the AI draft. Review every field before you save."
+                        ? aiReview?.smartSortingDisabled
+                          ? 'Smart Sorting is off, so choose the category and payment details before saving.'
+                          : "Here's the AI draft. Review every field before you save."
                         : mode === 'quick-prompt'
                           ? 'These details will be used for your shortcut.'
                           : 'Fill in the transaction details below.'}
                   </ThemedText>
                 </View>
 
-                <View className="px-6 mb-8">
+                <View className="px-5 mb-6">
                   {mode === 'audio' && (
                     <View className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
                       <View className="flex-row items-center justify-between">
@@ -579,20 +585,20 @@ export function TransactionFormModal({
                     </View>
                   )}
 
-                  <View className="mb-6">
-                    <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
+                  <View className="mb-4">
+                    <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 italic">
                       Transaction Type
                     </ThemedText>
-                    <View className="flex-row bg-gray-100 dark:bg-gray-800 rounded-[24px] p-1.5 relative overflow-hidden">
+                    <View className="flex-row bg-gray-100 dark:bg-gray-800 rounded-[22px] p-1 relative overflow-hidden">
                       <Animated.View
                         style={{
                           position: 'absolute',
-                          top: 6,
-                          bottom: 6,
-                          left: 6,
+                          top: 4,
+                          bottom: 4,
+                          left: 4,
                           width: '48%',
                           backgroundColor: form.type === 'Expense' ? accent : '#10B981',
-                          borderRadius: 20,
+                          borderRadius: 18,
                           transform: [
                             {
                               translateX: typeSwitchAnim.interpolate({
@@ -609,7 +615,7 @@ export function TransactionFormModal({
                           setForm((p) => ({ ...p, type: 'Expense' }));
                           animateTypeSwitch(false);
                         }}
-                        className="flex-1 py-4 items-center justify-center z-10">
+                        className="flex-1 py-3 items-center justify-center z-10">
                         <ThemedText
                           className={`text-sm font-black tracking-tight ${form.type === 'Expense' ? 'text-white' : 'text-gray-400'}`}>
                           EXPENSE
@@ -620,7 +626,7 @@ export function TransactionFormModal({
                           setForm((p) => ({ ...p, type: 'Income' }));
                           animateTypeSwitch(true);
                         }}
-                        className="flex-1 py-4 items-center justify-center z-10">
+                        className="flex-1 py-3 items-center justify-center z-10">
                         <ThemedText
                           className={`text-sm font-black tracking-tight ${form.type === 'Income' ? 'text-white' : 'text-gray-400'}`}>
                           INCOME
@@ -629,14 +635,16 @@ export function TransactionFormModal({
                     </View>
                   </View>
 
-                  <View className="bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm mb-4">
+                  <View
+                    className="rounded-[20px] p-3 border shadow-sm mb-3"
+                    style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                     <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">
                       Transaction Title
                     </ThemedText>
                     <View className="flex-row items-center gap-3">
                       <MaterialCommunityIcons
                         name="label-variant-outline"
-                        size={24}
+                        size={22}
                         color={accent}
                       />
                       <TextInput
@@ -644,41 +652,44 @@ export function TransactionFormModal({
                         value={form.title}
                         onChangeText={(t) => setForm((p) => ({ ...p, title: t }))}
                         className="text-base font-black flex-1 p-0"
-                        style={{ color: theme.text, height: 28 }}
+                        style={{ color: theme.text, height: 24 }}
                         placeholder="Short title"
                         placeholderTextColor="#9CA3AF"
                       />
                     </View>
                   </View>
 
-                  <View className="flex-row gap-4 mb-4">
-                    <View className="flex-1 bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm h-32 justify-between">
+                  <View className="flex-row gap-3 mb-3">
+                    <View
+                      className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
+                      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                       <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
                         Amount
                       </ThemedText>
                       <View className="flex-row items-center gap-1">
-                        <ThemedText className="text-xl font-black" style={{ color: accent }}>
+                        <ThemedText className="text-lg font-black" style={{ color: accent }}>
                           {CURRENCY_SYMBOL}
                         </ThemedText>
                         <TextInput
                           testID="entry-amount-input"
                           value={form.amount}
                           onChangeText={(text) => setForm((p) => ({ ...p, amount: text }))}
-                          className="text-2xl font-black p-0 flex-1"
-                          style={{ color: theme.text, height: 40 }}
+                          className="text-xl font-black p-0 flex-1"
+                          style={{ color: theme.text, height: 32 }}
                           keyboardType="decimal-pad"
                         />
                       </View>
                     </View>
                     <Pressable
                       onPress={() => setIsModePickerVisible(true)}
-                      className="flex-1 bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm h-32 justify-between">
+                      className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
+                      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                       <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
                         Paid Via
                       </ThemedText>
                       <View className="flex-row items-center gap-2">
-                        <MaterialCommunityIcons name="cash-multiple" size={24} color="#8B5CF6" />
-                        <ThemedText className="text-lg font-black" style={{ color: theme.text }}>
+                        <MaterialCommunityIcons name="cash-multiple" size={21} color="#8B5CF6" />
+                        <ThemedText className="text-base font-black" style={{ color: theme.text }}>
                           {form.mode}
                         </ThemedText>
                       </View>
@@ -689,16 +700,17 @@ export function TransactionFormModal({
                     <>
                       <Pressable
                         onPress={handleOpenDatePicker}
-                        className="w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
+                        className="w-full rounded-[20px] p-3 border shadow-sm flex-row items-center justify-between"
+                        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                         <View>
                           <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">
                             Date & Time
                           </ThemedText>
                           <View className="flex-row items-center gap-3">
-                            <View className="h-10 w-10 rounded-xl bg-purple-50 items-center justify-center">
+                            <View className="h-9 w-9 rounded-xl bg-purple-50 items-center justify-center">
                               <MaterialCommunityIcons
                                 name="calendar-multiselect"
-                                size={20}
+                                size={18}
                                 color="#8B5CF6"
                               />
                             </View>
@@ -712,16 +724,17 @@ export function TransactionFormModal({
                       <Pressable
                         testID="entry-account-picker"
                         onPress={() => setIsAccountPickerVisible(true)}
-                        className="mt-4 w-full bg-white dark:bg-gray-800 rounded-[24px] p-4 border border-gray-100 shadow-sm flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-4">
-                          <View className="h-12 w-12 rounded-2xl bg-blue-50 items-center justify-center">
+                        className="mt-3 w-full rounded-[20px] p-3 border shadow-sm flex-row items-center justify-between"
+                        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                        <View className="flex-row items-center gap-3 flex-1 pr-2">
+                          <View className="h-10 w-10 rounded-2xl bg-blue-50 items-center justify-center">
                             <MaterialCommunityIcons
                               name="wallet-outline"
-                              size={24}
+                              size={21}
                               color="#3B82F6"
                             />
                           </View>
-                          <View>
+                          <View className="flex-1">
                             <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
                               Paid from account
                             </ThemedText>
@@ -746,16 +759,26 @@ export function TransactionFormModal({
                   )}
                 </View>
 
-                {mode !== 'quick-prompt' && !isEdit && form.type === 'Expense' && (
-                  <View className="px-6 mb-8">
-                    <View className="rounded-[28px] border p-4" style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                {mode !== 'quick-prompt' && form.type === 'Expense' && (
+                  <View className="px-5 mb-6">
+                    <View
+                      className="rounded-[24px] border p-3"
+                      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                       <View className="flex-row items-center justify-between">
                         <View className="flex-row items-center gap-3">
-                          <View className="h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: accentSurface }}>
-                            <MaterialCommunityIcons name="account-multiple-outline" size={22} color={accent} />
+                          <View
+                            className="h-10 w-10 items-center justify-center rounded-2xl"
+                            style={{ backgroundColor: accentSurface }}>
+                            <MaterialCommunityIcons
+                              name="account-multiple-outline"
+                              size={20}
+                              color={accent}
+                            />
                           </View>
                           <View>
-                            <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
+                            <ThemedText
+                              className="text-sm font-black"
+                              style={{ color: theme.text }}>
                               Split this expense
                             </ThemedText>
                             <ThemedText className="text-xs text-gray-500">
@@ -807,10 +830,16 @@ export function TransactionFormModal({
                                     onPress={() => setForm((p) => ({ ...p, splitGroupId: null }))}
                                     className="rounded-full border px-4 py-2"
                                     style={{
-                                      backgroundColor: form.splitGroupId === null ? accentSurface : 'transparent',
-                                      borderColor: form.splitGroupId === null ? accent : theme.border,
+                                      backgroundColor:
+                                        form.splitGroupId === null ? accentSurface : 'transparent',
+                                      borderColor:
+                                        form.splitGroupId === null ? accent : theme.border,
                                     }}>
-                                    <ThemedText className="text-xs font-bold" style={{ color: form.splitGroupId === null ? accent : theme.text }}>
+                                    <ThemedText
+                                      className="text-xs font-bold"
+                                      style={{
+                                        color: form.splitGroupId === null ? accent : theme.text,
+                                      }}>
                                       New
                                     </ThemedText>
                                   </Pressable>
@@ -826,10 +855,19 @@ export function TransactionFormModal({
                                       }
                                       className="rounded-full border px-4 py-2"
                                       style={{
-                                        backgroundColor: form.splitGroupId === group.id ? accentSurface : 'transparent',
-                                        borderColor: form.splitGroupId === group.id ? accent : theme.border,
+                                        backgroundColor:
+                                          form.splitGroupId === group.id
+                                            ? accentSurface
+                                            : 'transparent',
+                                        borderColor:
+                                          form.splitGroupId === group.id ? accent : theme.border,
                                       }}>
-                                      <ThemedText className="text-xs font-bold" style={{ color: form.splitGroupId === group.id ? accent : theme.text }}>
+                                      <ThemedText
+                                        className="text-xs font-bold"
+                                        style={{
+                                          color:
+                                            form.splitGroupId === group.id ? accent : theme.text,
+                                        }}>
                                         {group.name}
                                       </ThemedText>
                                     </Pressable>
@@ -846,7 +884,9 @@ export function TransactionFormModal({
                               </ThemedText>
                               <TextInput
                                 value={form.splitGroupName}
-                                onChangeText={(text) => setForm((p) => ({ ...p, splitGroupName: text }))}
+                                onChangeText={(text) =>
+                                  setForm((p) => ({ ...p, splitGroupName: text }))
+                                }
                                 placeholder="Trip, flatmates, dinner crew"
                                 placeholderTextColor="#9CA3AF"
                                 className="p-0 text-sm font-bold"
@@ -857,39 +897,77 @@ export function TransactionFormModal({
 
                           <View className="gap-3">
                             {form.splitParticipants.map((participant, index) => (
-                              <View key={index} className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
+                              <View
+                                key={index}
+                                className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
                                 <View className="flex-row items-center justify-between">
                                   <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
                                     Share {index + 1}
                                   </ThemedText>
                                   <Pressable onPress={() => removeSplitParticipant(index)}>
-                                    <MaterialCommunityIcons name="close" size={18} color={theme.text} />
+                                    <MaterialCommunityIcons
+                                      name="close"
+                                      size={18}
+                                      color={theme.text}
+                                    />
                                   </Pressable>
                                 </View>
                                 {splitFriends.length > 0 && (
-                                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
+                                  <ScrollView
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    className="mt-3">
                                     <View className="flex-row gap-2">
                                       <Pressable
-                                        onPress={() => updateSplitParticipant(index, { friendId: null })}
+                                        onPress={() =>
+                                          updateSplitParticipant(index, { friendId: null })
+                                        }
                                         className="rounded-full border px-3 py-2"
                                         style={{
-                                          backgroundColor: participant.friendId === null ? accentSurface : 'transparent',
-                                          borderColor: participant.friendId === null ? accent : theme.border,
+                                          backgroundColor:
+                                            participant.friendId === null
+                                              ? accentSurface
+                                              : 'transparent',
+                                          borderColor:
+                                            participant.friendId === null ? accent : theme.border,
                                         }}>
-                                        <ThemedText className="text-xs font-bold" style={{ color: participant.friendId === null ? accent : theme.text }}>
+                                        <ThemedText
+                                          className="text-xs font-bold"
+                                          style={{
+                                            color:
+                                              participant.friendId === null ? accent : theme.text,
+                                          }}>
                                           New friend
                                         </ThemedText>
                                       </Pressable>
                                       {splitFriends.map((friend) => (
                                         <Pressable
                                           key={friend.id}
-                                          onPress={() => updateSplitParticipant(index, { friendId: friend.id, friendName: '' })}
+                                          onPress={() =>
+                                            updateSplitParticipant(index, {
+                                              friendId: friend.id,
+                                              friendName: '',
+                                            })
+                                          }
                                           className="rounded-full border px-3 py-2"
                                           style={{
-                                            backgroundColor: participant.friendId === friend.id ? accentSurface : 'transparent',
-                                            borderColor: participant.friendId === friend.id ? accent : theme.border,
+                                            backgroundColor:
+                                              participant.friendId === friend.id
+                                                ? accentSurface
+                                                : 'transparent',
+                                            borderColor:
+                                              participant.friendId === friend.id
+                                                ? accent
+                                                : theme.border,
                                           }}>
-                                          <ThemedText className="text-xs font-bold" style={{ color: participant.friendId === friend.id ? accent : theme.text }}>
+                                          <ThemedText
+                                            className="text-xs font-bold"
+                                            style={{
+                                              color:
+                                                participant.friendId === friend.id
+                                                  ? accent
+                                                  : theme.text,
+                                            }}>
                                             {friend.name}
                                           </ThemedText>
                                         </Pressable>
@@ -900,7 +978,9 @@ export function TransactionFormModal({
                                 {participant.friendId === null && (
                                   <TextInput
                                     value={participant.friendName}
-                                    onChangeText={(text) => updateSplitParticipant(index, { friendName: text })}
+                                    onChangeText={(text) =>
+                                      updateSplitParticipant(index, { friendName: text })
+                                    }
                                     placeholder="Friend name"
                                     placeholderTextColor="#9CA3AF"
                                     className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-bold dark:bg-gray-900"
@@ -910,7 +990,9 @@ export function TransactionFormModal({
                                 <View className="mt-3 flex-row gap-3">
                                   <TextInput
                                     value={participant.shareAmount}
-                                    onChangeText={(text) => updateSplitParticipant(index, { shareAmount: text })}
+                                    onChangeText={(text) =>
+                                      updateSplitParticipant(index, { shareAmount: text })
+                                    }
                                     keyboardType="decimal-pad"
                                     placeholder="Amount"
                                     placeholderTextColor="#9CA3AF"
@@ -928,8 +1010,12 @@ export function TransactionFormModal({
                                     }
                                     className="justify-center rounded-2xl px-4"
                                     style={{ backgroundColor: accentSurface }}>
-                                    <ThemedText className="text-xs font-black" style={{ color: accent }}>
-                                      {participant.direction === 'friend_owes_user' ? 'Owes me' : 'I owe'}
+                                    <ThemedText
+                                      className="text-xs font-black"
+                                      style={{ color: accent }}>
+                                      {participant.direction === 'friend_owes_user'
+                                        ? 'Owes me'
+                                        : 'I owe'}
                                     </ThemedText>
                                   </Pressable>
                                 </View>
@@ -953,7 +1039,7 @@ export function TransactionFormModal({
                   </View>
                 )}
 
-                <View className="px-6 mb-8">
+                <View className="px-5 mb-6">
                   <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">
                     {categoryNeedsReview ? 'Needs Attention' : 'Category'}
                   </ThemedText>
@@ -966,8 +1052,8 @@ export function TransactionFormModal({
                       </View>
                     )}
                     <Pressable
-                        onPress={() => setIsCategoryPickerVisible(true)}
-                      className="w-full rounded-[28px] border p-4 flex-row items-center justify-between"
+                      onPress={() => setIsCategoryPickerVisible(true)}
+                      className="w-full rounded-[24px] border p-3 flex-row items-center justify-between"
                       style={{
                         backgroundColor: categoryNeedsReview
                           ? colorScheme === 'dark'
@@ -978,20 +1064,22 @@ export function TransactionFormModal({
                       }}>
                       <View className="flex-row items-center gap-4">
                         <View
-                          className="h-12 w-12 items-center justify-center"
+                          className="h-10 w-10 items-center justify-center"
                           style={{
                             backgroundColor: categoryNeedsReview ? '#FEF3C7' : accentSurface,
                             borderRadius: themeTokens.icon.containerRadius,
                           }}>
-                          <MaterialCommunityIcons name="car-outline" size={24} color={categoryNeedsReview ? '#F59E0B' : accent} />
+                          <MaterialCommunityIcons
+                            name="car-outline"
+                            size={21}
+                            color={categoryNeedsReview ? '#F59E0B' : accent}
+                          />
                         </View>
                         <View>
                           <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
                             Category
                           </ThemedText>
-                          <ThemedText
-                            className="text-base font-black"
-                            style={{ color: theme.text }}>
+                          <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
                             {form.category}
                           </ThemedText>
                         </View>
@@ -1001,10 +1089,10 @@ export function TransactionFormModal({
                   </View>
                 </View>
 
-                <View className="px-6 mb-6">
+                <View className="px-5 mb-4">
                   <Pressable
                     onPress={() => setIsMoreDetailsExpanded(!isMoreDetailsExpanded)}
-                    className="flex-row items-center justify-between py-4 border-b border-gray-50">
+                    className="flex-row items-center justify-between py-3 border-b border-gray-50">
                     <View className="flex-row items-center gap-2">
                       <MaterialCommunityIcons name="tune-variant" size={20} color={theme.text} />
                       <ThemedText className="text-sm font-black opacity-60">
@@ -1019,13 +1107,13 @@ export function TransactionFormModal({
                     />
                   </Pressable>
                   {isMoreDetailsExpanded && (
-                    <View className="mt-6 gap-6">
+                    <View className="mt-4 gap-4">
                       <View className="flex-row gap-4">
                         <View className="flex-1">
                           <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
                             Merchant
                           </ThemedText>
-                          <View className="bg-gray-50 dark:bg-gray-800/50 rounded-[24px] p-4 flex-row items-center gap-2">
+                          <View className="bg-gray-50 dark:bg-gray-800/50 rounded-[20px] p-3 flex-row items-center gap-2">
                             <View className="h-6 w-6 rounded-lg bg-red-100 items-center justify-center">
                               <MaterialCommunityIcons
                                 name="storefront-outline"
@@ -1078,7 +1166,7 @@ export function TransactionFormModal({
                           placeholderTextColor="#D1D5DB"
                           value={form.notes}
                           onChangeText={(t) => setForm((p) => ({ ...p, notes: t }))}
-                          className="bg-gray-50 dark:bg-gray-800/50 rounded-[24px] p-5 text-sm min-h-[100px]"
+                          className="bg-gray-50 dark:bg-gray-800/50 rounded-[20px] p-4 text-sm min-h-[84px]"
                           textAlignVertical="top"
                           style={{ color: theme.text }}
                         />
@@ -1087,13 +1175,13 @@ export function TransactionFormModal({
                   )}
                 </View>
 
-                <View className="px-6 gap-4">
+                <View className="px-5 gap-3">
                   <Pressable
                     testID="entry-save-button"
                     onPress={handleConfirmEntry}
                     disabled={isSaving}
                     style={{ backgroundColor: accent }}
-                    className="w-full py-5 rounded-[24px] flex-row items-center justify-center gap-2 shadow-lg">
+                    className="w-full py-4 rounded-[20px] flex-row items-center justify-center gap-2 shadow-lg">
                     {isSaving ? (
                       <ActivityIndicator color="white" />
                     ) : (
@@ -1197,7 +1285,12 @@ export function TransactionFormModal({
                     }}
                     className="flex-row items-center justify-between rounded-2xl border p-4"
                     style={{
-                      backgroundColor: form.mode === m ? accentSurface : colorScheme === 'dark' ? theme.card : '#F9FAFB',
+                      backgroundColor:
+                        form.mode === m
+                          ? accentSurface
+                          : colorScheme === 'dark'
+                            ? theme.card
+                            : '#F9FAFB',
                       borderColor: form.mode === m ? accent : 'transparent',
                     }}>
                     <ThemedText
@@ -1236,7 +1329,12 @@ export function TransactionFormModal({
                       }}
                       className="w-[47%] items-center gap-2 rounded-3xl border p-4"
                       style={{
-                        backgroundColor: form.category === c ? accentSurface : colorScheme === 'dark' ? theme.card : '#F9FAFB',
+                        backgroundColor:
+                          form.category === c
+                            ? accentSurface
+                            : colorScheme === 'dark'
+                              ? theme.card
+                              : '#F9FAFB',
                         borderColor: form.category === c ? accent : 'transparent',
                       }}>
                       <ThemedText

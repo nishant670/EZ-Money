@@ -86,6 +86,7 @@ export type SplitFriendPayload = {
 };
 
 export type SplitBillPayload = {
+  entry_id?: number | null;
   group_id?: number | null;
   title: string;
   total_amount: number;
@@ -134,6 +135,7 @@ const splitFieldLabels: Record<string, string> = {
   total_amount: 'Total amount',
   date: 'Date',
   participants: 'Friend shares',
+  entry_id: 'Transaction',
   friend_id: 'Friend',
   group_id: 'Group',
   group_name: 'Group',
@@ -163,6 +165,14 @@ const coerceAmount = (record: Record<string, unknown>, keys: string[]) => {
   return next;
 };
 
+const normalizeSplitBill = (bill: SplitBill): SplitBill => ({
+  ...bill,
+  total_amount: Number(bill.total_amount),
+  participants: (bill.participants ?? []).map((participant) =>
+    coerceAmount(participant as unknown as Record<string, unknown>, ['share_amount'])
+  ) as SplitParticipant[],
+});
+
 export const fetchSplitFriends = async (token: string): Promise<SplitFriend[]> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/friends`, {
     headers: authHeaders(token),
@@ -179,7 +189,7 @@ export const fetchSplitFriends = async (token: string): Promise<SplitFriend[]> =
 
 export const createSplitFriend = async (
   token: string,
-  payload: SplitFriendPayload,
+  payload: SplitFriendPayload
 ): Promise<SplitFriend> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/friends`, {
     method: 'POST',
@@ -218,7 +228,7 @@ export const fetchSplitGroups = async (token: string): Promise<SplitGroup[]> => 
 
 export const createSplitGroup = async (
   token: string,
-  payload: SplitGroupPayload,
+  payload: SplitGroupPayload
 ): Promise<SplitGroup> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/groups`, {
     method: 'POST',
@@ -242,18 +252,12 @@ export const fetchSplitBills = async (token: string): Promise<SplitBill[]> => {
   if (!Array.isArray(payload)) {
     throw new Error('The split bills response was invalid.');
   }
-  return (payload as SplitBill[]).map((bill) => ({
-    ...bill,
-    total_amount: Number(bill.total_amount),
-    participants: (bill.participants ?? []).map((participant) =>
-      coerceAmount(participant as unknown as Record<string, unknown>, ['share_amount']),
-    ) as SplitParticipant[],
-  }));
+  return (payload as SplitBill[]).map(normalizeSplitBill);
 };
 
 export const createSplitBill = async (
   token: string,
-  payload: SplitBillPayload,
+  payload: SplitBillPayload
 ): Promise<SplitBill> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/bills`, {
     method: 'POST',
@@ -263,7 +267,33 @@ export const createSplitBill = async (
   if (!response.ok) {
     throw await readSplitError(response, 'Unable to save this split bill right now.');
   }
-  return response.json();
+  return normalizeSplitBill(await response.json());
+};
+
+export const updateSplitBill = async (
+  token: string,
+  billId: number,
+  payload: SplitBillPayload
+): Promise<SplitBill> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/bills/${billId}`, {
+    method: 'PUT',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ ...payload, currency: payload.currency ?? 'INR' }),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to update this split bill right now.');
+  }
+  return normalizeSplitBill(await response.json());
+};
+
+export const deleteSplitBill = async (token: string, billId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/bills/${billId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to remove this split bill right now.');
+  }
 };
 
 export const fetchSplitSettlements = async (token: string): Promise<SplitSettlement[]> => {
@@ -285,7 +315,7 @@ export const fetchSplitSettlements = async (token: string): Promise<SplitSettlem
 
 export const createSplitSettlement = async (
   token: string,
-  payload: SplitSettlementPayload,
+  payload: SplitSettlementPayload
 ): Promise<SplitSettlement> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/settlements`, {
     method: 'POST',

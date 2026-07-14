@@ -11,6 +11,7 @@ import { VoiceInputCard } from '@/components/home/VoiceInputCard';
 import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { Card, Screen, SectionHeader } from '@/components/ui/theme-primitives';
+import { useAppSettingsStore } from '@/hooks/use-app-settings-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchUnreadNotificationCount } from '@/lib/notifications';
 import {
@@ -60,6 +61,7 @@ export default function HomeScreen() {
   const isDark = themeTokens.mode === 'dark';
   const router = useRouter();
   const { token, user } = useAuthStore();
+  const smartSorting = useAppSettingsStore((state) => state.smartSorting);
   const isStealthMode = !!user?.stealth_mode;
 
   const defaultForm = useMemo(
@@ -586,8 +588,11 @@ export default function HomeScreen() {
       setAiReview({
         confidence: data.confidence,
         needsConfirmation: data.needs_confirmation,
-        missingFields: data.missing_fields,
+        missingFields: smartSorting
+          ? data.missing_fields
+          : Array.from(new Set([...(data.missing_fields ?? []), 'title', 'mode', 'category', 'tag'])),
         clarifications: data.clarifications,
+        smartSortingDisabled: !smartSorting,
       });
       setForm((prev) => {
         const missing = new Set(data.missing_fields ?? []);
@@ -597,17 +602,17 @@ export default function HomeScreen() {
         const newType = missing.has('type') ? '' : (toTitleCase(data.type) ?? '');
         return {
           ...prev,
-          title: missing.has('title') ? '' : (data.title ?? ''),
+          title: smartSorting && !missing.has('title') ? (data.title ?? '') : '',
           amount: missing.has('amount') || data.amount == null ? '' : data.amount.toFixed(2),
           currency: data.currency ?? prev.currency,
           time: data.time ?? prev.time,
           type: newType,
-          mode: missing.has('mode') ? '' : (data.mode ?? ''),
-          category: missing.has('category') ? '' : (data.category ?? ''),
+          mode: smartSorting && !missing.has('mode') ? (data.mode ?? '') : '',
+          category: smartSorting && !missing.has('category') ? (data.category ?? '') : '',
           merchant: data.merchant ?? '',
           notes: data.note ?? '',
           date: formattedDate,
-          tag: tagValue ? (toTitleCase(tagValue) ?? '') : '',
+          tag: smartSorting && tagValue ? (toTitleCase(tagValue) ?? '') : '',
         };
       });
       setInputText('');
@@ -621,7 +626,7 @@ export default function HomeScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [inputText, isSubmitting, recordedUri, token]);
+  }, [inputText, isSubmitting, recordedUri, smartSorting, token]);
 
   const renderRecentActivity = () => {
     if (isEntriesLoading) {

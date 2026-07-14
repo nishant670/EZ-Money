@@ -64,7 +64,7 @@ export function TransactionItem({
           ]}>
           <MaterialCommunityIcons
             name={getMoodIconName(icon, theme.mood.iconStyle) as any}
-            size={isList ? 20 : 24}
+            size={isList ? 18 : 22}
             color={color || (isIncome ? '#27AE60' : '#E57373')}
           />
         </View>
@@ -78,6 +78,7 @@ export function TransactionItem({
               {
                 color: titleColor,
               },
+              isList ? styles.listTitleText : styles.cardTitleText,
             ]}>
             {title}
           </ThemedText>
@@ -95,6 +96,7 @@ export function TransactionItem({
                   {
                     color: color || '#6B7280',
                   },
+                  isList ? styles.listCategoryText : styles.cardCategoryText,
                 ]}>
                 {category}
               </ThemedText>
@@ -108,6 +110,7 @@ export function TransactionItem({
                   {
                     color: mutedColor,
                   },
+                  isList ? styles.listSubtitleText : styles.cardSubtitleText,
                 ]}>
                 {isList ? subtitle : `• ${subtitle}`}
               </ThemedText>
@@ -124,6 +127,7 @@ export function TransactionItem({
               {
                 color: isIncome ? '#27AE60' : theme.colors.text,
               },
+              isList ? styles.listAmountText : styles.cardAmountText,
             ]}>
             {isIncome ? '+' : '-'}
             {CURRENCY_SYMBOL}
@@ -187,6 +191,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {},
+  listTitleText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  cardTitleText: {
+    fontSize: 14,
+    lineHeight: 19,
+  },
   metaRow: {
     marginTop: 5,
     flexDirection: 'row',
@@ -208,8 +220,24 @@ const styles = StyleSheet.create({
   category: {
     textTransform: 'uppercase',
   },
+  listCategoryText: {
+    fontSize: 8,
+    lineHeight: 11,
+  },
+  cardCategoryText: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
   subtitle: {
     flex: 1,
+  },
+  listSubtitleText: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
+  cardSubtitleText: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   amountBlock: {
     minWidth: 88,
@@ -218,6 +246,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   amount: {},
+  listAmountText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  cardAmountText: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
   date: {
     marginTop: 5,
   },

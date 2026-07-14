@@ -158,6 +158,8 @@ export default function RootLayout() {
         <Stack.Screen name="notifications" options={{ headerShown: false }} />
         <Stack.Screen name="budgets" options={{ headerShown: false }} />
         <Stack.Screen name="subscriptions" options={{ headerShown: false }} />
+        <Stack.Screen name="about-finnri" options={{ headerShown: false }} />
+        <Stack.Screen name="help-support" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>
