@@ -100,7 +100,7 @@ export function QuickPrompts({
                 size={14}
                 color={theme.colors.accent}
               />
-              <ThemedText variant="bodyStrong" className="opacity-80">
+              <ThemedText variant="captionStrong" className="opacity-80">
                 {item.title}
               </ThemedText>
             </Pressable>

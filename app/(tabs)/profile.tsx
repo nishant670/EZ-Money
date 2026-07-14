@@ -1,11 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { useState } from 'react';
 import { Image, Pressable, ScrollView, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, getMoodIconName } from '@/constants/theme';
+import { useAppSettingsStore } from '@/hooks/use-app-settings-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -18,7 +18,6 @@ export default function ProfileScreen() {
   const isDark = theme.mode === 'dark';
   const router = useRouter();
   const { user, clearAuth } = useAuthStore();
-  const [smartSorting, setSmartSorting] = useState(true);
 
   const handleLogout = () => {
     clearAuth();
@@ -30,6 +29,10 @@ export default function ProfileScreen() {
   const cardColor = colors.card;
   const borderColor = isDark ? colors.border : 'rgba(0,0,0,0.05)';
   const iconStyle = theme.mood.iconStyle;
+  const { smartSorting, setSmartSorting } = useAppSettingsStore();
+  const avatarSource = user?.profile_photo_uri
+    ? { uri: user.profile_photo_uri }
+    : require('@/assets/images/finnri_avatar.png');
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
@@ -52,7 +55,7 @@ export default function ProfileScreen() {
             <View className="relative">
               <View className="w-28 h-28 rounded-full border-4 border-white overflow-hidden shadow-sm">
                 <Image
-                  source={require('@/assets/images/finnri_avatar.png')}
+                  source={avatarSource}
                   style={{ width: '100%', height: '100%' }}
                   resizeMode="cover"
                 />
@@ -140,6 +143,44 @@ export default function ProfileScreen() {
                 Security & Privacy{'\n'}Control
               </TText>
             </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/budgets')}
+              className="w-[48%] p-5 rounded-[32px]"
+              style={{ backgroundColor: cardColor }}>
+              <View
+                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
+                style={{ backgroundColor: '#E0F2F1' }}>
+                <MaterialCommunityIcons name="chart-donut" size={20} color="#00796B" />
+              </View>
+              <TText
+                className="text-base font-bold leading-tight"
+                style={{ fontFamily: Fonts.title }}>
+                Budget Watch
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Monthly Limits{'\n'}& In-App Alerts
+              </TText>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/subscriptions')}
+              className="w-[48%] p-5 rounded-[32px]"
+              style={{ backgroundColor: cardColor }}>
+              <View
+                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
+                style={{ backgroundColor: '#EDE7F6' }}>
+                <MaterialCommunityIcons name="calendar-sync-outline" size={20} color="#5E35B1" />
+              </View>
+              <TText
+                className="text-base font-bold leading-tight"
+                style={{ fontFamily: Fonts.title }}>
+                Subscriptions
+              </TText>
+              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
+                Bills, Apps{'\n'}& Renewal Dates
+              </TText>
+            </Pressable>
           </View>
 
           {/* Smart Sorting */}
@@ -158,7 +199,7 @@ export default function ProfileScreen() {
                 </TText>
               </View>
               <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                Let AI Auto-Categorize Your Spending
+                Auto-apply AI category, tag, and payment suggestions
               </TText>
             </View>
             <Switch
@@ -180,7 +221,10 @@ export default function ProfileScreen() {
             <View
               className="bg-white rounded-[32px] overflow-hidden"
               style={{ backgroundColor: cardColor }}>
-              <Pressable className="flex-row items-center p-5 border-b" style={{ borderColor }}>
+              <Pressable
+                onPress={() => router.push('/about-finnri')}
+                className="flex-row items-center p-5 border-b"
+                style={{ borderColor }}>
                 <View
                   className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
                   style={{ backgroundColor: '#FFF3E0' }}>
@@ -206,7 +250,7 @@ export default function ProfileScreen() {
                 />
               </Pressable>
 
-              <Pressable className="flex-row items-center p-5">
+              <Pressable onPress={() => router.push('/help-support')} className="flex-row items-center p-5">
                 <View
                   className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
                   style={{ backgroundColor: '#F3E5F5' }}>

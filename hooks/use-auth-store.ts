@@ -8,6 +8,7 @@ export type User = {
   username: string;
   email?: string;
   phone?: string;
+  profile_photo_uri?: string;
   biometrics_enabled?: boolean;
   has_pin?: boolean;
   stealth_mode?: boolean;

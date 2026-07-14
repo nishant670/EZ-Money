@@ -67,7 +67,7 @@ export function SectionHeader({ title, actionLabel, onAction }: SectionHeaderPro
 
   return (
     <View style={styles.sectionHeader}>
-      <ThemedText variant="sectionTitle" style={{ color: theme.colors.text }}>
+      <ThemedText variant="sectionTitle" style={{ color: theme.colors.text, fontSize: 14, lineHeight: 18 }}>
         {title}
       </ThemedText>
       {actionLabel && onAction ? (

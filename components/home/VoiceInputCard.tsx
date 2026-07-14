@@ -173,6 +173,9 @@ export function VoiceInputCard({
             flexWrap: 'wrap',
             columnGap: theme.spacing.sm,
             rowGap: theme.spacing.sm,
+            flex:1,
+            justifyContent: 'center',
+            alignItems: 'center',
           }}>
           <Pressable
             onPress={onProcess}
