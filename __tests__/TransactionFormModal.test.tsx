@@ -118,6 +118,25 @@ describe('TransactionFormModal', () => {
     expect(await findByText('HDFC UPI')).toBeTruthy();
   });
 
+  it('opens quick prompt creation without optional collection props', async () => {
+    const { findByText } = await render(
+      <TransactionFormModal
+        visible
+        initialData={{
+          category: 'Food & Drinks',
+          mode: 'Cash',
+          type: 'Expense',
+          date: '11 July 2026',
+        }}
+        onSave={jest.fn().mockResolvedValue(undefined)}
+        onClose={jest.fn()}
+        mode="quick-prompt"
+      />
+    );
+
+    expect(await findByText('New Quick Prompt')).toBeTruthy();
+  });
+
   it('validates required fields before saving', async () => {
     const { findByTestId, findByText, onSave } = await renderModal({
       initialData: {

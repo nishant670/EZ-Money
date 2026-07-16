@@ -82,6 +82,10 @@ interface TransactionFormModalProps {
   onDraftChange?: (data: EntryForm) => void;
 }
 
+const emptyAccounts: Account[] = [];
+const emptySplitFriends: SplitFriend[] = [];
+const emptySplitGroups: SplitGroup[] = [];
+
 const requiredFields: (keyof EntryForm)[] = ['title', 'amount', 'type', 'mode', 'category', 'date'];
 const fieldLabels: Record<keyof EntryForm, string> = {
   title: 'Transaction Title',
@@ -129,9 +133,9 @@ export function TransactionFormModal({
   isEdit,
   mode = 'manual',
   aiReview,
-  accounts = [],
-  splitFriends = [],
-  splitGroups = [],
+  accounts = emptyAccounts,
+  splitFriends = emptySplitFriends,
+  splitGroups = emptySplitGroups,
   onManageAccounts,
   onDraftChange,
 }: TransactionFormModalProps) {
