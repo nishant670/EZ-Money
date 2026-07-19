@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { Fonts } from '@/constants/theme';
@@ -60,6 +62,7 @@ const parseDecimalInput = (value: string) => Number(value.replace(/,/g, '').trim
 const sanitizeNumericInput = (value: string) => value.replace(/[^0-9.]/g, '');
 
 export default function ToolsScreen() {
+  const router = useRouter();
   const { token } = useAuthStore();
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
@@ -192,13 +195,19 @@ export default function ToolsScreen() {
 
   if (!token) {
     return (
-      <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
-        <StateView
-          icon="calculator-variant-outline"
-          title="Sign in required"
-          message="Your session is needed before using financial tools."
-        />
-      </View>
+      <SafeAreaView
+        className="flex-1"
+        style={{ backgroundColor: theme.background }}
+        edges={['top', 'left', 'right']}>
+        <ScreenHeader title="Tools" onBack={() => router.back()} />
+        <View className="flex-1 justify-center">
+          <StateView
+            icon="calculator-variant-outline"
+            title="Sign in required"
+            message="Your session is needed before using financial tools."
+          />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -210,12 +219,11 @@ export default function ToolsScreen() {
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View className="px-5 py-4">
-          <ThemedText className="text-2xl font-black">Tools</ThemedText>
-          <ThemedText className="mt-1 text-sm" style={{ color: mutedText }}>
-            {activeToolOption.label} calculator
-          </ThemedText>
-        </View>
+        <ScreenHeader
+          title="Tools"
+          subtitle={`${activeToolOption.label} calculator`}
+          onBack={() => router.back()}
+        />
 
         <ScrollView
           keyboardShouldPersistTaps="handled"

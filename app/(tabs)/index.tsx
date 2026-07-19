@@ -681,89 +681,94 @@ export default function HomeScreen() {
         />
 
         <View className="px-6">
-          <Card compact style={{ overflow: 'hidden', padding: 0 }}>
-            {groupedRecentTransactions.map((group, groupIndex) => (
-              <View key={group.title}>
-                <View
-                  style={{
-                    paddingHorizontal: themeTokens.spacing.lg,
-                    paddingTop: groupIndex === 0 ? themeTokens.spacing.md : themeTokens.spacing.lg,
-                    paddingBottom: themeTokens.spacing.xs,
-                  }}>
-                  <ThemedText
-                    variant="micro"
-                    style={{
-                      color: isDark ? 'rgba(255,255,255,0.5)' : '#9A9697',
-                      textTransform: 'uppercase',
-                      letterSpacing: 1,
-                    }}>
-                    {group.title}
-                  </ThemedText>
-                </View>
-                {group.data.map((item, index) => {
-                  const isLastInSection = index === group.data.length - 1;
-                  const isLastSection = groupIndex === groupedRecentTransactions.length - 1;
-                  return (
-                    <TransactionItem
-                      key={item.id}
-                      title={item.name}
-                      icon={item.icon}
-                      category={item.category}
-                      subtitle={item.accountName ?? item.mode ?? ''}
-                      amount={Math.abs(item.amount).toFixed(2)}
-                      maskAmount={isStealthMode}
-                      date={item.timeLabel ?? item.dateLabel ?? ''}
-                      color={item.color}
-                      bgColor={item.bgColor}
-                      isIncome={item.entryType === 'income'}
-                      variant="list"
-                      showDivider={!isLastInSection || !isLastSection}
-                      onPress={() => {
-                        router.push({
-                          pathname: '/entry/[id]',
-                          params: {
-                            id: item.id,
-                            name: item.name,
-                            category: item.category,
-                            amount: Math.abs(item.amount).toFixed(2),
-                            entryType: item.entryType ?? 'expense',
-                            section: item.section,
-                            mode: item.mode ?? '',
-                            notes: item.notes ?? '',
-                            merchant: item.merchant ?? '',
-                            dateLabel: item.dateLabel ?? '',
-                            rawDate: item.rawDate ?? '',
-                            tag: item.tag ?? '',
-                          },
-                        });
-                      }}
-                    />
-                  );
-                })}
-              </View>
-            ))}
-            <View
+          {groupedRecentTransactions.map((group, groupIndex) => (
+            <Card
+              key={group.title}
+              compact
               style={{
-                borderTopWidth: 1,
-                borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(45,45,45,0.06)',
-                paddingHorizontal: themeTokens.spacing.lg,
-                paddingVertical: themeTokens.spacing.md,
-                flexDirection: 'row',
-                justifyContent: 'space-between',
+                overflow: 'hidden',
+                padding: 0,
+                marginBottom:
+                  groupIndex === groupedRecentTransactions.length - 1
+                    ? 0
+                    : themeTokens.spacing.md,
               }}>
-              <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
-                {recentTransactions.length} latest
-              </ThemedText>
-              <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
-                {todayCount} today
-              </ThemedText>
-              <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
-                {isStealthMode
-                  ? `${CURRENCY_SYMBOL}•••• out`
-                  : `${CURRENCY_SYMBOL}${formatCompactCurrency(recentExpenseTotal)} out`}
-              </ThemedText>
-            </View>
-          </Card>
+              <View
+                style={{
+                  paddingHorizontal: themeTokens.spacing.lg,
+                  paddingTop: themeTokens.spacing.md,
+                  paddingBottom: themeTokens.spacing.xs,
+                }}>
+                <ThemedText
+                  variant="micro"
+                  style={{
+                    color: isDark ? 'rgba(255,255,255,0.5)' : '#9A9697',
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                  }}>
+                  {group.title}
+                </ThemedText>
+              </View>
+              {group.data.map((item, index) => {
+                const isLastInSection = index === group.data.length - 1;
+                return (
+                  <TransactionItem
+                    key={item.id}
+                    title={item.name}
+                    icon={item.icon}
+                    category={item.category}
+                    subtitle={item.accountName ?? item.mode ?? ''}
+                    amount={Math.abs(item.amount).toFixed(2)}
+                    maskAmount={isStealthMode}
+                    date={item.timeLabel ?? item.dateLabel ?? ''}
+                    color={item.color}
+                    bgColor={item.bgColor}
+                    isIncome={item.entryType === 'income'}
+                    variant="list"
+                    showDivider={!isLastInSection}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/entry/[id]',
+                        params: {
+                          id: item.id,
+                          name: item.name,
+                          category: item.category,
+                          amount: Math.abs(item.amount).toFixed(2),
+                          entryType: item.entryType ?? 'expense',
+                          section: item.section,
+                          mode: item.mode ?? '',
+                          notes: item.notes ?? '',
+                          merchant: item.merchant ?? '',
+                          dateLabel: item.dateLabel ?? '',
+                          rawDate: item.rawDate ?? '',
+                          tag: item.tag ?? '',
+                        },
+                      });
+                    }}
+                  />
+                );
+              })}
+            </Card>
+          ))}
+          <View
+            style={{
+              paddingHorizontal: themeTokens.spacing.lg,
+              paddingTop: themeTokens.spacing.md,
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+            }}>
+            <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
+              {recentTransactions.length} latest
+            </ThemedText>
+            <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
+              {todayCount} today
+            </ThemedText>
+            <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
+              {isStealthMode
+                ? `${CURRENCY_SYMBOL}•••• out`
+                : `${CURRENCY_SYMBOL}${formatCompactCurrency(recentExpenseTotal)} out`}
+            </ThemedText>
+          </View>
         </View>
       </View>
     );

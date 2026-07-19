@@ -103,22 +103,29 @@ export default function ProfileScreen() {
 
           {/* Features Grid */}
           <View className="flex-row flex-wrap justify-between gap-y-4">
-            {/* Sync My World */}
-            <View className="w-[48%] p-5 rounded-[32px]" style={{ backgroundColor: cardColor }}>
+            {/* Tools */}
+            <Pressable
+              onPress={() => router.push('/tools')}
+              className="w-[48%] p-5 rounded-[32px]"
+              style={{ backgroundColor: cardColor }}>
               <View
                 className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
                 style={{ backgroundColor: '#E1F5FE' }}>
-                <MaterialCommunityIcons name={getMoodIconName('sync', iconStyle) as any} size={20} color="#0288D1" />
+                <MaterialCommunityIcons
+                  name={getMoodIconName('toolbox', iconStyle) as any}
+                  size={20}
+                  color="#0288D1"
+                />
               </View>
               <TText
                 className="text-base font-bold leading-tight"
                 style={{ fontFamily: Fonts.title }}>
-                Sync My World
+                Tools
               </TText>
               <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                Backup & Keep{'\n'}Everything Updated
+                SIP & EMI{'\n'}Calculators
               </TText>
-            </View>
+            </Pressable>
 
             {/* Keep it Safe */}
             <Pressable

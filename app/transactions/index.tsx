@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { router, Stack, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
+import { Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TransactionItem } from '@/components/home/TransactionItem';
@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { AdvancedFilter } from '@/components/transactions/AdvancedFilter';
 import { Colors } from '@/constants/theme';
 import { StateView } from '@/components/ui/StateView';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
@@ -20,6 +21,8 @@ export default function TransactionsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const { token } = useAuthStore();
+  const { accountId: accountIdParam } = useLocalSearchParams<{ accountId?: string }>();
+  const routeAccountId = accountIdParam ? Number(accountIdParam) : null;
 
   // Logic States
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -38,7 +41,13 @@ export default function TransactionsScreen() {
   const [endDate, setEndDate] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(
+    Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null
+  );
+
+  useEffect(() => {
+    setSelectedAccountId(Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null);
+  }, [routeAccountId]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
@@ -325,39 +334,35 @@ export default function TransactionsScreen() {
       </ScrollView>
 
       {/* Advanced Filters Bottom Sheet */}
-      <Modal
-        transparent
-        animationType="slide"
+      <AnimatedBottomSheet
         visible={isFilterOpen}
-        onRequestClose={() => setIsFilterOpen(false)}>
-        <View className="flex-1 justify-end bg-black/40">
-          <Pressable className="absolute inset-0" onPress={() => setIsFilterOpen(false)} />
-          <AdvancedFilter
-            onClose={() => setIsFilterOpen(false)}
-            count={transactions.length}
-            onApply={(newFilters: any) => {
-              setFilterType(newFilters.type);
-              setSelectedCategory(newFilters.category);
-              setSelectedMethod(newFilters.mode);
-              setSelectedAccountId(newFilters.account_id);
-              setMinAmount(newFilters.min_amount);
-              setMaxAmount(newFilters.max_amount);
-              setStartDate(newFilters.start_date);
-              setEndDate(newFilters.end_date);
-              setIsFilterOpen(false);
-            }}
-            currentFilters={{
-              type: filterType,
-              dateRange: { from: startDate, to: endDate },
-              amountRange: { min: minAmount, max: maxAmount },
-              category: selectedCategory,
-              accountId: selectedAccountId,
-              paymentMethod: selectedMethod,
-            }}
-            accounts={accounts}
-          />
-        </View>
-      </Modal>
+        onClose={() => setIsFilterOpen(false)}
+        sheetStyle={{ height: '92%', width: '100%' }}>
+        <AdvancedFilter
+          onClose={() => setIsFilterOpen(false)}
+          count={transactions.length}
+          onApply={(newFilters: any) => {
+            setFilterType(newFilters.type);
+            setSelectedCategory(newFilters.category);
+            setSelectedMethod(newFilters.mode);
+            setSelectedAccountId(newFilters.account_id);
+            setMinAmount(newFilters.min_amount);
+            setMaxAmount(newFilters.max_amount);
+            setStartDate(newFilters.start_date);
+            setEndDate(newFilters.end_date);
+            setIsFilterOpen(false);
+          }}
+          currentFilters={{
+            type: filterType,
+            dateRange: { from: startDate, to: endDate },
+            amountRange: { min: minAmount, max: maxAmount },
+            category: selectedCategory,
+            accountId: selectedAccountId,
+            paymentMethod: selectedMethod,
+          }}
+          accounts={accounts}
+        />
+      </AnimatedBottomSheet>
     </SafeAreaView>
   );
 }

@@ -426,7 +426,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     paddingTop: 8,
-    marginTop: 60,
   },
   header: {
     flexDirection: 'row',

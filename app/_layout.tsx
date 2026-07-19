@@ -137,6 +137,7 @@ export default function RootLayout() {
           name="accounts/manage"
           options={{ presentation: 'modal', title: 'Account', headerShown: false }}
         />
+        <Stack.Screen name="accounts/[id]" options={{ headerShown: false }} />
         <Stack.Screen
           name="auth"
           options={{ headerShown: false, gestureEnabled: false }}
@@ -158,6 +159,7 @@ export default function RootLayout() {
         <Stack.Screen name="notifications" options={{ headerShown: false }} />
         <Stack.Screen name="budgets" options={{ headerShown: false }} />
         <Stack.Screen name="subscriptions" options={{ headerShown: false }} />
+        <Stack.Screen name="tools" options={{ headerShown: false }} />
         <Stack.Screen name="about-finnri" options={{ headerShown: false }} />
         <Stack.Screen name="help-support" options={{ headerShown: false }} />
       </Stack>
