@@ -144,6 +144,9 @@ export function TransactionFormModal({
   const colorScheme = themeTokens.mode;
   const accent = theme.accent;
   const accentSurface = colorScheme === 'dark' ? theme.secondary : theme.secondary;
+  const detailInputPlaceholderColor =
+    colorScheme === 'dark' ? 'rgba(255,255,255,0.45)' : '#9CA3AF';
+  const detailIconSurface = colorScheme === 'dark' ? theme.secondary : accentSurface;
 
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
   const [panelAnim] = useState(new Animated.Value(SCREEN_HEIGHT));
@@ -1117,20 +1120,26 @@ export function TransactionFormModal({
                           <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
                             Merchant
                           </ThemedText>
-                          <View className="bg-gray-50 dark:bg-gray-800/50 rounded-[20px] p-3 flex-row items-center gap-2">
-                            <View className="h-6 w-6 rounded-lg bg-red-100 items-center justify-center">
+                          <View
+                            className="rounded-[20px] border p-3 flex-row items-center gap-3 shadow-sm"
+                            style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                            <View
+                              className="h-8 w-8 rounded-xl items-center justify-center"
+                              style={{ backgroundColor: detailIconSurface }}>
                               <MaterialCommunityIcons
                                 name="storefront-outline"
-                                size={14}
-                                color="#EF4444"
+                                size={16}
+                                color={accent}
                               />
                             </View>
                             <TextInput
                               value={form.merchant}
                               onChangeText={(t) => setForm((p) => ({ ...p, merchant: t }))}
                               className="text-sm font-black flex-1 p-0"
-                              placeholder="Store Name"
-                              style={{ color: theme.text }}
+                              placeholder="Merchant or store name"
+                              placeholderTextColor={detailInputPlaceholderColor}
+                              selectionColor={accent}
+                              style={{ color: theme.text, minHeight: 24 }}
                             />
                           </View>
                         </View>
@@ -1167,12 +1176,17 @@ export function TransactionFormModal({
                         <TextInput
                           multiline
                           placeholder="Add a note..."
-                          placeholderTextColor="#D1D5DB"
+                          placeholderTextColor={detailInputPlaceholderColor}
                           value={form.notes}
                           onChangeText={(t) => setForm((p) => ({ ...p, notes: t }))}
-                          className="bg-gray-50 dark:bg-gray-800/50 rounded-[20px] p-4 text-sm min-h-[84px]"
+                          className="rounded-[20px] border px-4 py-3 text-sm font-bold min-h-[92px] shadow-sm"
                           textAlignVertical="top"
-                          style={{ color: theme.text }}
+                          selectionColor={accent}
+                          style={{
+                            backgroundColor: theme.card,
+                            borderColor: theme.border,
+                            color: theme.text,
+                          }}
                         />
                       </View>
                     </View>

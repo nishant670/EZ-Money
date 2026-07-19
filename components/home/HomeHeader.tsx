@@ -46,7 +46,7 @@ export function HomeHeader({ unreadCount = 0, onNotificationsPress }: HomeHeader
         onPress={onNotificationsPress}
         className="h-10 w-10 items-center justify-center rounded-full"
         hitSlop={12}>
-        <MaterialCommunityIcons name="bell" size={24} color={theme.colors.text} />
+        <MaterialCommunityIcons name="bell-outline" size={24} color={theme.colors.text} />
         {unreadCount > 0 && (
           <View
             className="absolute -right-1 -top-1 h-5 min-w-5 items-center justify-center rounded-full px-1"
