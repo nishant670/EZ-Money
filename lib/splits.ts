@@ -79,6 +79,33 @@ export type SplitBalance = {
   net_balance: number;
 };
 
+export type SplitActivityType = 'group_created' | 'friend_created' | 'bill' | 'settlement';
+
+export type SplitActivityItem = {
+  id: string;
+  type: SplitActivityType;
+  record_id: number;
+  title: string;
+  date: string;
+  amount?: number;
+  group_id?: number | null;
+  group?: SplitGroup | null;
+  friend_id?: number | null;
+  friend?: SplitFriend | null;
+  direction?: SettlementDirection;
+  participant_count?: number;
+  participants?: SplitParticipant[];
+  notes?: string;
+  created_at: string;
+};
+
+export type SplitActivityResponse = {
+  items: SplitActivityItem[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export type SplitFriendPayload = {
   name: string;
   email?: string;
@@ -241,6 +268,22 @@ export const createSplitGroup = async (
   return response.json();
 };
 
+export const updateSplitGroup = async (
+  token: string,
+  groupId: number,
+  payload: SplitGroupPayload
+): Promise<SplitGroup> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}`, {
+    method: 'PUT',
+    headers: authHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to update this split group right now.');
+  }
+  return response.json();
+};
+
 export const fetchSplitBills = async (token: string): Promise<SplitBill[]> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/bills`, {
     headers: authHeaders(token),
@@ -310,6 +353,30 @@ export const fetchSplitSettlements = async (token: string): Promise<SplitSettlem
   return (payload as SplitSettlement[]).map((settlement) => ({
     ...settlement,
     amount: Number(settlement.amount),
+  }));
+};
+
+export const fetchSplitActivity = async (token: string): Promise<SplitActivityItem[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/activity`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load split activity right now.');
+  }
+  const payload: unknown = await response.json();
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    !Array.isArray((payload as SplitActivityResponse).items)
+  ) {
+    throw new Error('The split activity response was invalid.');
+  }
+  return (payload as SplitActivityResponse).items.map((item) => ({
+    ...item,
+    amount: item.amount == null ? undefined : Number(item.amount),
+    participants: (item.participants ?? []).map((participant) =>
+      coerceAmount(participant as unknown as Record<string, unknown>, ['share_amount'])
+    ) as SplitParticipant[],
   }));
 };
 

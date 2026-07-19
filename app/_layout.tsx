@@ -1,8 +1,4 @@
-import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
-} from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';
@@ -96,7 +92,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isAppReady) {
-      // Hide native splash once the app is "ready" 
+      // Hide native splash once the app is "ready"
       // (the custom splash will be visible on top)
       SplashScreen.hideAsync();
     }
@@ -117,51 +113,48 @@ export default function RootLayout() {
     return null;
   }
 
-
   return (
     <ThemeProvider value={navigationTheme}>
-      {showCustomSplash && (
-        <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />
-      )}
-      <Stack>
+      {showCustomSplash && <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />}
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 280,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+          contentStyle: { backgroundColor: themeTokens.colors.background },
+        }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="onboarding"
-          options={{ headerShown: false, gestureEnabled: false }}
-        />
+        <Stack.Screen name="onboarding" options={{ gestureEnabled: false, animation: 'fade' }} />
         <Stack.Screen
           name="modal"
-          options={{ presentation: 'modal', title: 'Modal' }}
+          options={{
+            presentation: 'modal',
+            title: 'Modal',
+            headerShown: true,
+            animation: 'slide_from_bottom',
+          }}
         />
         <Stack.Screen
           name="accounts/manage"
-          options={{ presentation: 'modal', title: 'Account', headerShown: false }}
+          options={{ presentation: 'modal', title: 'Account', animation: 'slide_from_bottom' }}
         />
-        <Stack.Screen name="accounts/[id]" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="auth"
-          options={{ headerShown: false, gestureEnabled: false }}
-        />
-        <Stack.Screen
-          name="transactions/index"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="lock"
-          options={{ headerShown: false, gestureEnabled: false }}
-        />
-        <Stack.Screen
-          name="edit-profile"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen name="security" options={{ headerShown: false }} />
-        <Stack.Screen name="change-pin" options={{ headerShown: false }} />
-        <Stack.Screen name="notifications" options={{ headerShown: false }} />
-        <Stack.Screen name="budgets" options={{ headerShown: false }} />
-        <Stack.Screen name="subscriptions" options={{ headerShown: false }} />
-        <Stack.Screen name="tools" options={{ headerShown: false }} />
-        <Stack.Screen name="about-finnri" options={{ headerShown: false }} />
-        <Stack.Screen name="help-support" options={{ headerShown: false }} />
+        <Stack.Screen name="accounts/[id]" />
+        <Stack.Screen name="auth" options={{ gestureEnabled: false, animation: 'fade' }} />
+        <Stack.Screen name="transactions/index" />
+        <Stack.Screen name="lock" options={{ gestureEnabled: false, animation: 'fade' }} />
+        <Stack.Screen name="edit-profile" />
+        <Stack.Screen name="security" />
+        <Stack.Screen name="change-pin" />
+        <Stack.Screen name="notifications" />
+        <Stack.Screen name="budgets" />
+        <Stack.Screen name="subscriptions" />
+        <Stack.Screen name="billing" />
+        <Stack.Screen name="ai-usage" />
+        <Stack.Screen name="tools" />
+        <Stack.Screen name="about-finnri" />
+        <Stack.Screen name="help-support" />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>

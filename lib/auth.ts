@@ -1,5 +1,58 @@
 import { API_BASE_URL } from './transactions';
 
+const AUTH_NETWORK_ERROR_MESSAGE = 'Could not connect to Finnri. Check your connection and try again.';
+
+const authErrorMessages: Record<string, string> = {
+  failed_lookup_guest: 'Could not continue as guest right now. Please try again.',
+  failed_ensure_default_account: 'Could not finish setting up guest mode. Please try again.',
+  failed_create_default_account: 'Could not finish setting up guest mode. Please try again.',
+  failed_create_guest: 'Could not continue as guest right now. Please try again.',
+  failed_create_session: 'Could not start your session. Please try again.',
+  invalid_request: 'Something went wrong while starting guest mode. Please try again.',
+  weak_pin: 'Choose a PIN that is not easy to guess.',
+};
+
+const networkErrorMessages = new Set([
+  'Network request failed',
+  'Failed to fetch',
+  'Load failed',
+]);
+
+export const getFriendlyAuthErrorMessage = (
+  error: unknown,
+  fallback: string,
+) => {
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+
+  const message = error.message.trim();
+  if (!message) {
+    return fallback;
+  }
+
+  return networkErrorMessages.has(message) ? AUTH_NETWORK_ERROR_MESSAGE : message;
+};
+
+const readAuthErrorPayload = async (response: Response, fallback: string) => {
+  try {
+    const text = await response.text();
+    if (!text) {
+      return fallback;
+    }
+    const payload = JSON.parse(text) as { error?: string; message?: string };
+    if (payload.message) {
+      return payload.message;
+    }
+    if (payload.error) {
+      return authErrorMessages[payload.error] ?? fallback;
+    }
+    return fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 export type IdentifyResponse = {
   exists: boolean;
   is_guest: boolean;
@@ -47,8 +100,7 @@ export const guestCheckin = async (
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Unable to check in as guest right now.');
+    throw new Error(await readAuthErrorPayload(response, 'Could not continue as guest right now. Please try again.'));
   }
 
   return response.json();
@@ -72,8 +124,7 @@ export const registerUser = async (payload: RegisterPayload): Promise<AuthRespon
   });
 
   if (!response.ok) {
-    const errorText = await response.json();
-    throw new Error(errorText.error || 'Unable to register right now.');
+    throw new Error(await readAuthErrorPayload(response, 'Unable to register right now.'));
   }
 
   return response.json();

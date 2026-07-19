@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { Alert, Linking, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -69,19 +70,7 @@ export default function HelpSupportScreen() {
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor: colors.background }}>
-      <View className="flex-row items-center justify-between px-6 py-4">
-        <Pressable
-          onPress={() => router.back()}
-          className="h-10 w-10 items-center justify-center rounded-full"
-          style={{ backgroundColor: colors.card }}
-          hitSlop={12}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
-        </Pressable>
-        <ThemedText className="text-base font-black" style={{ fontFamily: Fonts.title }}>
-          Help & Support
-        </ThemedText>
-        <View className="h-10 w-10" />
-      </View>
+      <AppHeader title="Help & Support" onBack={() => router.back()} />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
         <View className="rounded-[32px] p-6" style={{ backgroundColor: colors.card }}>

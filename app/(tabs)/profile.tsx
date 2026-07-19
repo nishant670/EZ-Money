@@ -1,14 +1,18 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
+import { useCallback, useState } from 'react';
 import { Image, Pressable, ScrollView, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CreditStatusCard } from '@/components/billing/CreditStatusCard';
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, getMoodIconName } from '@/constants/theme';
 import { useAppSettingsStore } from '@/hooks/use-app-settings-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
@@ -17,13 +21,29 @@ export default function ProfileScreen() {
   const colors = theme.colors;
   const isDark = theme.mode === 'dark';
   const router = useRouter();
-  const { user, clearAuth } = useAuthStore();
+  const { user, token, clearAuth } = useAuthStore();
+  const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
+  const [isBillingLoading, setIsBillingLoading] = useState(false);
 
   const handleLogout = () => {
     clearAuth();
     router.replace('/auth');
   };
   const isGuest = !!user?.is_guest;
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setBillingStatus(null);
+        return;
+      }
+      setIsBillingLoading(true);
+      fetchBillingStatus(token)
+        .then(setBillingStatus)
+        .catch(() => setBillingStatus(null))
+        .finally(() => setIsBillingLoading(false));
+    }, [token])
+  );
 
   const backgroundColor = colors.background;
   const cardColor = colors.card;
@@ -33,19 +53,17 @@ export default function ProfileScreen() {
   const avatarSource = user?.profile_photo_uri
     ? { uri: user.profile_photo_uri }
     : require('@/assets/images/finnri_avatar.png');
+  const hasEmail = !!user?.email?.trim();
+  const hasPhone = !!user?.phone?.trim();
+  const isProfileIncomplete = !user?.username?.trim() || !hasEmail || !hasPhone;
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-6 py-4">
-        <View style={{ width: 24 }} />
-        <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-          Your Playbook
-        </TText>
-        <Pressable onPress={() => router.push('/app-mood')} hitSlop={20}>
-          <MaterialCommunityIcons name="magic-staff" size={24} color={colors.text} />
-        </Pressable>
-      </View>
+      <AppHeader
+        title="Profile"
+        rightIcon="magic-staff"
+        onRightPress={() => router.push('/app-mood')}
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -76,16 +94,22 @@ export default function ProfileScreen() {
               style={{ fontFamily: Fonts.title }}>
               {user?.username || 'Guest User'}
             </TText>
-            <TText className="text-sm italic opacity-60 mb-1" style={{ fontFamily: Fonts.body }}>
-              {user?.email || 'No email linked'}
-            </TText>
-            <TText className="text-sm italic opacity-60 mb-6" style={{ fontFamily: Fonts.body }}>
-              {user?.phone || 'No phone linked'}
-            </TText>
+            <View className="mt-2 mb-6 items-center gap-1">
+              {hasEmail && (
+                <TText className="text-sm italic opacity-60" style={{ fontFamily: Fonts.body }}>
+                  {user?.email}
+                </TText>
+              )}
+              {hasPhone && (
+                <TText className="text-sm italic opacity-60" style={{ fontFamily: Fonts.body }}>
+                  {user?.phone}
+                </TText>
+              )}
+            </View>
 
             <Pressable
               onPress={() => router.push('/edit-profile')}
-              className="flex-row items-center px-8 py-3 rounded-full"
+              className="relative flex-row items-center px-8 py-3 rounded-full"
               style={{ backgroundColor: colors.secondary }}>
               <MaterialCommunityIcons
                 name={getMoodIconName('pencil', iconStyle) as any}
@@ -98,7 +122,27 @@ export default function ProfileScreen() {
                 style={{ color: colors.accent, fontFamily: Fonts.title }}>
                 Edit My Profile
               </TText>
+              {isProfileIncomplete && (
+                <View
+                  className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-white"
+                  style={{ backgroundColor: '#F9A825' }}
+                />
+              )}
             </Pressable>
+          </View>
+
+          <View style={{ gap: theme.spacing.md }}>
+            <CreditStatusCard
+              credits={billingStatus?.credits ?? null}
+              loading={isBillingLoading}
+              compact
+              onPress={() => router.push('/billing')}
+            />
+            {isGuest ? (
+              <TText className="px-1 text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+                Create an account before subscribing so your plan and credits stay with you.
+              </TText>
+            ) : null}
           </View>
 
           {/* Features Grid */}
@@ -222,6 +266,68 @@ export default function ProfileScreen() {
             <TText
               className="text-xs tracking-widest font-bold opacity-40 mb-4 ml-2"
               style={{ fontFamily: Fonts.body }}>
+              FINNRI AI
+            </TText>
+
+            <View
+              className="bg-white rounded-[32px] overflow-hidden"
+              style={{ backgroundColor: cardColor }}>
+              <Pressable
+                onPress={() => router.push('/billing')}
+                className="flex-row items-center p-5 border-b"
+                style={{ borderColor }}>
+                <View
+                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
+                  style={{ backgroundColor: '#FFF3E0' }}>
+                  <MaterialCommunityIcons name="creation" size={20} color="#EF6C00" />
+                </View>
+                <View className="flex-1">
+                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
+                    Plans & Credits
+                  </TText>
+                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+                    Trial balance, plans{'\n'}& lifetime quote
+                  </TText>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color={colors.text}
+                  style={{ opacity: 0.3 }}
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() => router.push('/ai-usage')}
+                className="flex-row items-center p-5">
+                <View
+                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
+                  style={{ backgroundColor: '#F3E5F5' }}>
+                  <MaterialCommunityIcons name="history" size={20} color="#7B1FA2" />
+                </View>
+                <View className="flex-1">
+                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
+                    AI Usage History
+                  </TText>
+                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+                    Credits spent{'\n'}on AI capture
+                  </TText>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color={colors.text}
+                  style={{ opacity: 0.3 }}
+                />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Business Section Info */}
+          <View className="mt-4">
+            <TText
+              className="text-xs tracking-widest font-bold opacity-40 mb-4 ml-2"
+              style={{ fontFamily: Fonts.body }}>
               THE FINNRI CIRCLE
             </TText>
 
@@ -257,7 +363,9 @@ export default function ProfileScreen() {
                 />
               </Pressable>
 
-              <Pressable onPress={() => router.push('/help-support')} className="flex-row items-center p-5">
+              <Pressable
+                onPress={() => router.push('/help-support')}
+                className="flex-row items-center p-5">
                 <View
                   className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
                   style={{ backgroundColor: '#F3E5F5' }}>

@@ -79,6 +79,30 @@ export const fetchUnreadNotificationCount = async (token?: string | null): Promi
   return Number(payload?.unread_count ?? 0);
 };
 
+export const fetchUnreadBudgetNotificationIds = async (
+  token?: string | null
+): Promise<Set<number>> => {
+  const payload = await fetchNotifications(token, 'unread');
+  return new Set(
+    payload.notifications
+      .filter((notification) => notification.type.startsWith('budget.'))
+      .map((notification) => notification.id)
+  );
+};
+
+export const fetchNewUnreadBudgetNotification = async (
+  token: string,
+  previousIds: Set<number>
+): Promise<AppNotification | null> => {
+  const payload = await fetchNotifications(token, 'unread');
+  return (
+    payload.notifications.find(
+      (notification) =>
+        notification.type.startsWith('budget.') && !previousIds.has(notification.id)
+    ) ?? null
+  );
+};
+
 export const markNotificationRead = async (token: string, id: number) => {
   const response = await fetch(`${API_BASE_URL}/v1/notifications/${id}/read`, {
     method: 'PATCH',

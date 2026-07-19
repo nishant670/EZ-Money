@@ -22,7 +22,15 @@ import {
   AuthScreen4,
   AuthSecuritySetupScreen
 } from '@/components/auth';
-import { authOtpSend, guestCheckin, identifyUser, loginUser, registerUser, resetPin } from '@/lib/auth';
+import {
+  authOtpSend,
+  getFriendlyAuthErrorMessage,
+  guestCheckin,
+  identifyUser,
+  loginUser,
+  registerUser,
+  resetPin,
+} from '@/lib/auth';
 import { getDeviceId } from '@/lib/device';
 import { saveLocalSecurityPin } from '@/lib/security';
 
@@ -71,7 +79,7 @@ export default function AuthFlow() {
       }
       router.replace('/(tabs)');
     } catch (error) {
-      setGuestError(error instanceof Error ? error.message : 'Unable to continue as guest.');
+      setGuestError(getFriendlyAuthErrorMessage(error, 'Unable to continue as guest.'));
     } finally {
       setIsGuestChecking(false);
     }
@@ -102,7 +110,7 @@ export default function AuthFlow() {
       );
       changeStep(6, 'forward');
     } catch (error) {
-      setIdentifyError(error instanceof Error ? error.message : 'Registration failed.');
+      setIdentifyError(getFriendlyAuthErrorMessage(error, 'Registration failed.'));
     } finally {
       setIsRegistering(false);
     }
@@ -134,7 +142,7 @@ export default function AuthFlow() {
       );
       handleFinish();
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : 'Login failed.');
+      setLoginError(getFriendlyAuthErrorMessage(error, 'Login failed.'));
     } finally {
       setIsLoggingIn(false);
     }
@@ -154,7 +162,7 @@ export default function AuthFlow() {
       await authOtpSend(identifier);
       changeStep(8, 'forward');
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : 'Unable to send reset code.');
+      setLoginError(getFriendlyAuthErrorMessage(error, 'Unable to send reset code.'));
     } finally {
       setIsSendingResetOtp(false);
     }
@@ -183,7 +191,7 @@ export default function AuthFlow() {
       );
       handleFinish();
     } catch (error) {
-      setResetError(error instanceof Error ? error.message : 'Unable to reset PIN.');
+      setResetError(getFriendlyAuthErrorMessage(error, 'Unable to reset PIN.'));
     } finally {
       setIsResettingPin(false);
     }
@@ -205,7 +213,7 @@ export default function AuthFlow() {
       }
       changeStep(isGuestLinking ? 10 : 7, 'forward');
     } catch (error) {
-      setIdentifyError(error instanceof Error ? error.message : 'Unable to verify that identifier.');
+      setIdentifyError(getFriendlyAuthErrorMessage(error, 'Unable to verify that identifier.'));
     } finally {
       setIsIdentifying(false);
     }

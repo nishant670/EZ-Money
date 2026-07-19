@@ -15,11 +15,12 @@ import {
   View,
   Alert,
   ActivityIndicator,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -183,15 +184,7 @@ export default function EditProfileScreen() {
   return (
     <>
       <SafeAreaView className="flex-1" style={{ backgroundColor }}>
-        <View className="flex-row items-center justify-between px-6 py-4">
-          <Pressable hitSlop={20} onPress={() => router.back()}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={theme.text} />
-          </Pressable>
-          <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-            Edit Profile
-          </TText>
-          <View className="w-6" />
-        </View>
+        <AppHeader title="Edit Profile" onBack={() => router.back()} />
 
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -355,12 +348,7 @@ export default function EditProfileScreen() {
       </SafeAreaView>
 
       {/* OTP Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showOtp}
-        onRequestClose={() => setShowOtp(false)}>
-        <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+      <AnimatedBottomSheet visible={showOtp} onClose={() => setShowOtp(false)}>
           <View className="bg-white rounded-t-[32px] p-8 pb-12 items-center">
             <View className="w-12 h-1 rounded-full bg-gray-300 mb-6" />
             <View
@@ -410,8 +398,7 @@ export default function EditProfileScreen() {
               </TText>
             </Pressable>
           </View>
-        </View>
-      </Modal>
+      </AnimatedBottomSheet>
     </>
   );
 }

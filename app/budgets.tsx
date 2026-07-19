@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -163,30 +164,13 @@ export default function BudgetsScreen() {
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View className="flex-row items-center justify-between px-6 py-4">
-          <Pressable
-            onPress={() => router.back()}
-            className="h-10 w-10 items-center justify-center rounded-full"
-            style={{ backgroundColor: colors.card }}
-            hitSlop={12}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
-          </Pressable>
-          <View className="items-center">
-            <ThemedText className="text-base font-black" style={{ fontFamily: Fonts.title }}>
-              Budget alerts
-            </ThemedText>
-            <ThemedText className="text-xs" style={{ color: muted }}>
-              {activeBudgets} active
-            </ThemedText>
-          </View>
-          <Pressable
-            onPress={resetForm}
-            className="h-10 w-10 items-center justify-center rounded-full"
-            style={{ backgroundColor: colors.card }}
-            hitSlop={12}>
-            <MaterialCommunityIcons name="plus" size={22} color={colors.accent} />
-          </Pressable>
-        </View>
+        <AppHeader
+          title="Budget alerts"
+          subtitle={`${activeBudgets} active`}
+          onBack={() => router.back()}
+          rightIcon="plus"
+          onRightPress={resetForm}
+        />
 
         <ScrollView
           keyboardShouldPersistTaps="handled"

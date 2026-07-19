@@ -7,13 +7,12 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Modal,
-  Pressable,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -201,8 +200,7 @@ export default function ManageAccountScreen() {
     onSelect: (item: string) => void,
     title: string
   ) => (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
+    <AnimatedBottomSheet visible={visible} onClose={onClose}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <ThemedText style={styles.modalTitle}>{title}</ThemedText>
@@ -224,8 +222,7 @@ export default function ManageAccountScreen() {
             ))}
           </ScrollView>
         </View>
-      </Pressable>
-    </Modal>
+    </AnimatedBottomSheet>
   );
 
   const renderStep1 = () => (
@@ -1013,11 +1010,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.title,
     fontWeight: '900',
     marginRight: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: 'white',

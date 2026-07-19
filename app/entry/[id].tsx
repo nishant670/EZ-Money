@@ -25,6 +25,10 @@ import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { deleteEntry, fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
 import {
+  fetchNewUnreadBudgetNotification,
+  fetchUnreadBudgetNotificationIds,
+} from '@/lib/notifications';
+import {
   createSplitBill,
   createSplitFriend,
   createSplitGroup,
@@ -224,6 +228,10 @@ export default function TransactionDetailsScreen() {
       }
 
       if (!token) throw new Error('Missing session.');
+      const budgetNotificationIds =
+        formData.type === 'Expense'
+          ? await fetchUnreadBudgetNotificationIds(token).catch(() => new Set<number>())
+          : new Set<number>();
       await updateEntry(token, params.id, payload);
 
       if (formData.splitEnabled && formData.type === 'Expense') {
@@ -303,6 +311,17 @@ export default function TransactionDetailsScreen() {
       await fetchSplitDetails();
       notifyTransactionsChanged();
       setIsEditModalVisible(false);
+      if (formData.type === 'Expense') {
+        const notification = await fetchNewUnreadBudgetNotification(token, budgetNotificationIds).catch(
+          () => null
+        );
+        if (notification) {
+          Alert.alert(notification.title, notification.body, [
+            { text: 'Later', style: 'cancel' },
+            { text: 'View Budget Watch', onPress: () => router.push('/budgets') },
+          ]);
+        }
+      }
     } catch (error) {
       console.error(error);
       throw error instanceof Error ? error : new Error('Failed to update transaction');
@@ -346,6 +365,16 @@ export default function TransactionDetailsScreen() {
       shareAmount: Number(participant.share_amount || 0).toFixed(2),
       direction: participant.direction,
     })),
+    subscriptionEnabled: false,
+    subscriptionName: '',
+    subscriptionMerchant: '',
+    subscriptionCategory: '',
+    subscriptionAmount: '',
+    subscriptionBillingInterval: '',
+    subscriptionNextDueDate: '',
+    subscriptionReminderDays: '3',
+    subscriptionCancelBeforeDue: false,
+    subscriptionNotes: '',
   };
 
   if (isLoading && !transaction) {

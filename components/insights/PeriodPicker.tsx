@@ -3,8 +3,6 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +10,7 @@ import {
   View,
   Dimensions,
 } from 'react-native';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -104,9 +103,7 @@ export function PeriodPicker({ visible, onClose, onSelect, currentRange }: Perio
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
+    <AnimatedBottomSheet visible={visible} onClose={onClose}>
         <View style={[styles.sheet, { backgroundColor: theme.background }]}>
           <View style={styles.handle} />
 
@@ -133,8 +130,7 @@ export function PeriodPicker({ visible, onClose, onSelect, currentRange }: Perio
             />
           )}
         </View>
-      </View>
-    </Modal>
+    </AnimatedBottomSheet>
   );
 }
 
@@ -391,14 +387,6 @@ function CalendarMonth({ monthDate, start, end, onPress, theme, accentSurface }:
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
   sheet: {
     borderTopLeftRadius: 40,
     borderTopRightRadius: 40,

@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -96,18 +97,7 @@ export default function SecurityScreen() {
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-6 py-4">
-        <Pressable onPress={() => router.back()} hitSlop={20}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1A1A1A" />
-        </Pressable>
-        <TText
-          className="text-base font-black"
-          style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
-          Keep it Safe
-        </TText>
-        <View style={{ width: 24 }} />
-      </View>
+      <AppHeader title="Keep it Safe" onBack={() => router.back()} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

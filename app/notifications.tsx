@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -112,29 +113,21 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }}>
-      <View className="flex-row items-center justify-between px-6 py-4">
-        <Pressable
-          onPress={() => router.back()}
-          className="h-10 w-10 items-center justify-center rounded-full"
-          style={{ backgroundColor: colors.card }}
-          hitSlop={12}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
-        </Pressable>
-        <View className="items-center">
-          <ThemedText className="text-base font-black" style={{ fontFamily: Fonts.title }}>
-            Notifications
-          </ThemedText>
-          <ThemedText className="text-xs opacity-50">{unreadCount} unread</ThemedText>
-        </View>
-        <Pressable
-          onPress={handleMarkAllRead}
-          disabled={unreadCount === 0}
-          className="h-10 w-10 items-center justify-center rounded-full"
-          style={{ backgroundColor: colors.card, opacity: unreadCount === 0 ? 0.4 : 1 }}
-          hitSlop={12}>
-          <MaterialCommunityIcons name="check-all" size={22} color={colors.accent} />
-        </Pressable>
-      </View>
+      <AppHeader
+        title="Notifications"
+        subtitle={`${unreadCount} unread`}
+        onBack={() => router.back()}
+        rightNode={
+          <Pressable
+            onPress={handleMarkAllRead}
+            disabled={unreadCount === 0}
+            className="ml-4 h-10 w-10 items-center justify-center rounded-full"
+            style={{ backgroundColor: colors.card, opacity: unreadCount === 0 ? 0.4 : 1 }}
+            hitSlop={12}>
+            <MaterialCommunityIcons name="check-all" size={22} color={colors.accent} />
+          </Pressable>
+        }
+      />
 
       <View className="mx-6 mb-4 flex-row rounded-2xl p-1" style={{ backgroundColor: colors.card }}>
         {(['all', 'unread', 'read'] as Filter[]).map((item) => {

@@ -1,7 +1,7 @@
 import { API_BASE_URL } from './transactions';
 
 export type SubscriptionStatus = 'active' | 'paused' | 'cancelled';
-export type BillingInterval = 'weekly' | 'monthly' | 'yearly';
+export type BillingInterval = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
 
 export type Subscription = {
   id: number;
@@ -22,6 +22,7 @@ export type Subscription = {
   last_charged_date?: string;
   status: SubscriptionStatus;
   reminder_days: number;
+  cancel_before_due: boolean;
   notes: string;
   days_until_due: number;
   due_state: 'scheduled' | 'due_soon' | 'overdue' | 'paused' | 'cancelled' | 'unknown';
@@ -39,6 +40,7 @@ export type SubscriptionPayload = {
   last_charged_date?: string;
   status?: SubscriptionStatus;
   reminder_days?: number;
+  cancel_before_due?: boolean;
   notes?: string;
   account_id?: number | null;
 };
