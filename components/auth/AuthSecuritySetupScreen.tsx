@@ -23,7 +23,7 @@ export const AuthSecuritySetupScreen = ({
   const [pinConfigured, setPinConfigured] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
   const [isSettingPin, setIsSettingPin] = React.useState(false);
-  const [pin, setPin] = React.useState('0000');
+  const [pin, setPin] = React.useState<string | null>(null);
 
   const displayError = localError || externalError;
 
@@ -117,7 +117,7 @@ export const AuthSecuritySetupScreen = ({
         <View style={styles.textSection}>
           <Text style={[styles.title, { color: theme.text, fontSize: 26 }]}>Protect your Finnri data</Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6 }]}>
-            Set up a PIN or enable Biometrics to keep your spending records private.
+            Set up a PIN, then optionally enable Biometrics to keep your spending records private.
           </Text>
         </View>
 
@@ -188,24 +188,32 @@ export const AuthSecuritySetupScreen = ({
               styles.primaryButton,
               {
                 backgroundColor: theme.accent,
-                opacity: (isBiometricsVerified || pinConfigured) && !isLoading ? 1 : 0.6,
+                opacity: pinConfigured && !isLoading ? 1 : 0.6,
               },
             ]}
-            disabled={(!isBiometricsVerified && !pinConfigured) || isLoading}
-            onPress={() => onContinue({ pin, biometricsEnabled })} // Passing updated pin
+            disabled={!pinConfigured || !pin || isLoading}
+            onPress={() => {
+              if (!pin) {
+                setLocalError('Create a PIN before continuing.');
+                return;
+              }
+              onContinue({ pin, biometricsEnabled });
+            }}
           >
             {isLoading ? <ActivityIndicator color="white" /> : <Text style={styles.primaryButtonText}>Continue</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.textButton}
-            onPress={() => onContinue({ pin: '0000', biometricsEnabled: false })} // Skip uses default pin
-            disabled={isLoading}
-          >
-            <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.6 }]}>
-              Skip for now
-            </Text>
-          </TouchableOpacity>
+          {onSecondary ? (
+            <TouchableOpacity
+              style={styles.textButton}
+              onPress={onSecondary}
+              disabled={isLoading}
+            >
+              <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.6 }]}>
+                Back
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </ScrollView>
     </View>

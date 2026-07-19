@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getSecurityPinValidationError } from '@/lib/security';
 
 type AuthPinSetupScreenProps = {
     onComplete: (pin: string) => void;
@@ -31,6 +32,14 @@ export const AuthPinSetupScreen = ({
             const nextPin = pin + digit;
             setPin(nextPin);
             if (nextPin.length === 4) {
+                const validationError = getSecurityPinValidationError(nextPin);
+                if (validationError) {
+                    setError(validationError);
+                    setTimeout(() => {
+                        setPin('');
+                    }, 1000);
+                    return;
+                }
                 setTimeout(() => setStep('confirm'), 300);
             }
         } else {

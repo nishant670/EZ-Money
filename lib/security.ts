@@ -109,12 +109,32 @@ const timingSafeEqual = (left: string, right: string) => {
   return diff === 0;
 };
 
+export const isValidSecurityPin = (pin: string) => {
+  if (!/^\d{4}$/.test(pin)) return false;
+  return !/^(\d)\1{3}$/.test(pin);
+};
+
+export const getSecurityPinValidationError = (pin: string) => {
+  if (!/^\d{4}$/.test(pin)) {
+    return 'PIN must be exactly 4 digits.';
+  }
+  if (/^(\d)\1{3}$/.test(pin)) {
+    return 'Choose a PIN that is not the same digit repeated.';
+  }
+  return null;
+};
+
 export const hasLocalSecurityPin = async (userUuid?: string | null) => {
   if (!userUuid) return false;
   return (await AsyncStorage.getItem(pinKey(userUuid))) !== null;
 };
 
 export const saveLocalSecurityPin = async (userUuid: string, pin: string) => {
+  const validationError = getSecurityPinValidationError(pin);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const salt = generateSalt();
   const record: PinRecord = {
     salt,

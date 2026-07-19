@@ -101,6 +101,9 @@ const readAuthError = async (response: Response, fallback: string) => {
       }
       return 'Incorrect PIN.';
     }
+    if (payload.error === 'weak_pin') {
+      return 'Choose a PIN that is not easy to guess.';
+    }
     return payload.error || fallback;
   } catch {
     return fallback;
