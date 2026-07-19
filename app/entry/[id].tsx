@@ -20,6 +20,7 @@ import {
   TransactionFormModal,
   type EntryForm,
 } from '@/components/transactions/TransactionFormModal';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { deleteEntry, fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
@@ -68,7 +69,9 @@ export default function TransactionDetailsScreen() {
   const [transaction, setTransaction] = useState<any>(null); // Using any to be flexible with API response initially
   const [isLoading, setIsLoading] = useState(true);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [splitBill, setSplitBill] = useState<SplitBill | null>(null);
   const [splitFriends, setSplitFriends] = useState<SplitFriend[]>([]);
@@ -163,26 +166,32 @@ export default function TransactionDetailsScreen() {
   };
 
   const handleDelete = () => {
-    Alert.alert('Forget this transaction?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Forget it',
-        style: 'destructive',
-        onPress: async () => {
-          setIsDeleting(true);
-          try {
-            if (!token) throw new Error('Missing session.');
-            await deleteEntry(token, params.id);
-            notifyTransactionsChanged();
-            router.back();
-          } catch {
-            Alert.alert('Error', 'Network error.');
-          } finally {
-            setIsDeleting(false);
-          }
-        },
-      },
-    ]);
+    setDeleteError('');
+    setIsDeleteConfirmVisible(true);
+  };
+
+  const closeDeleteConfirm = () => {
+    if (isDeleting) return;
+    setIsDeleteConfirmVisible(false);
+    setDeleteError('');
+  };
+
+  const confirmDelete = async () => {
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      if (!token) throw new Error('Missing session.');
+      await deleteEntry(token, params.id);
+      notifyTransactionsChanged();
+      setIsDeleteConfirmVisible(false);
+      router.back();
+    } catch {
+      setDeleteError(
+        'Unable to forget this transaction right now. Check your connection and try again.'
+      );
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleSaveUpdate = async (formData: EntryForm) => {
@@ -655,6 +664,93 @@ export default function TransactionDetailsScreen() {
         splitGroups={splitGroups}
         onManageAccounts={() => router.push('/accounts')}
       />
+
+      <AnimatedBottomSheet
+        visible={isDeleteConfirmVisible}
+        onClose={closeDeleteConfirm}
+        backdropOpacity={0.45}>
+        <View
+          className="rounded-t-[32px] border px-6 pb-10 pt-5"
+          style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+          <View className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-gray-200 dark:bg-gray-700" />
+
+          <View className="items-center">
+            <View
+              className="mb-5 h-16 w-16 items-center justify-center rounded-full"
+              style={{
+                backgroundColor: colorScheme === 'dark' ? 'rgba(255,107,107,0.16)' : '#FFE7E7',
+              }}>
+              <MaterialCommunityIcons name="trash-can-outline" size={30} color="#FF6B6B" />
+            </View>
+
+            <ThemedText className="text-center text-xl font-black" style={{ color: theme.text }}>
+              Forget this transaction?
+            </ThemedText>
+            <ThemedText className="mt-2 text-center text-sm font-semibold leading-5 text-gray-400">
+              This will permanently remove it from your activity, insights, and linked split details.
+            </ThemedText>
+          </View>
+
+          <View
+            className="my-6 rounded-3xl border p-4"
+            style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+            <View className="flex-row items-center justify-between gap-4">
+              <View className="flex-1">
+                <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Transaction
+                </ThemedText>
+                <ThemedText
+                  numberOfLines={1}
+                  className="mt-1 text-base font-black"
+                  style={{ color: theme.text }}>
+                  {displayData.title || displayData.merchant || 'Untitled transaction'}
+                </ThemedText>
+              </View>
+              <ThemedText className="text-base font-black" style={{ color: theme.text }}>
+                {CURRENCY_SYMBOL}
+                {amountValue.toFixed(2)}
+              </ThemedText>
+            </View>
+          </View>
+
+          {deleteError ? (
+            <ThemedText className="mb-4 text-center text-sm font-bold text-[#FF6B6B]">
+              {deleteError}
+            </ThemedText>
+          ) : null}
+
+          <View className="gap-3">
+            <Pressable
+              accessibilityRole="button"
+              disabled={isDeleting}
+              onPress={confirmDelete}
+              className="h-14 items-center justify-center rounded-full"
+              style={{ backgroundColor: '#FF6B6B', opacity: isDeleting ? 0.72 : 1 }}>
+              {isDeleting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <View className="flex-row items-center gap-2">
+                  <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
+                  <ThemedText className="text-base font-black text-white">Forget it</ThemedText>
+                </View>
+              )}
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              disabled={isDeleting}
+              onPress={closeDeleteConfirm}
+              className="h-12 items-center justify-center rounded-full"
+              style={{
+                backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.06)' : '#F7F2F3',
+              }}>
+              <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
+                Keep transaction
+              </ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </AnimatedBottomSheet>
     </SafeAreaView>
   );
 }

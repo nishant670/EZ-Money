@@ -47,6 +47,7 @@ export function VoiceInputCard({
   const textInputRef = useRef<TextInput>(null);
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const textEntryAnim = useRef(new Animated.Value(shouldShowTextInput ? 1 : 0)).current;
+  const micSizeAnim = useRef(new Animated.Value(shouldShowTextInput ? 0 : 1)).current;
   const promptFade = useRef(new Animated.Value(1)).current;
   const samplePrompts = useMemo(
     () => [
@@ -89,13 +90,20 @@ export function VoiceInputCard({
       useNativeDriver: true,
     }).start();
 
+    Animated.timing(micSizeAnim, {
+      toValue: shouldShowTextInput ? 0 : 1,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+
     if (shouldShowTextInput) {
       const focusTimeout = setTimeout(() => textInputRef.current?.focus(), 160);
       return () => clearTimeout(focusTimeout);
     }
 
     return undefined;
-  }, [shouldShowTextInput, textEntryAnim]);
+  }, [micSizeAnim, shouldShowTextInput, textEntryAnim]);
 
   useEffect(() => {
     if (isRecording) return undefined;
@@ -129,6 +137,23 @@ export function VoiceInputCard({
     inputRange: [0, 1],
     outputRange: [isRecording ? 0.26 : 0.18, 0],
   });
+  const micSize = micSizeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [78, 124],
+  });
+  const micRadius = micSizeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [39, 62],
+  });
+  const micBorderWidth = micSizeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [6, 9],
+  });
+  const micIconScale = micSizeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.8, 1.16],
+  });
+  const cardGap = shouldShowTextInput || isRecording ? theme.spacing.md : theme.spacing.lg;
 
   // Success State UI
   if (hasRecording && !isRecording) {
@@ -140,7 +165,7 @@ export function VoiceInputCard({
           paddingHorizontal: theme.spacing.lg,
           paddingTop: theme.spacing.xxl,
           paddingBottom: theme.spacing.xl,
-          minHeight: 262,
+          minHeight: 282,
           alignItems: 'center',
           justifyContent: 'center',
           gap: theme.spacing.xl,
@@ -276,8 +301,9 @@ export function VoiceInputCard({
         paddingHorizontal: theme.spacing.xxl,
         paddingTop: theme.spacing.xxl,
         paddingBottom: theme.spacing.xl,
+        minHeight: 286,
         alignItems: 'center',
-        gap: theme.spacing.lg,
+        gap: cardGap,
         backgroundColor: isDark ? colors.card : colors.secondary,
       }}>
       <View style={{ gap: theme.spacing.xs, alignItems: 'center' }}>
@@ -301,16 +327,17 @@ export function VoiceInputCard({
       </View>
 
       {/* Mic Button */}
-      <Pressable
-        onPress={onMicPress}
-        style={{
-          height: 100,
-          width: 100,
-          borderRadius: 50,
-          alignItems: 'center',
-          justifyContent: 'center',
-          ...theme.shadows.accent,
-        }}>
+      <Animated.View
+        style={[
+          {
+            height: micSize,
+            width: micSize,
+            borderRadius: micRadius,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          theme.shadows.accent,
+        ]}>
         <Animated.View
           pointerEvents="none"
           style={[
@@ -322,24 +349,36 @@ export function VoiceInputCard({
             },
           ]}
         />
-        <View
+        <Pressable
+          onPress={onMicPress}
           style={{
-            height: 100,
-            width: 100,
-            borderRadius: 50,
+            height: '100%',
+            width: '100%',
+            borderRadius: 999,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.accent,
-            borderWidth: 8,
-            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.55)',
           }}>
-          <MaterialCommunityIcons
-            name={isRecording ? 'stop' : 'microphone'}
-            size={34}
-            color="#FFFFFF"
-          />
-        </View>
-      </Pressable>
+          <Animated.View
+            style={{
+              alignSelf: 'stretch',
+              flex: 1,
+              borderRadius: 999,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.accent,
+              borderWidth: micBorderWidth,
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.55)',
+            }}>
+            <Animated.View style={{ transform: [{ scale: micIconScale }] }}>
+              <MaterialCommunityIcons
+                name={isRecording ? 'stop' : 'microphone'}
+                size={38}
+                color="#FFFFFF"
+              />
+            </Animated.View>
+          </Animated.View>
+        </Pressable>
+      </Animated.View>
 
       {isRecording ? (
         <ThemedText
@@ -463,9 +502,11 @@ export function VoiceInputCard({
 const styles = StyleSheet.create({
   pulseRing: {
     position: 'absolute',
-    height: 100,
-    width: 100,
-    borderRadius: 50,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 999,
   },
   writeToggle: {
     minHeight: 24,
