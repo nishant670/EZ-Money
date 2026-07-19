@@ -241,7 +241,7 @@ export default function ManageAccountScreen() {
         <View style={styles.mascotSection}>
           <View style={styles.bubbleContainer}>
             <ThemedText style={styles.bubbleText}>
-              {isEditing ? 'Update your account details.' : 'Let&apos;s set up your new account!'}
+              {isEditing ? 'Update your account details.' : "Let's set up your new account!"}
             </ThemedText>
             <View style={styles.bubbleTriangle} />
           </View>

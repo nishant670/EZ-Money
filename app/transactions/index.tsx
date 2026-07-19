@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { router, Stack, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +21,8 @@ export default function TransactionsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const { token } = useAuthStore();
+  const { accountId: accountIdParam } = useLocalSearchParams<{ accountId?: string }>();
+  const routeAccountId = accountIdParam ? Number(accountIdParam) : null;
 
   // Logic States
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -39,7 +41,13 @@ export default function TransactionsScreen() {
   const [endDate, setEndDate] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(
+    Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null
+  );
+
+  useEffect(() => {
+    setSelectedAccountId(Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null);
+  }, [routeAccountId]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
