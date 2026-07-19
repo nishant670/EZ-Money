@@ -151,8 +151,8 @@ export default function SpendingAnalysisScreen() {
         </View>
 
         <DailyTrendCard dashboard={dashboard} />
-        <CategoryBreakdown dashboard={dashboard} />
-        <TopMerchants dashboard={dashboard} />
+        <CategoryBreakdown dashboard={dashboard} periodLabel={periodLabel} />
+        <TopMerchants dashboard={dashboard} periodLabel={periodLabel} />
         <BehavioralInsights cards={dashboard.insights} />
       </ScrollView>
 
@@ -171,6 +171,7 @@ export default function SpendingAnalysisScreen() {
 function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
+  const [selectedIndex, setSelectedIndex] = useState(10);
   const points = useMemo(() => {
     const avg = dashboard.summary.daily_average;
     return [0.7, 0.62, 0.84, 1.22, 1.28, 1.2, 0.96, 0.82, 1.02, 1.42, 1.3].map((n) =>
@@ -178,6 +179,20 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
     );
   }, [dashboard.summary.daily_average]);
   const maxPoint = Math.max(...points, 1);
+  const selectedPoint = points[selectedIndex] ?? points[points.length - 1] ?? 0;
+  const selectedDelta =
+    dashboard.summary.daily_average > 0
+      ? Math.round(
+          ((selectedPoint - dashboard.summary.daily_average) / dashboard.summary.daily_average) *
+            100
+        )
+      : 0;
+  const selectedLabel =
+    selectedIndex === 0
+      ? 'Start of period'
+      : selectedIndex === points.length - 1
+        ? 'End of period'
+        : `Trend point ${selectedIndex + 1}`;
   const todaySpend = Number(dashboard.recent_transactions[0]?.amount ?? 0);
   const delta =
     dashboard.summary.daily_average > 0
@@ -205,18 +220,33 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
       </View>
 
       <View className="h-40 flex-row items-end justify-between overflow-hidden">
-        {points.map((point, index) => (
-          <View key={`${point}-${index}`} className="items-center">
-            <View
-              className="w-5 rounded-t-full"
-              style={{
-                height: Math.max(18, (point / maxPoint) * 130),
-                opacity: 0.16 + index * 0.07,
-                backgroundColor: theme.accent,
-              }}
-            />
-          </View>
-        ))}
+        {points.map((point, index) => {
+          const selected = selectedIndex === index;
+          return (
+            <TouchableOpacity
+              key={`${point}-${index}`}
+              activeOpacity={0.78}
+              className="items-center justify-end"
+              onPress={() => setSelectedIndex(index)}>
+              <View
+                className="mb-2 h-2 w-2 rounded-full"
+                style={{
+                  opacity: selected ? 1 : 0,
+                  backgroundColor: theme.accent,
+                }}
+              />
+              <View
+                className="w-5 rounded-t-full"
+                style={{
+                  height: Math.max(18, (point / maxPoint) * 130),
+                  opacity: selected ? 1 : 0.16 + index * 0.07,
+                  backgroundColor: theme.accent,
+                  width: selected ? 24 : 20,
+                }}
+              />
+            </TouchableOpacity>
+          );
+        })}
       </View>
       <View className="mt-3 flex-row justify-between">
         <ThemedText className="text-[10px] text-gray-500">Start</ThemedText>
@@ -239,11 +269,38 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
           </ThemedText>
         )}
       </View>
+
+      <View
+        className="mt-4 rounded-2xl border px-4 py-3"
+        style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+        <View className="flex-row items-center justify-between">
+          <View>
+            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Selected Bar
+            </ThemedText>
+            <ThemedText className="mt-1 text-sm font-black">{selectedLabel}</ThemedText>
+          </View>
+          <ThemedText className="text-base font-black" style={{ color: theme.accent }}>
+            {formatMoney(selectedPoint)}
+          </ThemedText>
+        </View>
+        <ThemedText className="mt-2 text-xs leading-5 text-gray-600">
+          {selectedDelta === 0
+            ? 'This day is tracking close to your daily average.'
+            : `${Math.abs(selectedDelta)}% ${selectedDelta > 0 ? 'above' : 'below'} your daily average.`}
+        </ThemedText>
+      </View>
     </View>
   );
 }
 
-function CategoryBreakdown({ dashboard }: { dashboard: DashboardResponse }) {
+function CategoryBreakdown({
+  dashboard,
+  periodLabel,
+}: {
+  dashboard: DashboardResponse;
+  periodLabel: string;
+}) {
   if (dashboard.top_categories.length === 0) return null;
 
   return (
@@ -255,7 +312,18 @@ function CategoryBreakdown({ dashboard }: { dashboard: DashboardResponse }) {
           return (
             <TouchableOpacity
               key={category.category}
-              className={`flex-row items-center p-5 ${index < dashboard.top_categories.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
+              className={`flex-row items-center p-5 ${index < dashboard.top_categories.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}
+              onPress={() =>
+                router.push({
+                  pathname: '/category-detail',
+                  params: {
+                    category: category.category,
+                    start: dashboard.period.start,
+                    end: dashboard.period.end,
+                    label: periodLabel,
+                  },
+                })
+              }>
               <View
                 className="mr-4 h-12 w-12 items-center justify-center rounded-2xl"
                 style={{ backgroundColor: meta.bgColor }}>
@@ -290,7 +358,13 @@ function CategoryBreakdown({ dashboard }: { dashboard: DashboardResponse }) {
   );
 }
 
-function TopMerchants({ dashboard }: { dashboard: DashboardResponse }) {
+function TopMerchants({
+  dashboard,
+  periodLabel,
+}: {
+  dashboard: DashboardResponse;
+  periodLabel: string;
+}) {
   if (dashboard.top_merchants.length === 0) return null;
 
   return (
@@ -308,6 +382,7 @@ function TopMerchants({ dashboard }: { dashboard: DashboardResponse }) {
                   merchant: merchant.merchant,
                   start: dashboard.period.start,
                   end: dashboard.period.end,
+                  label: periodLabel,
                 },
               })
             }>
@@ -322,7 +397,13 @@ function TopMerchants({ dashboard }: { dashboard: DashboardResponse }) {
                 {merchant.transaction_count} transactions
               </ThemedText>
             </View>
-            <ThemedText className="text-sm font-black">{formatMoney(merchant.amount)}</ThemedText>
+            <View className="items-end">
+              <ThemedText className="text-sm font-black">{formatMoney(merchant.amount)}</ThemedText>
+              <ThemedText className="mt-1 text-[10px] font-bold" style={{ color: '#9B9692' }}>
+                Details
+              </ThemedText>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color="#CFCAC6" />
           </TouchableOpacity>
         ))}
       </View>
