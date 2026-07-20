@@ -2,18 +2,31 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Easing,
+  Pressable,
+  ScrollView,
+  View,
+} from 'react-native';
 
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { QuickPrompts } from '@/components/home/QuickPrompts';
 import { TransactionItem } from '@/components/home/TransactionItem';
 import { VoiceInputCard } from '@/components/home/VoiceInputCard';
+import { CreditStatusCard } from '@/components/billing/CreditStatusCard';
 import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { Card, Screen, SectionHeader } from '@/components/ui/theme-primitives';
 import { useAppSettingsStore } from '@/hooks/use-app-settings-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { fetchUnreadNotificationCount } from '@/lib/notifications';
+import {
+  fetchNewUnreadBudgetNotification,
+  fetchUnreadBudgetNotificationIds,
+  fetchUnreadNotificationCount,
+} from '@/lib/notifications';
 import {
   API_BASE_URL,
   formatApiDate,
@@ -38,9 +51,16 @@ import {
 } from '@/lib/accounts';
 import { createEntry } from '@/lib/entries';
 import { formatDisplayTime } from '@/lib/datetime';
-import { parseEntryDraft, type ParseResponse } from '@/lib/parse';
-import { fetchSplitFriends, fetchSplitGroups, type SplitFriend, type SplitGroup } from '@/lib/splits';
+import { ParseApiError, parseEntryDraft, type ParseResponse } from '@/lib/parse';
+import {
+  fetchSplitFriends,
+  fetchSplitGroups,
+  type SplitFriend,
+  type SplitGroup,
+} from '@/lib/splits';
+import { createSubscription, type BillingInterval } from '@/lib/subscriptions';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
+import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
 import {
   TransactionFormModal,
   type AiReviewMetadata,
@@ -55,6 +75,59 @@ const formatCompactCurrency = (amount: number) => {
   return amount.toFixed(0);
 };
 
+const billingIntervals: BillingInterval[] = [
+  'daily',
+  'weekly',
+  'biweekly',
+  'monthly',
+  'quarterly',
+  'yearly',
+];
+
+const isBillingInterval = (value?: string | null): value is BillingInterval =>
+  billingIntervals.includes(value as BillingInterval);
+
+type CreditActionState = {
+  title: string;
+  message: string;
+  actionLabel: string;
+  action: 'upgrade' | 'login';
+};
+
+const addBillingInterval = (date: Date, interval: BillingInterval) => {
+  const next = new Date(date);
+  switch (interval) {
+    case 'daily':
+      next.setDate(next.getDate() + 1);
+      break;
+    case 'weekly':
+      next.setDate(next.getDate() + 7);
+      break;
+    case 'biweekly':
+      next.setDate(next.getDate() + 14);
+      break;
+    case 'quarterly':
+      next.setMonth(next.getMonth() + 3);
+      break;
+    case 'yearly':
+      next.setFullYear(next.getFullYear() + 1);
+      break;
+    default:
+      next.setMonth(next.getMonth() + 1);
+      break;
+  }
+  return formatApiDate(next);
+};
+
+const inferNextSubscriptionDate = (
+  paidDate: string | null | undefined,
+  interval: BillingInterval | ''
+) => {
+  if (!paidDate || !interval) return '';
+  const parsed = parseDateLabel(paidDate);
+  return parsed ? addBillingInterval(parsed, interval) : '';
+};
+
 export default function HomeScreen() {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
@@ -64,7 +137,7 @@ export default function HomeScreen() {
   const smartSorting = useAppSettingsStore((state) => state.smartSorting);
   const isStealthMode = !!user?.stealth_mode;
 
-  const defaultForm = useMemo(
+  const defaultForm = useMemo<EntryForm>(
     () => ({
       title: '',
       amount: '',
@@ -84,6 +157,16 @@ export default function HomeScreen() {
       splitGroupId: null,
       splitGroupName: '',
       splitParticipants: [],
+      subscriptionEnabled: false,
+      subscriptionName: '',
+      subscriptionMerchant: '',
+      subscriptionCategory: '',
+      subscriptionAmount: '',
+      subscriptionBillingInterval: '',
+      subscriptionNextDueDate: '',
+      subscriptionReminderDays: '3',
+      subscriptionCancelBeforeDue: false,
+      subscriptionNotes: '',
     }),
     []
   );
@@ -117,6 +200,9 @@ export default function HomeScreen() {
   const [entriesError, setEntriesError] = useState<string | null>(null);
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
+  const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
+  const [isBillingLoading, setIsBillingLoading] = useState(false);
+  const [creditAction, setCreditAction] = useState<CreditActionState | null>(null);
   const [aiSourceText, setAiSourceText] = useState('');
   const [aiInputSource, setAiInputSource] = useState<'text' | 'voice'>('text');
   const createIdempotencyKey = useRef<string | null>(null);
@@ -303,10 +389,49 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  const fetchCredits = useCallback(
+    async (silent = false) => {
+      if (!token) {
+        setBillingStatus(null);
+        return;
+      }
+      if (!silent) setIsBillingLoading(true);
+      try {
+        setBillingStatus(await fetchBillingStatus(token));
+      } catch {
+        setBillingStatus(null);
+      } finally {
+        if (!silent) setIsBillingLoading(false);
+      }
+    },
+    [token]
+  );
+
   const fetchNotificationCount = useCallback(async () => {
     const count = await fetchUnreadNotificationCount(token);
     setUnreadNotifications(count);
   }, [token]);
+
+  const showNewBudgetAlert = useCallback(
+    async (previousBudgetNotificationIds: Set<number>) => {
+      if (!token) return;
+      try {
+        const notification = await fetchNewUnreadBudgetNotification(
+          token,
+          previousBudgetNotificationIds
+        );
+        if (!notification) return;
+        Alert.alert(notification.title, notification.body, [
+          { text: 'Later', style: 'cancel' },
+          { text: 'View Budget Watch', onPress: () => router.push('/budgets') },
+        ]);
+        await fetchNotificationCount();
+      } catch {
+        // Budget alerts are also available in Notifications if the inline alert cannot load.
+      }
+    },
+    [fetchNotificationCount, router, token]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -317,8 +442,9 @@ export default function HomeScreen() {
       void fetchEntries();
       void fetchAccountOptions();
       void fetchSplitOptions();
+      void fetchCredits();
       void fetchNotificationCount();
-    }, [fetchAccountOptions, fetchEntries, fetchNotificationCount, fetchSplitOptions])
+    }, [fetchAccountOptions, fetchCredits, fetchEntries, fetchNotificationCount, fetchSplitOptions])
   );
 
   useEffect(
@@ -432,6 +558,7 @@ export default function HomeScreen() {
     setRecordedUri(null);
     setInputText('');
     setErrorMessage(null);
+    setCreditAction(null);
   }, []);
 
   const handleOpenManualEntry = useCallback(() => {
@@ -508,6 +635,11 @@ export default function HomeScreen() {
               }
             : undefined;
 
+        const budgetNotificationIds =
+          formData.type === 'Expense' && token
+            ? await fetchUnreadBudgetNotificationIds(token).catch(() => new Set<number>())
+            : new Set<number>();
+
         const createdEntry = await createEntry(
           token,
           {
@@ -529,18 +661,37 @@ export default function HomeScreen() {
           },
           createIdempotencyKey.current
         );
+        if (formData.subscriptionEnabled && formData.subscriptionBillingInterval) {
+          await createSubscription(token, {
+            name: formData.subscriptionName.trim(),
+            merchant: formData.subscriptionMerchant.trim() || formData.merchant.trim(),
+            category: formData.subscriptionCategory.trim() || formData.category,
+            amount: Number(formData.subscriptionAmount || formData.amount),
+            billing_interval: formData.subscriptionBillingInterval,
+            next_due_date: formData.subscriptionNextDueDate.trim(),
+            last_charged_date: parsedDate ? formatApiDate(parsedDate) : undefined,
+            status: 'active',
+            reminder_days: Number(formData.subscriptionReminderDays || 0),
+            cancel_before_due: formData.subscriptionCancelBeforeDue,
+            notes: formData.subscriptionNotes.trim(),
+            account_id: resolvedAccount.id,
+          });
+        }
         const createdTransaction = mapEntryToTransaction(createdEntry);
         setTransactions((current) => [
           createdTransaction,
           ...current.filter((transaction) => transaction.id !== createdTransaction.id),
         ]);
-        setSaveConfirmation('Saved');
+        setSaveConfirmation(formData.subscriptionEnabled ? 'Saved with subscription' : 'Saved');
 
         createIdempotencyKey.current = null;
         setForm(createBlankForm());
         setAiSourceText('');
         setIsEditOpen(false);
         notifyTransactionsChanged();
+        if (formData.type === 'Expense') {
+          void showNewBudgetAlert(budgetNotificationIds);
+        }
         void fetchSplitOptions();
       } catch (error) {
         const saveError =
@@ -550,7 +701,16 @@ export default function HomeScreen() {
         throw saveError;
       }
     },
-    [aiInputSource, aiSourceText, createBlankForm, ensureAccountForEntry, fetchSplitOptions, modalMode, token]
+    [
+      aiInputSource,
+      aiSourceText,
+      createBlankForm,
+      ensureAccountForEntry,
+      fetchSplitOptions,
+      modalMode,
+      showNewBudgetAlert,
+      token,
+    ]
   );
 
   const handleSubmitPrompt = useCallback(async () => {
@@ -562,6 +722,7 @@ export default function HomeScreen() {
     }
     setIsSubmitting(true);
     setErrorMessage(null);
+    setCreditAction(null);
     try {
       let audio:
         | {
@@ -582,6 +743,7 @@ export default function HomeScreen() {
         };
       }
       const data: ParseResponse = await parseEntryDraft({ token, hintText: trimmed, audio });
+      void fetchCredits(true);
       createIdempotencyKey.current = null;
       setAiSourceText(data.source_text ?? trimmed);
       setAiInputSource(recordedUri ? 'voice' : 'text');
@@ -590,7 +752,9 @@ export default function HomeScreen() {
         needsConfirmation: data.needs_confirmation,
         missingFields: smartSorting
           ? data.missing_fields
-          : Array.from(new Set([...(data.missing_fields ?? []), 'title', 'mode', 'category', 'tag'])),
+          : Array.from(
+              new Set([...(data.missing_fields ?? []), 'title', 'mode', 'category', 'tag'])
+            ),
         clarifications: data.clarifications,
         smartSortingDisabled: !smartSorting,
       });
@@ -598,8 +762,40 @@ export default function HomeScreen() {
         const missing = new Set(data.missing_fields ?? []);
         const formattedDate =
           missing.has('date') || !data.date ? '' : normalizeDateLabel(data.date, '');
-        const tagValue = data.tag ?? '';
+        const tagValue = data.tag ?? data.tags?.[0] ?? '';
         const newType = missing.has('type') ? '' : (toTitleCase(data.type) ?? '');
+        const splitParticipants =
+          data.split_candidate_details?.participants
+            ?.map((participant) => {
+              const friendName = participant.friend_name?.trim() ?? '';
+              const matchingFriend = splitFriends.find(
+                (friend) => friend.name.trim().toLowerCase() === friendName.toLowerCase()
+              );
+              const shareAmount =
+                participant.share_amount != null && participant.share_amount > 0
+                  ? participant.share_amount
+                  : data.amount != null
+                    ? data.amount / 2
+                    : null;
+              return {
+                friendId: matchingFriend?.id ?? null,
+                friendName: matchingFriend ? '' : friendName,
+                shareAmount: shareAmount != null ? shareAmount.toFixed(2) : '',
+                direction: participant.direction ?? 'friend_owes_user',
+              };
+            })
+            .filter(
+              (participant) =>
+                participant.friendId || participant.friendName || participant.shareAmount
+            ) ?? [];
+        const subscriptionCandidate = data.subscription_candidate;
+        const subscriptionInterval = isBillingInterval(subscriptionCandidate?.billing_interval)
+          ? subscriptionCandidate.billing_interval
+          : '';
+        const subscriptionPaidDate = subscriptionCandidate?.last_charged_date ?? data.date;
+        const inferredNextDueDate =
+          subscriptionCandidate?.next_due_date ??
+          inferNextSubscriptionDate(subscriptionPaidDate, subscriptionInterval);
         return {
           ...prev,
           title: smartSorting && !missing.has('title') ? (data.title ?? '') : '',
@@ -613,6 +809,27 @@ export default function HomeScreen() {
           notes: data.note ?? '',
           date: formattedDate,
           tag: smartSorting && tagValue ? (toTitleCase(tagValue) ?? '') : '',
+          splitEnabled: Boolean(data.split_candidate || splitParticipants.length > 0),
+          splitGroupName: data.split_candidate_details?.group_name ?? '',
+          splitParticipants,
+          subscriptionEnabled: Boolean(subscriptionCandidate),
+          subscriptionName: subscriptionCandidate?.name ?? data.merchant ?? data.title ?? '',
+          subscriptionMerchant: subscriptionCandidate?.merchant ?? data.merchant ?? '',
+          subscriptionCategory: subscriptionCandidate?.category ?? data.category ?? '',
+          subscriptionAmount:
+            subscriptionCandidate?.amount != null
+              ? subscriptionCandidate.amount.toFixed(2)
+              : data.amount != null
+                ? data.amount.toFixed(2)
+                : '',
+          subscriptionBillingInterval: subscriptionInterval,
+          subscriptionNextDueDate: inferredNextDueDate,
+          subscriptionReminderDays:
+            subscriptionCandidate?.reminder_days != null
+              ? String(subscriptionCandidate.reminder_days)
+              : '3',
+          subscriptionCancelBeforeDue: Boolean(subscriptionCandidate?.cancel_before_due),
+          subscriptionNotes: subscriptionCandidate?.notes ?? '',
         };
       });
       setInputText('');
@@ -620,13 +837,46 @@ export default function HomeScreen() {
       setModalMode('audio');
       setIsEditOpen(true);
     } catch (error) {
+      if (error instanceof ParseApiError) {
+        if (error.code === 'insufficient_ai_credits') {
+          setCreditAction({
+            title: 'AI credits are low',
+            message: `This capture needs ${error.requiredCredits ?? 5} credits. You have ${error.availableCredits ?? 0} available.`,
+            actionLabel: user?.is_guest ? 'Create account' : 'View plans',
+            action: user?.is_guest ? 'login' : 'upgrade',
+          });
+          void fetchCredits(true);
+          return;
+        }
+        if (error.code === 'daily_ai_limit_reached') {
+          setCreditAction({
+            title: 'Daily AI limit reached',
+            message: `You used ${error.usedToday ?? billingStatus?.credits.daily_credits_used ?? 0} of ${error.dailyLimit ?? billingStatus?.credits.daily_limit ?? 0} credits today.`,
+            actionLabel: 'View plans',
+            action: 'upgrade',
+          });
+          void fetchCredits(true);
+          return;
+        }
+      }
       setErrorMessage(
         error instanceof Error ? error.message : 'Something went wrong while parsing.'
       );
     } finally {
       setIsSubmitting(false);
     }
-  }, [inputText, isSubmitting, recordedUri, smartSorting, token]);
+  }, [
+    billingStatus?.credits.daily_credits_used,
+    billingStatus?.credits.daily_limit,
+    fetchCredits,
+    inputText,
+    isSubmitting,
+    recordedUri,
+    smartSorting,
+    splitFriends,
+    token,
+    user?.is_guest,
+  ]);
 
   const renderRecentActivity = () => {
     if (isEntriesLoading) {
@@ -689,9 +939,7 @@ export default function HomeScreen() {
                 overflow: 'hidden',
                 padding: 0,
                 marginBottom:
-                  groupIndex === groupedRecentTransactions.length - 1
-                    ? 0
-                    : themeTokens.spacing.md,
+                  groupIndex === groupedRecentTransactions.length - 1 ? 0 : themeTokens.spacing.md,
               }}>
               <View
                 style={{
@@ -788,6 +1036,14 @@ export default function HomeScreen() {
           </ThemedText>
         </View>
 
+        <View style={{ marginBottom: themeTokens.spacing.md }}>
+          <CreditStatusCard
+            credits={billingStatus?.credits ?? null}
+            loading={isBillingLoading}
+            onPress={() => router.push('/billing')}
+          />
+        </View>
+
         <VoiceInputCard
           onMicPress={handleToggleRecording}
           isRecording={isRecording}
@@ -799,6 +1055,7 @@ export default function HomeScreen() {
           isProcessing={isSubmitting}
           isTextInputVisible={isTextInputVisible}
           onToggleTextInput={() => setIsTextInputVisible((current) => !current)}
+          dailyCreditsRemaining={billingStatus?.credits.daily_credits_remaining ?? null}
         />
 
         <QuickPrompts
@@ -816,18 +1073,62 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {creditAction && (
+          <View
+            className="mx-6 mb-6 rounded-2xl border p-4"
+            style={{
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFF8F4',
+              borderColor: themeTokens.colors.border,
+            }}>
+            <View className="flex-row items-start gap-3">
+              <View
+                className="h-9 w-9 items-center justify-center rounded-full"
+                style={{ backgroundColor: themeTokens.colors.secondary }}>
+                <MaterialCommunityIcons
+                  name="creation"
+                  size={18}
+                  color={themeTokens.colors.accent}
+                />
+              </View>
+              <View className="min-w-0 flex-1">
+                <ThemedText className="font-bold" style={{ color: themeTokens.colors.text }}>
+                  {creditAction.title}
+                </ThemedText>
+                <ThemedText
+                  className="mt-1 text-xs"
+                  style={{ color: `${themeTokens.colors.text}99` }}>
+                  {creditAction.message}
+                </ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    router.push(creditAction.action === 'login' ? '/auth?mode=link' : '/billing')
+                  }
+                  className="mt-3 self-start rounded-full px-4 py-2"
+                  style={{ backgroundColor: themeTokens.colors.accent }}>
+                  <ThemedText className="text-xs font-bold text-white">
+                    {creditAction.actionLabel}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
+
         {renderRecentActivity()}
 
         <View className="h-32" />
       </ScrollView>
 
-      {hasTransactions && <Pressable
-        accessibilityRole="button"
-        onPress={handleOpenManualEntry}
-        style={[{ backgroundColor: theme.accent }, themeTokens.shadows.soft]}
-        className="h-16 w-16 rounded-full items-center justify-center absolute bottom-10 right-6 elevation-5">
-        <MaterialCommunityIcons name="plus" size={32} color="white" />
-      </Pressable>}
+      {hasTransactions && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleOpenManualEntry}
+          style={[{ backgroundColor: theme.accent }, themeTokens.shadows.soft]}
+          className="h-16 w-16 rounded-full items-center justify-center absolute bottom-10 right-6 elevation-5">
+          <MaterialCommunityIcons name="plus" size={32} color="white" />
+        </Pressable>
+      )}
 
       {saveConfirmation && (
         <Animated.View

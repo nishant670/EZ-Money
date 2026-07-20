@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,6 +19,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import type { Account } from '@/lib/accounts';
@@ -28,6 +30,7 @@ import {
 } from '@/lib/accounts';
 import { formatDisplayTime } from '@/lib/datetime';
 import type { SplitFriend, SplitGroup } from '@/lib/splits';
+import type { BillingInterval } from '@/lib/subscriptions';
 import { formatDateLabel, parseDateLabel } from '@/lib/transactions';
 
 export type SplitParticipantForm = {
@@ -56,6 +59,16 @@ export type EntryForm = {
   splitGroupId: number | null;
   splitGroupName: string;
   splitParticipants: SplitParticipantForm[];
+  subscriptionEnabled: boolean;
+  subscriptionName: string;
+  subscriptionMerchant: string;
+  subscriptionCategory: string;
+  subscriptionAmount: string;
+  subscriptionBillingInterval: BillingInterval | '';
+  subscriptionNextDueDate: string;
+  subscriptionReminderDays: string;
+  subscriptionCancelBeforeDue: boolean;
+  subscriptionNotes: string;
 };
 
 export type AiReviewMetadata = {
@@ -106,9 +119,27 @@ const fieldLabels: Record<keyof EntryForm, string> = {
   splitGroupId: 'Split group',
   splitGroupName: 'Split group',
   splitParticipants: 'Split shares',
+  subscriptionEnabled: 'Subscription',
+  subscriptionName: 'Subscription name',
+  subscriptionMerchant: 'Subscription merchant',
+  subscriptionCategory: 'Subscription category',
+  subscriptionAmount: 'Subscription amount',
+  subscriptionBillingInterval: 'Billing interval',
+  subscriptionNextDueDate: 'Next payment date',
+  subscriptionReminderDays: 'Reminder',
+  subscriptionCancelBeforeDue: 'Cancellation reminder',
+  subscriptionNotes: 'Subscription notes',
 };
 
 const modeOptions = ['Cash', 'UPI', 'Credit Card', 'Wallets'];
+const subscriptionIntervalOptions: BillingInterval[] = [
+  'daily',
+  'weekly',
+  'biweekly',
+  'monthly',
+  'quarterly',
+  'yearly',
+];
 const categoryOptions = [
   'Food & Drinks',
   'Travel',
@@ -199,6 +230,16 @@ export function TransactionFormModal({
       splitGroupId: null,
       splitGroupName: '',
       splitParticipants: [],
+      subscriptionEnabled: false,
+      subscriptionName: '',
+      subscriptionMerchant: '',
+      subscriptionCategory: '',
+      subscriptionAmount: '',
+      subscriptionBillingInterval: '',
+      subscriptionNextDueDate: '',
+      subscriptionReminderDays: '3',
+      subscriptionCancelBeforeDue: false,
+      subscriptionNotes: '',
       ...initialData,
     })
   );
@@ -271,6 +312,16 @@ export function TransactionFormModal({
           splitGroupId: null,
           splitGroupName: '',
           splitParticipants: [],
+          subscriptionEnabled: false,
+          subscriptionName: '',
+          subscriptionMerchant: '',
+          subscriptionCategory: '',
+          subscriptionAmount: '',
+          subscriptionBillingInterval: '',
+          subscriptionNextDueDate: '',
+          subscriptionReminderDays: '3',
+          subscriptionCancelBeforeDue: false,
+          subscriptionNotes: '',
           ...initialData,
         })
       );
@@ -280,26 +331,28 @@ export function TransactionFormModal({
         Animated.spring(panelAnim, {
           toValue: 0,
           useNativeDriver: true,
-          tension: 50,
-          friction: 10,
+          tension: 60,
+          friction: 11,
         }),
         Animated.timing(backdropAnim, {
           toValue: 1,
-          duration: 300,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.spring(panelAnim, {
+        Animated.timing(panelAnim, {
           toValue: SCREEN_HEIGHT,
+          duration: 220,
+          easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
-          tension: 50,
-          friction: 10,
         }),
         Animated.timing(backdropAnim, {
           toValue: 0,
-          duration: 250,
+          duration: 180,
+          easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
       ]).start(() => {
@@ -422,6 +475,30 @@ export function TransactionFormModal({
         return;
       }
     }
+    if (form.subscriptionEnabled) {
+      const subscriptionAmount = Number(form.subscriptionAmount || form.amount);
+      const reminderDays = Number(form.subscriptionReminderDays || 0);
+      if (form.subscriptionName.trim().length === 0) {
+        setFormError('Please provide Subscription name.');
+        return;
+      }
+      if (!Number.isFinite(subscriptionAmount) || subscriptionAmount <= 0) {
+        setFormError('Please enter a valid subscription amount.');
+        return;
+      }
+      if (!form.subscriptionBillingInterval) {
+        setFormError('Please choose Billing interval.');
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(form.subscriptionNextDueDate.trim())) {
+        setFormError('Please enter Next payment date as YYYY-MM-DD.');
+        return;
+      }
+      if (!Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 30) {
+        setFormError('Reminder must be between 0 and 30 days.');
+        return;
+      }
+    }
 
     setFormError(null);
     setIsSaving(true);
@@ -483,7 +560,7 @@ export function TransactionFormModal({
   return (
     <Modal
       transparent
-      visible={visible}
+      visible={showModal}
       animationType="none" // we handle animations manually for better control
       onRequestClose={requestClose}>
       <View className="flex-1 justify-end">
@@ -1046,6 +1123,227 @@ export function TransactionFormModal({
                   </View>
                 )}
 
+                {mode !== 'quick-prompt' &&
+                  !isEdit &&
+                  (form.subscriptionEnabled || form.tag === 'Subscription') && (
+                    <View className="px-5 mb-6">
+                      <View
+                        className="rounded-[24px] border p-3"
+                        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                        <View className="flex-row items-center justify-between">
+                          <View className="flex-row items-center gap-3">
+                            <View
+                              className="h-10 w-10 items-center justify-center rounded-2xl"
+                              style={{ backgroundColor: accentSurface }}>
+                              <MaterialCommunityIcons
+                                name="calendar-sync-outline"
+                                size={20}
+                                color={accent}
+                              />
+                            </View>
+                            <View>
+                              <ThemedText
+                                className="text-sm font-black"
+                                style={{ color: theme.text }}>
+                                Add subscription
+                              </ThemedText>
+                              <ThemedText className="text-xs text-gray-500">
+                                Save recurring details with this payment.
+                              </ThemedText>
+                            </View>
+                          </View>
+                          <Pressable
+                            accessibilityRole="switch"
+                            accessibilityState={{ checked: form.subscriptionEnabled }}
+                            onPress={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                subscriptionEnabled: !prev.subscriptionEnabled,
+                                subscriptionName:
+                                  !prev.subscriptionEnabled && !prev.subscriptionName
+                                    ? prev.merchant || prev.title
+                                    : prev.subscriptionName,
+                                subscriptionAmount:
+                                  !prev.subscriptionEnabled && !prev.subscriptionAmount
+                                    ? prev.amount
+                                    : prev.subscriptionAmount,
+                                subscriptionCategory:
+                                  !prev.subscriptionEnabled && !prev.subscriptionCategory
+                                    ? prev.category
+                                    : prev.subscriptionCategory,
+                              }))
+                            }
+                            className="h-8 w-14 justify-center rounded-full px-1"
+                            style={{
+                              backgroundColor: form.subscriptionEnabled ? accent : '#E5E7EB',
+                            }}>
+                            <View
+                              className="h-6 w-6 rounded-full bg-white"
+                              style={{
+                                alignSelf: form.subscriptionEnabled ? 'flex-end' : 'flex-start',
+                              }}
+                            />
+                          </Pressable>
+                        </View>
+
+                        {form.subscriptionEnabled && (
+                          <View className="mt-5 gap-4">
+                            <View className="flex-row gap-3">
+                              <TextInput
+                                value={form.subscriptionName}
+                                onChangeText={(text) =>
+                                  setForm((p) => ({ ...p, subscriptionName: text }))
+                                }
+                                placeholder="Subscription name"
+                                placeholderTextColor="#9CA3AF"
+                                className="flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                                style={{ color: theme.text }}
+                              />
+                              <TextInput
+                                value={form.subscriptionAmount}
+                                onChangeText={(text) =>
+                                  setForm((p) => ({
+                                    ...p,
+                                    subscriptionAmount: text.replace(/[^0-9.]/g, ''),
+                                  }))
+                                }
+                                keyboardType="decimal-pad"
+                                placeholder="Amount"
+                                placeholderTextColor="#9CA3AF"
+                                className="w-28 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                                style={{ color: theme.text }}
+                              />
+                            </View>
+                            <View className="flex-row gap-3">
+                              <TextInput
+                                value={form.subscriptionMerchant}
+                                onChangeText={(text) =>
+                                  setForm((p) => ({ ...p, subscriptionMerchant: text }))
+                                }
+                                placeholder="Merchant"
+                                placeholderTextColor="#9CA3AF"
+                                className="flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                                style={{ color: theme.text }}
+                              />
+                              <TextInput
+                                value={form.subscriptionCategory}
+                                onChangeText={(text) =>
+                                  setForm((p) => ({ ...p, subscriptionCategory: text }))
+                                }
+                                placeholder="Category"
+                                placeholderTextColor="#9CA3AF"
+                                className="flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                                style={{ color: theme.text }}
+                              />
+                            </View>
+
+                            <View>
+                              <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                Billing interval
+                              </ThemedText>
+                              <View className="flex-row flex-wrap gap-2">
+                                {subscriptionIntervalOptions.map((interval) => (
+                                  <Pressable
+                                    key={interval}
+                                    onPress={() =>
+                                      setForm((p) => ({
+                                        ...p,
+                                        subscriptionBillingInterval: interval,
+                                      }))
+                                    }
+                                    className="rounded-full border px-3 py-2"
+                                    style={{
+                                      backgroundColor:
+                                        form.subscriptionBillingInterval === interval
+                                          ? accentSurface
+                                          : 'transparent',
+                                      borderColor:
+                                        form.subscriptionBillingInterval === interval
+                                          ? accent
+                                          : theme.border,
+                                    }}>
+                                    <ThemedText
+                                      className="text-xs font-bold capitalize"
+                                      style={{
+                                        color:
+                                          form.subscriptionBillingInterval === interval
+                                            ? accent
+                                            : theme.text,
+                                      }}>
+                                      {interval}
+                                    </ThemedText>
+                                  </Pressable>
+                                ))}
+                              </View>
+                            </View>
+
+                            <View className="flex-row gap-3">
+                              <TextInput
+                                value={form.subscriptionNextDueDate}
+                                onChangeText={(text) =>
+                                  setForm((p) => ({ ...p, subscriptionNextDueDate: text }))
+                                }
+                                placeholder="Next payment: YYYY-MM-DD"
+                                placeholderTextColor="#9CA3AF"
+                                className="flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                                style={{ color: theme.text }}
+                              />
+                              <TextInput
+                                value={form.subscriptionReminderDays}
+                                onChangeText={(text) =>
+                                  setForm((p) => ({
+                                    ...p,
+                                    subscriptionReminderDays: text.replace(/[^0-9]/g, ''),
+                                  }))
+                                }
+                                keyboardType="number-pad"
+                                placeholder="Reminder"
+                                placeholderTextColor="#9CA3AF"
+                                className="w-28 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                                style={{ color: theme.text }}
+                              />
+                            </View>
+
+                            <Pressable
+                              onPress={() =>
+                                setForm((p) => ({
+                                  ...p,
+                                  subscriptionCancelBeforeDue: !p.subscriptionCancelBeforeDue,
+                                }))
+                              }
+                              className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                              <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>
+                                Remind me to cancel
+                              </ThemedText>
+                              <MaterialCommunityIcons
+                                name={
+                                  form.subscriptionCancelBeforeDue
+                                    ? 'checkbox-marked-circle'
+                                    : 'checkbox-blank-circle-outline'
+                                }
+                                size={22}
+                                color={form.subscriptionCancelBeforeDue ? accent : '#9CA3AF'}
+                              />
+                            </Pressable>
+
+                            <TextInput
+                              multiline
+                              value={form.subscriptionNotes}
+                              onChangeText={(text) =>
+                                setForm((p) => ({ ...p, subscriptionNotes: text }))
+                              }
+                              placeholder="Plan tier, cancellation link, or renewal notes"
+                              placeholderTextColor="#9CA3AF"
+                              className="min-h-[78px] rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                              textAlignVertical="top"
+                              style={{ color: theme.text }}
+                            />
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
                 <View className="px-5 mb-6">
                   <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">
                     {categoryNeedsReview ? 'Needs Attention' : 'Category'}
@@ -1249,9 +1547,10 @@ export function TransactionFormModal({
 
         {/* Date Picker Modal (iOS) */}
         {Platform.OS === 'ios' && isDatePickerVisible && (
-          <Modal transparent animationType="fade" visible={isDatePickerVisible}>
-            <View className="flex-1 justify-end bg-black/30">
-              <Pressable className="flex-1" onPress={() => setIsDatePickerVisible(false)} />
+          <AnimatedBottomSheet
+            visible={isDatePickerVisible}
+            onClose={() => setIsDatePickerVisible(false)}
+            backdropOpacity={0.3}>
               <View
                 className="rounded-t-3xl px-4 pb-6 pt-4"
                 style={{ backgroundColor: theme.background }}>
@@ -1279,14 +1578,14 @@ export function TransactionFormModal({
                   </Pressable>
                 </View>
               </View>
-            </View>
-          </Modal>
+          </AnimatedBottomSheet>
         )}
 
         {/* Mode Picker */}
-        <Modal transparent animationType="fade" visible={isModePickerVisible}>
-          <View className="flex-1 justify-end bg-black/30">
-            <Pressable className="flex-1" onPress={() => setIsModePickerVisible(false)} />
+        <AnimatedBottomSheet
+          visible={isModePickerVisible}
+          onClose={() => setIsModePickerVisible(false)}
+          backdropOpacity={0.3}>
             <View
               className="rounded-t-3xl px-4 pb-10 pt-4"
               style={{ backgroundColor: theme.background }}>
@@ -1323,13 +1622,13 @@ export function TransactionFormModal({
                 ))}
               </View>
             </View>
-          </View>
-        </Modal>
+        </AnimatedBottomSheet>
 
         {/* Category Picker */}
-        <Modal transparent animationType="fade" visible={isCategoryPickerVisible}>
-          <View className="flex-1 justify-end bg-black/30">
-            <Pressable className="flex-1" onPress={() => setIsCategoryPickerVisible(false)} />
+        <AnimatedBottomSheet
+          visible={isCategoryPickerVisible}
+          onClose={() => setIsCategoryPickerVisible(false)}
+          backdropOpacity={0.3}>
             <View
               className="rounded-t-3xl px-4 pb-10 pt-4"
               style={{ backgroundColor: theme.background }}>
@@ -1365,13 +1664,13 @@ export function TransactionFormModal({
                 </View>
               </ScrollView>
             </View>
-          </View>
-        </Modal>
+        </AnimatedBottomSheet>
 
         {/* Account Picker */}
-        <Modal transparent animationType="fade" visible={isAccountPickerVisible}>
-          <View className="flex-1 justify-end bg-black/30">
-            <Pressable className="flex-1" onPress={() => setIsAccountPickerVisible(false)} />
+        <AnimatedBottomSheet
+          visible={isAccountPickerVisible}
+          onClose={() => setIsAccountPickerVisible(false)}
+          backdropOpacity={0.3}>
             <View
               className="rounded-t-3xl px-4 pb-10 pt-4"
               style={{ backgroundColor: theme.background }}>
@@ -1424,8 +1723,7 @@ export function TransactionFormModal({
                 )}
               </View>
             </View>
-          </View>
-        </Modal>
+        </AnimatedBottomSheet>
 
         <Modal
           transparent

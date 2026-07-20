@@ -1,7 +1,7 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { authOtpSend, getFriendlyAuthErrorMessage } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/transactions';
-import { authOtpSend } from '@/lib/auth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
@@ -118,7 +118,7 @@ export const AuthOTPVerificationScreen = ({
       const result = await response.json();
       onContinue(result.claim_token);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to verify code.');
+      setErrorMessage(getFriendlyAuthErrorMessage(error, 'Unable to verify code.'));
     } finally {
       setIsVerifying(false);
     }
@@ -137,7 +137,7 @@ export const AuthOTPVerificationScreen = ({
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to resend code.');
+      setErrorMessage(getFriendlyAuthErrorMessage(error, 'Unable to resend code.'));
     } finally {
       setIsResending(false);
     }

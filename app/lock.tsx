@@ -8,7 +8,7 @@ import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loginUser } from '@/lib/auth';
 import { getDeviceId } from '@/lib/device';
-import { saveLocalSecurityPin, verifyLocalSecurityPin } from '@/lib/security';
+import { hasLocalSecurityPin, saveLocalSecurityPin, verifyLocalSecurityPin } from '@/lib/security';
 
 export default function LockScreen() {
     const router = useRouter();
@@ -34,8 +34,13 @@ export default function LockScreen() {
         setError(null);
 
         try {
-            if (await verifyLocalSecurityPin(user.uuid, pin)) {
-                router.replace('/(tabs)');
+            if (await hasLocalSecurityPin(user.uuid)) {
+                if (await verifyLocalSecurityPin(user.uuid, pin)) {
+                    router.replace('/(tabs)');
+                    return;
+                }
+
+                setError('Incorrect PIN.');
                 return;
             }
 
