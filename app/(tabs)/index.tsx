@@ -58,6 +58,7 @@ import {
   type SplitFriend,
   type SplitGroup,
 } from '@/lib/splits';
+import { resolveSplitDraft } from '@/lib/split-draft';
 import { createSubscription, type BillingInterval } from '@/lib/subscriptions';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
@@ -622,10 +623,11 @@ export default function HomeScreen() {
         }
         const splitPayload =
           formData.splitEnabled && formData.type === 'Expense'
-            ? {
-                group_id: formData.splitGroupId,
-                group_name: formData.splitGroupId ? '' : formData.splitGroupName.trim(),
-                participants: formData.splitParticipants.map((participant) => ({
+              ? {
+                  group_id: formData.splitGroupId,
+                  group_name: formData.splitGroupId ? '' : formData.splitGroupName.trim(),
+                  notes: formData.notes.trim(),
+                  participants: formData.splitParticipants.map((participant) => ({
                   ...(participant.friendId
                     ? { friend_id: participant.friendId }
                     : { friend: { name: participant.friendName.trim() } }),
@@ -764,30 +766,7 @@ export default function HomeScreen() {
           missing.has('date') || !data.date ? '' : normalizeDateLabel(data.date, '');
         const tagValue = data.tag ?? data.tags?.[0] ?? '';
         const newType = missing.has('type') ? '' : (toTitleCase(data.type) ?? '');
-        const splitParticipants =
-          data.split_candidate_details?.participants
-            ?.map((participant) => {
-              const friendName = participant.friend_name?.trim() ?? '';
-              const matchingFriend = splitFriends.find(
-                (friend) => friend.name.trim().toLowerCase() === friendName.toLowerCase()
-              );
-              const shareAmount =
-                participant.share_amount != null && participant.share_amount > 0
-                  ? participant.share_amount
-                  : data.amount != null
-                    ? data.amount / 2
-                    : null;
-              return {
-                friendId: matchingFriend?.id ?? null,
-                friendName: matchingFriend ? '' : friendName,
-                shareAmount: shareAmount != null ? shareAmount.toFixed(2) : '',
-                direction: participant.direction ?? 'friend_owes_user',
-              };
-            })
-            .filter(
-              (participant) =>
-                participant.friendId || participant.friendName || participant.shareAmount
-            ) ?? [];
+        const splitDraft = resolveSplitDraft(data, splitFriends, splitGroups);
         const subscriptionCandidate = data.subscription_candidate;
         const subscriptionInterval = isBillingInterval(subscriptionCandidate?.billing_interval)
           ? subscriptionCandidate.billing_interval
@@ -809,9 +788,10 @@ export default function HomeScreen() {
           notes: data.note ?? '',
           date: formattedDate,
           tag: smartSorting && tagValue ? (toTitleCase(tagValue) ?? '') : '',
-          splitEnabled: Boolean(data.split_candidate || splitParticipants.length > 0),
-          splitGroupName: data.split_candidate_details?.group_name ?? '',
-          splitParticipants,
+          splitEnabled: splitDraft.splitEnabled,
+          splitGroupId: splitDraft.splitGroupId,
+          splitGroupName: splitDraft.splitGroupName,
+          splitParticipants: splitDraft.splitParticipants,
           subscriptionEnabled: Boolean(subscriptionCandidate),
           subscriptionName: subscriptionCandidate?.name ?? data.merchant ?? data.title ?? '',
           subscriptionMerchant: subscriptionCandidate?.merchant ?? data.merchant ?? '',
@@ -874,6 +854,7 @@ export default function HomeScreen() {
     recordedUri,
     smartSorting,
     splitFriends,
+    splitGroups,
     token,
     user?.is_guest,
   ]);

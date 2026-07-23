@@ -40,7 +40,7 @@ export type EntryMutationPayload = {
       share_amount: string | number;
       direction?: 'friend_owes_user' | 'user_owes_friend';
     }>;
-  };
+  } | null;
 };
 
 const entryHeaders = (token: string, idempotencyKey?: string) => ({

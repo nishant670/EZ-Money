@@ -229,6 +229,22 @@ export const createSplitFriend = async (
   return response.json();
 };
 
+export const updateSplitFriend = async (
+  token: string,
+  friendId: number,
+  payload: SplitFriendPayload
+): Promise<SplitFriend> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/friends/${friendId}`, {
+    method: 'PUT',
+    headers: authHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to update this friend right now.');
+  }
+  return response.json();
+};
+
 export const archiveSplitFriend = async (token: string, friendId: number): Promise<void> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/friends/${friendId}`, {
     method: 'DELETE',

@@ -40,7 +40,13 @@
           }
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Finnri to access your contacts so you can add split group members faster."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
