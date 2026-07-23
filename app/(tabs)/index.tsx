@@ -215,6 +215,10 @@ export default function HomeScreen() {
     import('@/components/home/QuickPrompts').QuickPrompt | null
   >(null);
   const [modalMode, setModalMode] = useState<'audio' | 'manual' | 'quick-prompt'>('manual');
+  const dailyCreditLimit = billingStatus?.credits.daily_limit ?? 0;
+  const dailyCreditsRemaining = billingStatus?.credits.daily_credits_remaining ?? 0;
+  const shouldShowLowCreditNotice =
+    dailyCreditLimit > 0 && dailyCreditsRemaining / dailyCreditLimit < 0.2;
 
   const handleQuickPromptSelect = useCallback(
     (prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
@@ -1017,13 +1021,16 @@ export default function HomeScreen() {
           </ThemedText>
         </View>
 
-        <View style={{ marginBottom: themeTokens.spacing.md }}>
-          <CreditStatusCard
-            credits={billingStatus?.credits ?? null}
-            loading={isBillingLoading}
-            onPress={() => router.push('/billing')}
-          />
-        </View>
+        {shouldShowLowCreditNotice ? (
+          <View style={{ marginHorizontal: 24, marginBottom: themeTokens.spacing.md }}>
+            <CreditStatusCard
+              credits={billingStatus?.credits ?? null}
+              loading={isBillingLoading}
+              compact
+              onPress={() => router.push('/billing')}
+            />
+          </View>
+        ) : null}
 
         <VoiceInputCard
           onMicPress={handleToggleRecording}
@@ -1036,7 +1043,6 @@ export default function HomeScreen() {
           isProcessing={isSubmitting}
           isTextInputVisible={isTextInputVisible}
           onToggleTextInput={() => setIsTextInputVisible((current) => !current)}
-          dailyCreditsRemaining={billingStatus?.credits.daily_credits_remaining ?? null}
         />
 
         <QuickPrompts

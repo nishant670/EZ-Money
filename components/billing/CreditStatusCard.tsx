@@ -25,13 +25,79 @@ export function CreditStatusCard({
   const dailyRemaining = credits?.daily_credits_remaining ?? 0;
   const dailyUsed = credits?.daily_credits_used ?? 0;
   const progress = dailyLimit > 0 ? Math.min(1, Math.max(0, dailyUsed / dailyLimit)) : 0;
+  const dailyRemainingRatio = dailyLimit > 0 ? dailyRemaining / dailyLimit : 1;
+  const isLowDailyLimit = dailyLimit > 0 && dailyRemainingRatio < 0.2;
   const trialExpiry = formatCreditDate(credits?.trial_expires_at);
   const resetDate = formatCreditDate(credits?.reset_at);
-  const content = (
+  const compactContent = (
     <Card
       compact
       style={{
-        padding: compact ? theme.spacing.md : theme.spacing.lg,
+        padding: theme.spacing.md,
+        gap: theme.spacing.sm,
+      }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+        <View
+          style={{
+            height: 32,
+            width: 32,
+            borderRadius: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: isLowDailyLimit ? '#FFF3E0' : colors.secondary,
+          }}>
+          <MaterialCommunityIcons
+            name={isLowDailyLimit ? 'alert-circle-outline' : 'creation'}
+            size={17}
+            color={isLowDailyLimit ? '#EF6C00' : colors.accent}
+          />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <ThemedText numberOfLines={1} variant="captionStrong" style={{ color: colors.text }}>
+            {isLowDailyLimit ? 'Daily AI credits low' : 'AI credits'}
+          </ThemedText>
+          <ThemedText numberOfLines={1} variant="caption" style={{ color: `${colors.text}8F` }}>
+            {loading ? 'Checking balance...' : `${dailyUsed}/${dailyLimit} used today`}
+          </ThemedText>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <ThemedText variant="cardTitle" style={{ color: colors.text, fontSize: 18 }}>
+            {credits?.daily_credits_remaining ?? '—'}
+          </ThemedText>
+          <ThemedText variant="micro" style={{ color: `${colors.text}8F` }}>
+            left today
+          </ThemedText>
+        </View>
+      </View>
+
+      <View
+        style={{
+          height: 5,
+          borderRadius: 3,
+          overflow: 'hidden',
+          backgroundColor: theme.mode === 'dark' ? 'rgba(255,255,255,0.08)' : '#F1E6E8',
+        }}>
+        <View
+          style={{
+            height: '100%',
+            width: `${progress * 100}%`,
+            borderRadius: 3,
+            backgroundColor: isLowDailyLimit ? '#EF6C00' : colors.accent,
+          }}
+        />
+      </View>
+
+      <ThemedText numberOfLines={1} variant="micro" style={{ color: `${colors.text}7A` }}>
+        {credits?.total_credits_remaining ?? '—'} total credits left
+      </ThemedText>
+    </Card>
+  );
+
+  const content = compact ? compactContent : (
+    <Card
+      compact
+      style={{
+        padding: theme.spacing.lg,
         gap: theme.spacing.md,
       }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>

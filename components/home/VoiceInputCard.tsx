@@ -24,9 +24,6 @@ type VoiceInputCardProps = {
   isProcessing?: boolean;
   isTextInputVisible?: boolean;
   onToggleTextInput?: () => void;
-  textCreditEstimate?: number;
-  voiceCreditEstimate?: number;
-  dailyCreditsRemaining?: number | null;
 };
 
 export function VoiceInputCard({
@@ -40,9 +37,6 @@ export function VoiceInputCard({
   isProcessing = false,
   isTextInputVisible = false,
   onToggleTextInput,
-  textCreditEstimate = 5,
-  voiceCreditEstimate = 12,
-  dailyCreditsRemaining = null,
 }: VoiceInputCardProps) {
   const theme = useThemeTokens();
   const colors = theme.colors;
@@ -192,13 +186,6 @@ export function VoiceInputCard({
           <ThemedText variant="cardTitle" style={{ color: colors.text }}>
             Recording ready
           </ThemedText>
-          <ThemedText
-            style={{
-              ...theme.typography.caption,
-              color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(45,45,45,0.54)',
-            }}>
-            Uses about {voiceCreditEstimate} credits.
-          </ThemedText>
         </View>
 
         <View
@@ -334,15 +321,6 @@ export function VoiceInputCard({
           }}>
           {samplePrompts[promptIndex]}
         </Animated.Text>
-        <ThemedText
-          variant="micro"
-          style={{
-            color: isDark ? 'rgba(255,255,255,0.48)' : 'rgba(45,45,45,0.48)',
-            textTransform: 'uppercase',
-          }}>
-          Text {textCreditEstimate} credits · Voice from {voiceCreditEstimate} credits
-          {dailyCreditsRemaining != null ? ` · ${dailyCreditsRemaining} left today` : ''}
-        </ThemedText>
       </View>
 
       {/* Mic Button */}
