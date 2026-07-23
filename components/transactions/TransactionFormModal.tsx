@@ -29,6 +29,7 @@ import {
   getPreferredAccountForPaymentMode,
 } from '@/lib/accounts';
 import { formatDisplayTime } from '@/lib/datetime';
+import { buildParticipantsForGroup } from '@/lib/split-draft';
 import type { SplitFriend, SplitGroup } from '@/lib/splits';
 import type { BillingInterval } from '@/lib/subscriptions';
 import { formatDateLabel, parseDateLabel } from '@/lib/transactions';
@@ -150,6 +151,30 @@ const categoryOptions = [
   'Misc',
 ];
 const tagOptions = ['Investment', 'Lending', 'EMI', 'Subscription', 'General'];
+type SplitShareMode = 'amount' | 'percentage';
+
+const splitParticipantDivisor = (participantCount: number) => participantCount + 1;
+
+const equalShareAmount = (amount: number, participantCount: number) => {
+  if (!Number.isFinite(amount) || amount <= 0 || participantCount <= 0) return '';
+  return (amount / splitParticipantDivisor(participantCount)).toFixed(2);
+};
+
+const percentFromShare = (shareAmount: string, totalAmount: string) => {
+  const share = Number(shareAmount || 0);
+  const total = Number(totalAmount || 0);
+  if (!Number.isFinite(share) || !Number.isFinite(total) || total <= 0) return '';
+  const percent = (share / total) * 100;
+  return Number.isInteger(percent) ? String(percent) : percent.toFixed(2);
+};
+
+const shareFromPercent = (percent: string, totalAmount: string) => {
+  const parsedPercent = Number(percent || 0);
+  const total = Number(totalAmount || 0);
+  if (!Number.isFinite(parsedPercent) || !Number.isFinite(total) || total <= 0) return '';
+  return ((total * parsedPercent) / 100).toFixed(2);
+};
+
 const formatFieldName = (field: string) => {
   const normalized = field === 'account_hint' ? 'account' : field;
   return normalized.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -175,8 +200,7 @@ export function TransactionFormModal({
   const colorScheme = themeTokens.mode;
   const accent = theme.accent;
   const accentSurface = colorScheme === 'dark' ? theme.secondary : theme.secondary;
-  const detailInputPlaceholderColor =
-    colorScheme === 'dark' ? 'rgba(255,255,255,0.45)' : '#9CA3AF';
+  const detailInputPlaceholderColor = colorScheme === 'dark' ? 'rgba(255,255,255,0.45)' : '#9CA3AF';
   const detailIconSurface = colorScheme === 'dark' ? theme.secondary : accentSurface;
 
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -247,6 +271,7 @@ export function TransactionFormModal({
   const [isMoreDetailsExpanded, setIsMoreDetailsExpanded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [splitShareMode, setSplitShareMode] = useState<SplitShareMode>('amount');
   const [isDiscardDialogVisible, setIsDiscardDialogVisible] = useState(false);
 
   useEffect(() => {
@@ -261,6 +286,10 @@ export function TransactionFormModal({
   const compatibleAccounts = useMemo(
     () => getAccountsForPaymentMode(accounts, form.mode),
     [accounts, form.mode]
+  );
+  const selectedSplitGroup = useMemo(
+    () => splitGroups.find((group) => group.id === form.splitGroupId) ?? null,
+    [form.splitGroupId, splitGroups]
   );
   const pendingAutoAccountPayload = useMemo(
     () => getAutoAccountPayloadForPaymentMode(form.mode),
@@ -514,19 +543,32 @@ export function TransactionFormModal({
 
   const addSplitParticipant = () => {
     const amountValue = Number(form.amount || 0);
-    const defaultShare = amountValue > 0 ? (amountValue / 2).toFixed(2) : '';
+    const nextCount = form.splitParticipants.length + 1;
+    const defaultShare = equalShareAmount(amountValue, nextCount);
     setForm((prev) => ({
       ...prev,
-      splitParticipants: [
-        ...prev.splitParticipants,
-        {
-          friendId: splitFriends[0]?.id ?? null,
-          friendName: '',
-          shareAmount: defaultShare,
-          direction: 'friend_owes_user',
-        },
-      ],
+      splitParticipants: rebalanceSplitParticipants(
+        [
+          ...prev.splitParticipants,
+          {
+            friendId: splitFriends[0]?.id ?? null,
+            friendName: '',
+            shareAmount: defaultShare,
+            direction: 'friend_owes_user',
+          },
+        ],
+        amountValue
+      ),
     }));
+  };
+
+  const rebalanceSplitParticipants = (
+    participants: SplitParticipantForm[],
+    amountValue = Number(form.amount || 0)
+  ) => {
+    const defaultShare = equalShareAmount(amountValue, participants.length);
+    if (!defaultShare) return participants;
+    return participants.map((participant) => ({ ...participant, shareAmount: defaultShare }));
   };
 
   const updateSplitParticipant = (index: number, updates: Partial<SplitParticipantForm>) => {
@@ -541,8 +583,9 @@ export function TransactionFormModal({
   const removeSplitParticipant = (index: number) => {
     setForm((prev) => ({
       ...prev,
-      splitParticipants: prev.splitParticipants.filter(
-        (_, participantIndex) => participantIndex !== index
+      splitParticipants: rebalanceSplitParticipants(
+        prev.splitParticipants.filter((_, participantIndex) => participantIndex !== index),
+        Number(prev.amount || 0)
       ),
     }));
   };
@@ -935,6 +978,10 @@ export function TransactionFormModal({
                                           ...p,
                                           splitGroupId: group.id,
                                           splitGroupName: '',
+                                          splitParticipants:
+                                            buildParticipantsForGroup(group, p.amount).length > 0
+                                              ? buildParticipantsForGroup(group, p.amount)
+                                              : p.splitParticipants,
                                         }))
                                       }
                                       className="rounded-full border px-4 py-2"
@@ -958,6 +1005,33 @@ export function TransactionFormModal({
                                   ))}
                                 </View>
                               </ScrollView>
+                              {selectedSplitGroup &&
+                                (selectedSplitGroup.members?.length ?? 0) > 0 && (
+                                  <Pressable
+                                    accessibilityRole="button"
+                                    onPress={() =>
+                                      setForm((p) => ({
+                                        ...p,
+                                        splitParticipants: buildParticipantsForGroup(
+                                          selectedSplitGroup,
+                                          p.amount
+                                        ),
+                                      }))
+                                    }
+                                    className="mt-3 flex-row items-center justify-center gap-2 rounded-2xl border py-3"
+                                    style={{ borderColor: theme.border }}>
+                                    <MaterialCommunityIcons
+                                      name="account-group-outline"
+                                      size={18}
+                                      color={accent}
+                                    />
+                                    <ThemedText
+                                      className="text-xs font-black"
+                                      style={{ color: accent }}>
+                                      Split equally
+                                    </ThemedText>
+                                  </Pressable>
+                                )}
                             </View>
                           )}
 
@@ -976,6 +1050,77 @@ export function TransactionFormModal({
                                 className="p-0 text-sm font-bold"
                                 style={{ color: theme.text }}
                               />
+                            </View>
+                          )}
+
+                          {form.splitParticipants.length > 0 && (
+                            <View className="gap-3 rounded-2xl bg-gray-50 p-3 dark:bg-gray-800/50">
+                              <View className="flex-row gap-2">
+                                <Pressable
+                                  accessibilityRole="button"
+                                  onPress={() => setSplitShareMode('amount')}
+                                  className="flex-1 rounded-2xl px-3 py-3"
+                                  style={{
+                                    backgroundColor:
+                                      splitShareMode === 'amount' ? accentSurface : 'transparent',
+                                    borderColor:
+                                      splitShareMode === 'amount' ? accent : theme.border,
+                                    borderWidth: 1,
+                                  }}>
+                                  <ThemedText
+                                    className="text-center text-xs font-black"
+                                    style={{
+                                      color: splitShareMode === 'amount' ? accent : theme.text,
+                                    }}>
+                                    Amount
+                                  </ThemedText>
+                                </Pressable>
+                                <Pressable
+                                  accessibilityRole="button"
+                                  onPress={() => setSplitShareMode('percentage')}
+                                  className="flex-1 rounded-2xl px-3 py-3"
+                                  style={{
+                                    backgroundColor:
+                                      splitShareMode === 'percentage'
+                                        ? accentSurface
+                                        : 'transparent',
+                                    borderColor:
+                                      splitShareMode === 'percentage' ? accent : theme.border,
+                                    borderWidth: 1,
+                                  }}>
+                                  <ThemedText
+                                    className="text-center text-xs font-black"
+                                    style={{
+                                      color: splitShareMode === 'percentage' ? accent : theme.text,
+                                    }}>
+                                    Percentage
+                                  </ThemedText>
+                                </Pressable>
+                              </View>
+                              <Pressable
+                                accessibilityRole="button"
+                                onPress={() =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    splitParticipants: rebalanceSplitParticipants(
+                                      prev.splitParticipants,
+                                      Number(prev.amount || 0)
+                                    ),
+                                  }))
+                                }
+                                className="flex-row items-center justify-center gap-2 rounded-2xl border py-3"
+                                style={{ borderColor: theme.border }}>
+                                <MaterialCommunityIcons
+                                  name="call-split"
+                                  size={18}
+                                  color={accent}
+                                />
+                                <ThemedText
+                                  className="text-xs font-black"
+                                  style={{ color: accent }}>
+                                  Split equally
+                                </ThemedText>
+                              </Pressable>
                             </View>
                           )}
 
@@ -1073,12 +1218,23 @@ export function TransactionFormModal({
                                 )}
                                 <View className="mt-3 flex-row gap-3">
                                   <TextInput
-                                    value={participant.shareAmount}
-                                    onChangeText={(text) =>
-                                      updateSplitParticipant(index, { shareAmount: text })
+                                    value={
+                                      splitShareMode === 'percentage'
+                                        ? percentFromShare(participant.shareAmount, form.amount)
+                                        : participant.shareAmount
                                     }
+                                    onChangeText={(text) => {
+                                      updateSplitParticipant(index, {
+                                        shareAmount:
+                                          splitShareMode === 'percentage'
+                                            ? shareFromPercent(text, form.amount)
+                                            : text,
+                                      });
+                                    }}
                                     keyboardType="decimal-pad"
-                                    placeholder="Amount"
+                                    placeholder={
+                                      splitShareMode === 'percentage' ? 'Percent' : 'Amount'
+                                    }
                                     placeholderTextColor="#9CA3AF"
                                     className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-bold dark:bg-gray-900"
                                     style={{ color: theme.text }}
@@ -1312,7 +1468,9 @@ export function TransactionFormModal({
                                 }))
                               }
                               className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
-                              <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>
+                              <ThemedText
+                                className="text-sm font-bold"
+                                style={{ color: theme.text }}>
                                 Remind me to cancel
                               </ThemedText>
                               <MaterialCommunityIcons
@@ -1551,33 +1709,31 @@ export function TransactionFormModal({
             visible={isDatePickerVisible}
             onClose={() => setIsDatePickerVisible(false)}
             backdropOpacity={0.3}>
-              <View
-                className="rounded-t-3xl px-4 pb-6 pt-4"
-                style={{ backgroundColor: theme.background }}>
-                <ThemedText className="text-center text-sm font-bold">
-                  Select Date & Time
-                </ThemedText>
-                <DateTimePicker
-                  value={pendingDate}
-                  mode="datetime"
-                  display="spinner"
-                  onChange={(_e, d) => d && setPendingDate(d)}
-                  style={{ width: '100%' }}
-                />
-                <View className="mt-4 flex-row gap-3">
-                  <Pressable
-                    className="flex-1 items-center rounded-2xl border py-3 border-gray-100"
-                    onPress={() => setIsDatePickerVisible(false)}>
-                    <ThemedText>Cancel</ThemedText>
-                  </Pressable>
-                  <Pressable
-                    className="flex-1 items-center rounded-2xl py-3"
-                    style={{ backgroundColor: accent }}
-                    onPress={handleConfirmDatePicker}>
-                    <ThemedText className="text-white font-bold">Set Date</ThemedText>
-                  </Pressable>
-                </View>
+            <View
+              className="rounded-t-3xl px-4 pb-6 pt-4"
+              style={{ backgroundColor: theme.background }}>
+              <ThemedText className="text-center text-sm font-bold">Select Date & Time</ThemedText>
+              <DateTimePicker
+                value={pendingDate}
+                mode="datetime"
+                display="spinner"
+                onChange={(_e, d) => d && setPendingDate(d)}
+                style={{ width: '100%' }}
+              />
+              <View className="mt-4 flex-row gap-3">
+                <Pressable
+                  className="flex-1 items-center rounded-2xl border py-3 border-gray-100"
+                  onPress={() => setIsDatePickerVisible(false)}>
+                  <ThemedText>Cancel</ThemedText>
+                </Pressable>
+                <Pressable
+                  className="flex-1 items-center rounded-2xl py-3"
+                  style={{ backgroundColor: accent }}
+                  onPress={handleConfirmDatePicker}>
+                  <ThemedText className="text-white font-bold">Set Date</ThemedText>
+                </Pressable>
               </View>
+            </View>
           </AnimatedBottomSheet>
         )}
 
@@ -1586,42 +1742,42 @@ export function TransactionFormModal({
           visible={isModePickerVisible}
           onClose={() => setIsModePickerVisible(false)}
           backdropOpacity={0.3}>
-            <View
-              className="rounded-t-3xl px-4 pb-10 pt-4"
-              style={{ backgroundColor: theme.background }}>
-              <ThemedText className="text-center text-base font-bold mb-6">
-                Select Payment Method
-              </ThemedText>
-              <View className="gap-2">
-                {modeOptions.map((m) => (
-                  <Pressable
-                    key={m}
-                    onPress={() => {
-                      setForm((p) => resolveEntryFormAccount({ ...p, mode: m }));
-                      setIsModePickerVisible(false);
-                    }}
-                    className="flex-row items-center justify-between rounded-2xl border p-4"
-                    style={{
-                      backgroundColor:
-                        form.mode === m
-                          ? accentSurface
-                          : colorScheme === 'dark'
-                            ? theme.card
-                            : '#F9FAFB',
-                      borderColor: form.mode === m ? accent : 'transparent',
-                    }}>
-                    <ThemedText
-                      className="font-bold"
-                      style={{ color: form.mode === m ? accent : theme.text }}>
-                      {m}
-                    </ThemedText>
-                    {form.mode === m && (
-                      <MaterialCommunityIcons name="check" size={20} color={accent} />
-                    )}
-                  </Pressable>
-                ))}
-              </View>
+          <View
+            className="rounded-t-3xl px-4 pb-10 pt-4"
+            style={{ backgroundColor: theme.background }}>
+            <ThemedText className="text-center text-base font-bold mb-6">
+              Select Payment Method
+            </ThemedText>
+            <View className="gap-2">
+              {modeOptions.map((m) => (
+                <Pressable
+                  key={m}
+                  onPress={() => {
+                    setForm((p) => resolveEntryFormAccount({ ...p, mode: m }));
+                    setIsModePickerVisible(false);
+                  }}
+                  className="flex-row items-center justify-between rounded-2xl border p-4"
+                  style={{
+                    backgroundColor:
+                      form.mode === m
+                        ? accentSurface
+                        : colorScheme === 'dark'
+                          ? theme.card
+                          : '#F9FAFB',
+                    borderColor: form.mode === m ? accent : 'transparent',
+                  }}>
+                  <ThemedText
+                    className="font-bold"
+                    style={{ color: form.mode === m ? accent : theme.text }}>
+                    {m}
+                  </ThemedText>
+                  {form.mode === m && (
+                    <MaterialCommunityIcons name="check" size={20} color={accent} />
+                  )}
+                </Pressable>
+              ))}
             </View>
+          </View>
         </AnimatedBottomSheet>
 
         {/* Category Picker */}
@@ -1629,41 +1785,41 @@ export function TransactionFormModal({
           visible={isCategoryPickerVisible}
           onClose={() => setIsCategoryPickerVisible(false)}
           backdropOpacity={0.3}>
-            <View
-              className="rounded-t-3xl px-4 pb-10 pt-4"
-              style={{ backgroundColor: theme.background }}>
-              <ThemedText className="text-center text-base font-bold mb-6">
-                Select Category
-              </ThemedText>
-              <ScrollView style={{ maxHeight: 400 }}>
-                <View className="flex-row flex-wrap gap-4 justify-between">
-                  {categoryOptions.map((c) => (
-                    <Pressable
-                      key={c}
-                      onPress={() => {
-                        setForm((p) => ({ ...p, category: c }));
-                        setIsCategoryPickerVisible(false);
-                      }}
-                      className="w-[47%] items-center gap-2 rounded-3xl border p-4"
-                      style={{
-                        backgroundColor:
-                          form.category === c
-                            ? accentSurface
-                            : colorScheme === 'dark'
-                              ? theme.card
-                              : '#F9FAFB',
-                        borderColor: form.category === c ? accent : 'transparent',
-                      }}>
-                      <ThemedText
-                        className="text-xs font-bold"
-                        style={{ color: form.category === c ? accent : theme.text }}>
-                        {c}
-                      </ThemedText>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
+          <View
+            className="rounded-t-3xl px-4 pb-10 pt-4"
+            style={{ backgroundColor: theme.background }}>
+            <ThemedText className="text-center text-base font-bold mb-6">
+              Select Category
+            </ThemedText>
+            <ScrollView style={{ maxHeight: 400 }}>
+              <View className="flex-row flex-wrap gap-4 justify-between">
+                {categoryOptions.map((c) => (
+                  <Pressable
+                    key={c}
+                    onPress={() => {
+                      setForm((p) => ({ ...p, category: c }));
+                      setIsCategoryPickerVisible(false);
+                    }}
+                    className="w-[47%] items-center gap-2 rounded-3xl border p-4"
+                    style={{
+                      backgroundColor:
+                        form.category === c
+                          ? accentSurface
+                          : colorScheme === 'dark'
+                            ? theme.card
+                            : '#F9FAFB',
+                      borderColor: form.category === c ? accent : 'transparent',
+                    }}>
+                    <ThemedText
+                      className="text-xs font-bold"
+                      style={{ color: form.category === c ? accent : theme.text }}>
+                      {c}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
         </AnimatedBottomSheet>
 
         {/* Account Picker */}
@@ -1671,58 +1827,56 @@ export function TransactionFormModal({
           visible={isAccountPickerVisible}
           onClose={() => setIsAccountPickerVisible(false)}
           backdropOpacity={0.3}>
-            <View
-              className="rounded-t-3xl px-4 pb-10 pt-4"
-              style={{ backgroundColor: theme.background }}>
-              <ThemedText className="text-center text-base font-bold mb-6">
-                Select Account
-              </ThemedText>
-              <View className="gap-2">
-                {compatibleAccounts.map((account) => (
-                  <Pressable
-                    key={account.id}
-                    onPress={() => {
-                      setForm((p) => ({ ...p, accountId: account.id, account: account.name }));
-                      setIsAccountPickerVisible(false);
-                    }}
-                    className={`p-4 rounded-2xl flex-row items-center justify-between ${form.accountId === account.id ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}>
-                    <View>
-                      <ThemedText
-                        className={`font-bold ${form.accountId === account.id ? 'text-blue-500' : 'text-gray-700'}`}>
-                        {account.name}
-                      </ThemedText>
-                      <ThemedText className="text-xs text-gray-400">
-                        {account.provider || account.type}
-                      </ThemedText>
-                    </View>
-                    {form.accountId === account.id && (
-                      <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />
-                    )}
-                  </Pressable>
-                ))}
-                {compatibleAccounts.length === 0 && (
-                  <View className="items-center gap-4 py-4">
-                    <ThemedText className="text-center text-sm text-gray-500">
-                      {willCreateAccountOnSave
-                        ? `${pendingAutoAccountPayload?.name} will be created when you save.`
-                        : `No ${form.mode || 'matching'} account found.`}
+          <View
+            className="rounded-t-3xl px-4 pb-10 pt-4"
+            style={{ backgroundColor: theme.background }}>
+            <ThemedText className="text-center text-base font-bold mb-6">Select Account</ThemedText>
+            <View className="gap-2">
+              {compatibleAccounts.map((account) => (
+                <Pressable
+                  key={account.id}
+                  onPress={() => {
+                    setForm((p) => ({ ...p, accountId: account.id, account: account.name }));
+                    setIsAccountPickerVisible(false);
+                  }}
+                  className={`p-4 rounded-2xl flex-row items-center justify-between ${form.accountId === account.id ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}>
+                  <View>
+                    <ThemedText
+                      className={`font-bold ${form.accountId === account.id ? 'text-blue-500' : 'text-gray-700'}`}>
+                      {account.name}
                     </ThemedText>
-                    {onManageAccounts && (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => {
-                          setIsAccountPickerVisible(false);
-                          onManageAccounts();
-                        }}
-                        className="rounded-2xl px-5 py-3"
-                        style={{ backgroundColor: accent }}>
-                        <ThemedText className="font-bold text-white">Manage accounts</ThemedText>
-                      </Pressable>
-                    )}
+                    <ThemedText className="text-xs text-gray-400">
+                      {account.provider || account.type}
+                    </ThemedText>
                   </View>
-                )}
-              </View>
+                  {form.accountId === account.id && (
+                    <MaterialCommunityIcons name="check" size={20} color="#3B82F6" />
+                  )}
+                </Pressable>
+              ))}
+              {compatibleAccounts.length === 0 && (
+                <View className="items-center gap-4 py-4">
+                  <ThemedText className="text-center text-sm text-gray-500">
+                    {willCreateAccountOnSave
+                      ? `${pendingAutoAccountPayload?.name} will be created when you save.`
+                      : `No ${form.mode || 'matching'} account found.`}
+                  </ThemedText>
+                  {onManageAccounts && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setIsAccountPickerVisible(false);
+                        onManageAccounts();
+                      }}
+                      className="rounded-2xl px-5 py-3"
+                      style={{ backgroundColor: accent }}>
+                      <ThemedText className="font-bold text-white">Manage accounts</ThemedText>
+                    </Pressable>
+                  )}
+                </View>
+              )}
             </View>
+          </View>
         </AnimatedBottomSheet>
 
         <Modal

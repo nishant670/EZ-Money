@@ -1,11 +1,13 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Contacts from 'expo-contacts';
 import { useFocusEffect } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import type { ReactNode } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -32,6 +34,7 @@ import {
   fetchSplitBills,
   fetchSplitFriends,
   fetchSplitGroups,
+  updateSplitFriend,
   updateSplitGroup,
   type SettlementDirection,
   type SplitActivityItem,
@@ -68,6 +71,13 @@ type ParticipantDraft = {
   share_amount: number;
   direction: SplitDirection;
 };
+type DeviceContactOption = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  imageUri?: string;
+};
 
 const groupKindOptions: {
   kind: GroupKind;
@@ -96,6 +106,34 @@ const todayApiDate = () => {
 };
 
 const parseAmount = (value: string) => Number(value.replace(/,/g, '').trim());
+
+const normalizePhone = (value?: string) => value?.replace(/\D/g, '') ?? '';
+
+const normalizeEmail = (value?: string) => value?.trim().toLowerCase() ?? '';
+
+const contactMatchesFriend = (contact: DeviceContactOption, friend: SplitFriend) => {
+  const contactPhone = normalizePhone(contact.phone);
+  const friendPhone = normalizePhone(friend.phone);
+  const contactEmail = normalizeEmail(contact.email);
+  const friendEmail = normalizeEmail(friend.email);
+  return Boolean(
+    (contactEmail && friendEmail && contactEmail === friendEmail) ||
+      (contactPhone && friendPhone && contactPhone === friendPhone)
+  );
+};
+
+const toDeviceContactOption = (contact: Contacts.ExistingContact): DeviceContactOption | null => {
+  const fallbackName = [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim();
+  const name = (contact.name || fallbackName || contact.phoneNumbers?.[0]?.number || '').trim();
+  if (!name) return null;
+  return {
+    id: contact.id,
+    name,
+    phone: contact.phoneNumbers?.find((phone) => phone.number)?.number,
+    email: contact.emails?.find((email) => email.email)?.email,
+    imageUri: contact.image?.uri,
+  };
+};
 
 const getBalanceTone = (value: number) => {
   if (value > 0) return { label: `you are owed ${formatMoney(value)}`, color: '#12966F' };
@@ -154,9 +192,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>('open');
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const [selectedGroupDetailId, setSelectedGroupDetailId] = useState<number | null>(null);
+  const [selectedFriendActions, setSelectedFriendActions] = useState<SplitFriend | null>(null);
+  const [editingFriendId, setEditingFriendId] = useState<number | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
   const [memberPickerGroupId, setMemberPickerGroupId] = useState<number | null>(null);
   const [memberPickerFriendIds, setMemberPickerFriendIds] = useState<number[]>([]);
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [contactsPermissionStatus, setContactsPermissionStatus] =
+    useState<Contacts.PermissionStatus | null>(null);
+  const [contactsAccessPrivileges, setContactsAccessPrivileges] = useState<
+    Contacts.ContactsPermissionResponse['accessPrivileges'] | null
+  >(null);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [deviceContacts, setDeviceContacts] = useState<DeviceContactOption[]>([]);
   const [pendingFriendGroupId, setPendingFriendGroupId] = useState<number | null>(null);
   const [groupMetadataById, setGroupMetadataById] = useState<Record<number, GroupMetadata>>({});
 
@@ -225,6 +273,53 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }, [loadSplitData])
   );
 
+  const loadDeviceContacts = useCallback(async () => {
+    setContactsLoading(true);
+    try {
+      const response = await Contacts.getContactsAsync({
+        fields: [
+          Contacts.Fields.Name,
+          Contacts.Fields.FirstName,
+          Contacts.Fields.LastName,
+          Contacts.Fields.PhoneNumbers,
+          Contacts.Fields.Emails,
+          Contacts.Fields.Image,
+        ],
+        sort: Contacts.SortTypes.FirstName,
+        pageSize: 1000,
+      });
+      setDeviceContacts(
+        response.data
+          .map(toDeviceContactOption)
+          .filter((contact): contact is DeviceContactOption => Boolean(contact))
+      );
+    } catch (contactError) {
+      setError(
+        contactError instanceof Error ? contactError.message : 'Unable to load your contacts.'
+      );
+    } finally {
+      setContactsLoading(false);
+    }
+  }, []);
+
+  const refreshContactsPermission = useCallback(async () => {
+    try {
+      const permission = await Contacts.getPermissionsAsync();
+      setContactsPermissionStatus(permission.status);
+      setContactsAccessPrivileges(permission.accessPrivileges ?? null);
+      if (permission.granted) {
+        await loadDeviceContacts();
+      }
+    } catch {
+      setContactsPermissionStatus(Contacts.PermissionStatus.UNDETERMINED);
+    }
+  }, [loadDeviceContacts]);
+
+  useEffect(() => {
+    if (!memberPickerGroupId) return;
+    void refreshContactsPermission();
+  }, [memberPickerGroupId, refreshContactsPermission]);
+
   const totals = useMemo(() => {
     return balances.reduce(
       (acc, balance) => {
@@ -258,20 +353,31 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         balanceAlertEnabled: false,
       };
       const memberIds = (group.members ?? []).map((member) => member.friend_id);
-      const netBalance = memberIds.reduce(
-        (sum, friendId) => sum + (balanceByFriendId.get(friendId)?.net_balance ?? 0),
+      const groupBills = bills.filter((bill) => bill.group_id === group.id);
+      const groupBalancesByFriendId = new Map<number, number>();
+      groupBills.forEach((bill) => {
+        bill.participants?.forEach((participant) => {
+          const current = groupBalancesByFriendId.get(participant.friend_id) ?? 0;
+          const signedShare =
+            participant.direction === 'friend_owes_user'
+              ? participant.share_amount
+              : -participant.share_amount;
+          groupBalancesByFriendId.set(participant.friend_id, current + signedShare);
+        });
+      });
+      const netBalance = [...groupBalancesByFriendId.values()].reduce(
+        (sum, value) => sum + value,
         0
       );
-      const groupBills = bills.filter((bill) => bill.group_id === group.id);
       const latestBill = [...groupBills].sort((a, b) => b.date.localeCompare(a.date))[0];
       const detailLines = memberIds
         .map((memberId) => {
           const friend = friendById.get(memberId);
-          const balance = balanceByFriendId.get(memberId);
-          if (!friend || !balance || balance.net_balance === 0) return null;
-          return balance.net_balance > 0
-            ? `${friend.name} owes you ${formatMoney(balance.net_balance)}`
-            : `You owe ${friend.name} ${formatMoney(balance.net_balance)}`;
+          const balance = groupBalancesByFriendId.get(memberId) ?? 0;
+          if (!friend || balance === 0) return null;
+          return balance > 0
+            ? `${friend.name} owes you ${formatMoney(balance)}`
+            : `You owe ${friend.name} ${formatMoney(balance)}`;
         })
         .filter((line): line is string => Boolean(line))
         .slice(0, 2);
@@ -286,7 +392,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         netBalance,
       };
     });
-  }, [balanceByFriendId, bills, friendById, groupMetadataById, groups]);
+  }, [bills, friendById, groupMetadataById, groups]);
 
   const selectedGroupSummary = useMemo(
     () => groupSummaries.find((summary) => summary.group.id === selectedGroupDetailId) ?? null,
@@ -454,7 +560,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const openModal = (kind: ModalKind) => {
-    if (kind === 'friend') resetFriendForm();
+    if (kind === 'friend') {
+      resetFriendForm();
+      setEditingFriendId(null);
+    }
     if (kind === 'group') resetGroupForm();
     if (kind === 'bill') resetBillForm();
     if (kind === 'settlement') resetSettlementForm();
@@ -468,10 +577,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
     setModal(null);
     setSaving(false);
+    setEditingFriendId(null);
     setEditingGroupId(null);
   };
 
-  const handleCreateFriend = async () => {
+  const handleSaveFriend = async () => {
     if (!token || saving) return;
     if (!friendName.trim()) {
       setError('Friend name is required.');
@@ -480,18 +590,21 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSaving(true);
     setError(null);
     try {
-      const createdFriend = await createSplitFriend(token, {
+      const payload = {
         name: friendName.trim(),
         phone: friendPhone.trim(),
         email: friendEmail.trim(),
-      });
-      if (pendingFriendGroupId) {
+      };
+      const savedFriend = editingFriendId
+        ? await updateSplitFriend(token, editingFriendId, payload)
+        : await createSplitFriend(token, payload);
+      if (!editingFriendId && pendingFriendGroupId) {
         const group = groups.find((currentGroup) => currentGroup.id === pendingFriendGroupId);
         if (group) {
           const nextFriendIds = [
             ...new Set([
               ...(group.members ?? []).map((member) => member.friend_id),
-              createdFriend.id,
+              savedFriend.id,
             ]),
           ];
           await updateSplitGroup(token, group.id, {
@@ -501,11 +614,15 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           setSelectedGroupDetailId(group.id);
         }
         setPendingFriendGroupId(null);
+      } else {
+        setActiveSection('friends');
+        setBalanceFilter('all');
+        setSearchQuery('');
       }
       closeModal();
       await loadSplitData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to add this friend.');
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save this friend.');
     } finally {
       setSaving(false);
     }
@@ -554,15 +671,21 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
   };
 
-  const handleArchiveFriend = (friend: SplitFriend) => {
-    Alert.alert(`Archive ${friend.name}?`, 'Archived friends stay out of new split bills.', [
+  const removeFriendFromActiveList = (friend: SplitFriend, action: 'archive' | 'delete') => {
+    const title = action === 'archive' ? `Archive ${friend.name}?` : `Delete ${friend.name}?`;
+    const message =
+      action === 'archive'
+        ? 'Archived friends stay out of new split bills.'
+        : 'This removes the friend from active split lists while preserving past split records.';
+    Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Archive',
+        text: action === 'archive' ? 'Archive' : 'Delete',
         style: 'destructive',
         onPress: () => {
           if (!token) return;
           setError(null);
+          setSelectedFriendActions(null);
           void archiveSplitFriend(token, friend.id)
             .then(loadSplitData)
             .catch((archiveError: unknown) => {
@@ -573,6 +696,21 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         },
       },
     ]);
+  };
+
+  const handleArchiveFriend = (friend: SplitFriend) => {
+    removeFriendFromActiveList(friend, 'archive');
+  };
+
+  const openFriendEditor = (friend: SplitFriend) => {
+    setSelectedFriendActions(null);
+    setFriendName(friend.name);
+    setFriendPhone(friend.phone ?? '');
+    setFriendEmail(friend.email ?? '');
+    setEditingFriendId(friend.id);
+    setPendingFriendGroupId(null);
+    setError(null);
+    setModal('friend');
   };
 
   const addParticipant = () => {
@@ -718,6 +856,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSelectedGroupDetailId(null);
     setMemberPickerGroupId(summary.group.id);
     setMemberPickerFriendIds(summary.memberIds);
+    setMemberSearchQuery('');
     setError(null);
   };
 
@@ -725,6 +864,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     const groupId = memberPickerGroupId;
     setMemberPickerGroupId(null);
     setMemberPickerFriendIds([]);
+    setMemberSearchQuery('');
     if (returnToGroup && groupId) {
       setSelectedGroupDetailId(groupId);
     }
@@ -758,11 +898,65 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
   };
 
+  const requestContactsAccess = async () => {
+    setContactsLoading(true);
+    setError(null);
+    try {
+      const permission = await Contacts.requestPermissionsAsync();
+      setContactsPermissionStatus(permission.status);
+      setContactsAccessPrivileges(permission.accessPrivileges ?? null);
+      if (permission.granted) {
+        await loadDeviceContacts();
+      }
+    } catch (permissionError) {
+      setError(
+        permissionError instanceof Error
+          ? permissionError.message
+          : 'Unable to request contacts permission.'
+      );
+    } finally {
+      setContactsLoading(false);
+    }
+  };
+
+  const selectDeviceContact = async (contact: DeviceContactOption) => {
+    if (!token || saving) return;
+    const existingFriend = friends.find((friend) => contactMatchesFriend(contact, friend));
+    if (existingFriend) {
+      setMemberPickerFriendIds((current) =>
+        current.includes(existingFriend.id) ? current : [...current, existingFriend.id]
+      );
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const createdFriend = await createSplitFriend(token, {
+        name: contact.name,
+        phone: contact.phone ?? '',
+        email: contact.email ?? '',
+      });
+      setMemberPickerFriendIds((current) =>
+        current.includes(createdFriend.id) ? current : [...current, createdFriend.id]
+      );
+      await loadSplitData();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to add this contact.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openFriendComposerFromMembers = () => {
     if (!memberPickerGroupId) return;
+    const prefilledName = memberSearchQuery.trim();
     setPendingFriendGroupId(memberPickerGroupId);
     closeMemberPicker(false);
     openModal('friend');
+    if (prefilledName) {
+      setFriendName(prefilledName);
+    }
   };
 
   const openBillForGroup = (groupId: number) => {
@@ -823,24 +1017,30 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
     return (
       <View key={friend.id} className="flex-row items-center gap-4 py-2">
-        <View
-          className="h-[58px] w-[58px] items-center justify-center rounded-full"
-          style={{ backgroundColor: theme.secondary }}>
-          <TText className="text-lg" style={{ color: theme.accent, fontFamily: Fonts.title }}>
-            {friend.name.charAt(0).toUpperCase()}
-          </TText>
-        </View>
-        <View className="flex-1">
-          <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
-            {friend.name}
-          </TText>
-          <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
-            {[friend.phone, friend.email].filter(Boolean).join(' • ') || 'No contact saved'}
-          </TText>
-          <TText className="mt-1 text-sm" style={{ color: amountColor, fontFamily: Fonts.title }}>
-            {formatMoney(netBalance)} {balanceLabel}
-          </TText>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${friend.name} options`}
+          onPress={() => setSelectedFriendActions(friend)}
+          className="flex-1 flex-row items-center gap-4">
+          <View
+            className="h-[58px] w-[58px] items-center justify-center rounded-full"
+            style={{ backgroundColor: theme.secondary }}>
+            <TText className="text-lg" style={{ color: theme.accent, fontFamily: Fonts.title }}>
+              {friend.name.charAt(0).toUpperCase()}
+            </TText>
+          </View>
+          <View className="flex-1">
+            <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              {friend.name}
+            </TText>
+            <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
+              {[friend.phone, friend.email].filter(Boolean).join(' • ') || 'No contact saved'}
+            </TText>
+            <TText className="mt-1 text-sm" style={{ color: amountColor, fontFamily: Fonts.title }}>
+              {formatMoney(netBalance)} {balanceLabel}
+            </TText>
+          </View>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Archive ${friend.name}`}
@@ -1103,6 +1303,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onClose={() => setFilterSheetVisible(false)}
         />
 
+        <FriendActionsSheet
+          friend={selectedFriendActions}
+          onClose={() => setSelectedFriendActions(null)}
+          onEdit={openFriendEditor}
+          onDelete={(friend) => removeFriendFromActiveList(friend, 'delete')}
+          onArchive={(friend) => removeFriendFromActiveList(friend, 'archive')}
+        />
+
         <GroupDetailModal
           summary={selectedGroupSummary}
           friends={friends}
@@ -1118,15 +1326,34 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         <GroupMembersModal
           summary={memberPickerSummary}
           friends={friends}
+          contacts={deviceContacts}
+          contactsPermissionStatus={contactsPermissionStatus}
+          contactsAccessPrivileges={contactsAccessPrivileges}
+          contactsLoading={contactsLoading}
+          searchQuery={memberSearchQuery}
           selectedFriendIds={memberPickerFriendIds}
           saving={saving}
+          onChangeSearchQuery={setMemberSearchQuery}
           onToggleFriend={toggleMemberPickerFriend}
+          onSelectContact={(contact) => void selectDeviceContact(contact)}
+          onRequestContactsAccess={() => void requestContactsAccess()}
           onCreateFriend={openFriendComposerFromMembers}
           onClose={() => closeMemberPicker(true)}
           onSave={() => void handleSaveGroupMembers()}
         />
 
-        <SplitModal visible={modal === 'friend'} title="Add Friend" onClose={closeModal}>
+        <SplitModal
+          visible={modal === 'friend'}
+          title={editingFriendId ? 'Edit Friend' : 'Add Friend'}
+          errorMessage={modal === 'friend' ? error : null}
+          footer={
+            <PrimaryModalButton
+              label={editingFriendId ? 'Update friend' : 'Save friend'}
+              loading={saving}
+              onPress={() => void handleSaveFriend()}
+            />
+          }
+          onClose={closeModal}>
           <FormInput label="Name" value={friendName} onChangeText={setFriendName} />
           <FormInput
             label="Phone"
@@ -1140,11 +1367,6 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             onChangeText={setFriendEmail}
             keyboardType="email-address"
             autoCapitalize="none"
-          />
-          <PrimaryModalButton
-            label="Save friend"
-            loading={saving}
-            onPress={() => void handleCreateFriend()}
           />
         </SplitModal>
 
@@ -1686,6 +1908,98 @@ function BalanceFilterSheet({
   );
 }
 
+function FriendActionsSheet({
+  friend,
+  onClose,
+  onEdit,
+  onDelete,
+  onArchive,
+}: {
+  friend: SplitFriend | null;
+  onClose: () => void;
+  onEdit: (friend: SplitFriend) => void;
+  onDelete: (friend: SplitFriend) => void;
+  onArchive: (friend: SplitFriend) => void;
+}) {
+  const theme = useThemeTokens().colors;
+  return (
+    <AnimatedBottomSheet visible={Boolean(friend)} onClose={onClose}>
+      <View
+        className="rounded-t-[28px] border px-5 pb-8 pt-5"
+        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+        <View className="mb-4 flex-row items-center justify-between">
+          <View>
+            <TText className="text-lg" style={{ fontFamily: Fonts.title }}>
+              {friend?.name ?? 'Friend'}
+            </TText>
+            <TText className="mt-1 text-xs text-black/55 dark:text-white/55">
+              Manage this split friend
+            </TText>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onClose}
+            className="h-10 w-10 items-center justify-center rounded-full"
+            style={{ backgroundColor: theme.secondary }}>
+            <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+        <View className="gap-2">
+          <FriendActionRow
+            icon="pencil-outline"
+            label="Edit friend"
+            onPress={() => {
+              if (friend) onEdit(friend);
+            }}
+          />
+          <FriendActionRow
+            icon="trash-can-outline"
+            label="Delete from active list"
+            destructive
+            onPress={() => {
+              if (friend) onDelete(friend);
+            }}
+          />
+          <FriendActionRow
+            icon="archive-outline"
+            label="Archive friend"
+            onPress={() => {
+              if (friend) onArchive(friend);
+            }}
+          />
+        </View>
+      </View>
+    </AnimatedBottomSheet>
+  );
+}
+
+function FriendActionRow({
+  icon,
+  label,
+  destructive,
+  onPress,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  destructive?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+  const color = destructive ? '#DC2626' : theme.text;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      className="min-h-12 flex-row items-center gap-3 rounded-2xl px-3"
+      style={{ backgroundColor: destructive ? '#FEE2E2' : theme.secondary }}>
+      <MaterialCommunityIcons name={icon} size={20} color={color} />
+      <TText className="text-sm" style={{ color, fontFamily: Fonts.title }}>
+        {label}
+      </TText>
+    </Pressable>
+  );
+}
+
 function CreateGroupModal({
   visible,
   saving,
@@ -2111,18 +2425,34 @@ function GroupDetailModal({
 function GroupMembersModal({
   summary,
   friends,
+  contacts,
+  contactsPermissionStatus,
+  contactsAccessPrivileges,
+  contactsLoading,
+  searchQuery,
   selectedFriendIds,
   saving,
+  onChangeSearchQuery,
   onToggleFriend,
+  onSelectContact,
+  onRequestContactsAccess,
   onCreateFriend,
   onClose,
   onSave,
 }: {
   summary: SplitGroupSummary | null;
   friends: SplitFriend[];
+  contacts: DeviceContactOption[];
+  contactsPermissionStatus: Contacts.PermissionStatus | null;
+  contactsAccessPrivileges: Contacts.ContactsPermissionResponse['accessPrivileges'] | null;
+  contactsLoading: boolean;
+  searchQuery: string;
   selectedFriendIds: number[];
   saving: boolean;
+  onChangeSearchQuery: (value: string) => void;
   onToggleFriend: (friendId: number) => void;
+  onSelectContact: (contact: DeviceContactOption) => void;
+  onRequestContactsAccess: () => void;
   onCreateFriend: () => void;
   onClose: () => void;
   onSave: () => void;
@@ -2130,15 +2460,30 @@ function GroupMembersModal({
   const theme = useThemeTokens().colors;
   if (!summary) return null;
 
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const contactAccessGranted = contactsPermissionStatus === Contacts.PermissionStatus.GRANTED;
+  const filteredContacts = contacts.filter((contact) =>
+    [contact.name, contact.phone, contact.email]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedSearch)
+  );
+  const filteredFriends = friends.filter((friend) =>
+    [friend.name, friend.phone, friend.email]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedSearch)
+  );
+
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView
         className="flex-1"
         edges={['top', 'left', 'right']}
         style={{ backgroundColor: theme.background }}>
-        <View
-          className="min-h-16 flex-row items-center border-b px-5"
-          style={{ borderColor: theme.border }}>
+        <View className="min-h-16 flex-row items-center px-5">
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close group members"
@@ -2146,14 +2491,21 @@ function GroupMembersModal({
             className="h-11 w-11 items-center justify-center">
             <MaterialCommunityIcons name="arrow-left" size={26} color={theme.text} />
           </Pressable>
-          <View className="flex-1">
-            <TText className="text-center text-xl" style={{ fontFamily: Fonts.title }}>
-              Group members
-            </TText>
-            <TText className="mt-1 text-center text-xs text-black/55 dark:text-white/55">
-              {summary.group.name}
-            </TText>
-          </View>
+          <TextInput
+            value={searchQuery}
+            onChangeText={onChangeSearchQuery}
+            autoFocus
+            autoCapitalize="none"
+            placeholder="Enter name, email, or phone #"
+            placeholderTextColor="rgba(120,120,120,0.75)"
+            style={{
+              flex: 1,
+              minHeight: 52,
+              color: theme.text,
+              fontFamily: Fonts.body,
+              fontSize: 20,
+            }}
+          />
           <Pressable
             accessibilityRole="button"
             disabled={saving}
@@ -2170,106 +2522,190 @@ function GroupMembersModal({
         </View>
 
         <ScrollView
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ padding: 24, paddingBottom: 44 }}>
-          <View
-            className="rounded-2xl border p-4"
-            style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-            <View className="flex-row items-center justify-between gap-3">
-              <View>
-                <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
-                  {selectedFriendIds.length} selected
-                </TText>
-                <TText className="mt-1 text-xs text-black/55 dark:text-white/55">
-                  Add or remove members without changing the group itself.
-                </TText>
-              </View>
-              <View
-                className="h-12 w-12 items-center justify-center rounded-full"
-                style={{ backgroundColor: theme.secondary }}>
-                <MaterialCommunityIcons
-                  name="account-group-outline"
-                  size={24}
-                  color={theme.accent}
-                />
-              </View>
-            </View>
-          </View>
-
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 44 }}>
           <Pressable
             accessibilityRole="button"
             onPress={onCreateFriend}
-            className="mt-5 min-h-12 flex-row items-center justify-center gap-2 rounded-2xl"
-            style={{ backgroundColor: theme.accent }}>
-            <MaterialCommunityIcons name="account-plus-outline" size={20} color="#FFFFFF" />
-            <TText className="text-sm text-white" style={{ fontFamily: Fonts.title }}>
-              Add new friend
+            className="min-h-16 flex-row items-center gap-8 py-2">
+            <View className="w-12 items-center">
+              <MaterialCommunityIcons name="account-plus-outline" size={28} color={theme.text} />
+            </View>
+            <TText className="flex-1 text-xl" style={{ color: theme.text, fontFamily: Fonts.body }}>
+              {searchQuery.trim() ? `Add "${searchQuery.trim()}" as new friend` : 'Add someone new'}
             </TText>
           </Pressable>
 
           <TText
-            className="mt-8 text-base text-black/70 dark:text-white/70"
+            className="mt-5 text-base text-black/70 dark:text-white/70"
             style={{ fontFamily: Fonts.title }}>
-            Friends
+            From your contacts
           </TText>
-          {friends.length > 0 ? (
-            <View className="mt-3 gap-3">
-              {friends.map((friend) => {
-                const selected = selectedFriendIds.includes(friend.id);
+
+          {!contactAccessGranted ? (
+            <ContactsPermissionPrompt
+              loading={contactsLoading}
+              denied={contactsPermissionStatus === Contacts.PermissionStatus.DENIED}
+              onRequest={onRequestContactsAccess}
+            />
+          ) : contactsLoading ? (
+            <View className="items-center py-10">
+              <ActivityIndicator color={theme.accent} />
+              <TText className="mt-3 text-sm text-black/55 dark:text-white/55">
+                Loading contacts
+              </TText>
+            </View>
+          ) : filteredContacts.length > 0 ? (
+            <View className="mt-3">
+              {contactsAccessPrivileges === 'limited' ? (
+                <TText className="mb-2 text-xs text-black/50 dark:text-white/50">
+                  Showing contacts you allowed Finnri to access.
+                </TText>
+              ) : null}
+              {filteredContacts.map((contact) => {
+                const matchedFriend = friends.find((friend) =>
+                  contactMatchesFriend(contact, friend)
+                );
+                const selected = Boolean(
+                  matchedFriend && selectedFriendIds.includes(matchedFriend.id)
+                );
                 return (
-                  <Pressable
-                    key={friend.id}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected }}
-                    onPress={() => onToggleFriend(friend.id)}
-                    className="flex-row items-center gap-4 rounded-2xl border p-3"
-                    style={{
-                      backgroundColor: selected ? theme.secondary : theme.card,
-                      borderColor: selected ? theme.accent : theme.border,
-                    }}>
-                    <View
-                      className="h-11 w-11 items-center justify-center rounded-full"
-                      style={{ backgroundColor: selected ? theme.accent : theme.secondary }}>
-                      <TText
-                        style={{
-                          color: selected ? '#FFFFFF' : theme.accent,
-                          fontFamily: Fonts.title,
-                        }}>
-                        {friend.name.charAt(0).toUpperCase()}
-                      </TText>
-                    </View>
-                    <View className="flex-1">
-                      <TText
-                        className="text-base"
-                        style={{ color: theme.text, fontFamily: Fonts.title }}>
-                        {friend.name}
-                      </TText>
-                      <TText className="mt-1 text-xs text-black/55 dark:text-white/55">
-                        {[friend.phone, friend.email].filter(Boolean).join(' • ') ||
-                          'No contact saved'}
-                      </TText>
-                    </View>
-                    <MaterialCommunityIcons
-                      name={selected ? 'check-circle' : 'plus-circle-outline'}
-                      size={22}
-                      color={selected ? theme.accent : 'rgba(120,120,120,0.75)'}
-                    />
-                  </Pressable>
+                  <MemberDirectoryRow
+                    key={contact.id}
+                    title={contact.name}
+                    subtitle={[contact.phone, contact.email].filter(Boolean).join(', ')}
+                    imageUri={contact.imageUri}
+                    selected={selected}
+                    onPress={() => onSelectContact(contact)}
+                  />
                 );
               })}
             </View>
           ) : (
-            <InlineEmptyState
-              icon="account-multiple-plus-outline"
-              title="No friends yet"
-              message="Create a friend here and Finnri will add them to this group."
-              actionLabel="Add new friend"
-              onAction={onCreateFriend}
-            />
+            <TText className="mt-6 text-sm text-black/55 dark:text-white/55">
+              {normalizedSearch ? 'No matching contacts.' : 'No contacts available.'}
+            </TText>
+          )}
+
+          <TText
+            className="mt-8 text-base text-black/70 dark:text-white/70"
+            style={{ fontFamily: Fonts.title }}>
+            Friends on Finnri
+          </TText>
+          {filteredFriends.length > 0 ? (
+            <View className="mt-3">
+              {filteredFriends.map((friend) => (
+                <MemberDirectoryRow
+                  key={friend.id}
+                  title={friend.name}
+                  subtitle={[friend.phone, friend.email].filter(Boolean).join(', ')}
+                  selected={selectedFriendIds.includes(friend.id)}
+                  onPress={() => onToggleFriend(friend.id)}
+                />
+              ))}
+            </View>
+          ) : (
+            <TText className="mt-6 text-sm text-black/55 dark:text-white/55">
+              {normalizedSearch ? 'No matching Finnri friends.' : 'No Finnri friends yet.'}
+            </TText>
           )}
         </ScrollView>
       </SafeAreaView>
     </Modal>
+  );
+}
+
+function ContactsPermissionPrompt({
+  loading,
+  denied,
+  onRequest,
+}: {
+  loading: boolean;
+  denied: boolean;
+  onRequest: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+  return (
+    <View className="items-center px-4 py-12">
+      <View
+        className="h-36 w-36 items-center justify-center rounded-full"
+        style={{ backgroundColor: theme.secondary }}>
+        <MaterialCommunityIcons name="contacts-outline" size={72} color={theme.accent} />
+      </View>
+      <TText className="mt-8 text-center text-lg leading-7 text-black/60 dark:text-white/60">
+        Allow Finnri to access your contacts to add people faster.
+      </TText>
+      <Pressable
+        accessibilityRole="button"
+        disabled={loading}
+        onPress={onRequest}
+        className="mt-8 min-h-12 min-w-[230px] items-center justify-center rounded"
+        style={{ backgroundColor: theme.accent, opacity: loading ? 0.75 : 1 }}>
+        {loading ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <TText className="text-base text-white" style={{ fontFamily: Fonts.title }}>
+            {denied ? 'Request contact access' : 'Allow contact access'}
+          </TText>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+function MemberDirectoryRow({
+  title,
+  subtitle,
+  imageUri,
+  selected,
+  onPress,
+}: {
+  title: string;
+  subtitle?: string;
+  imageUri?: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selected }}
+      onPress={onPress}
+      className="min-h-[76px] flex-row items-center gap-8 py-2">
+      <View className="w-12 items-center">
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} className="h-12 w-12 rounded-full" />
+        ) : (
+          <View
+            className="h-12 w-12 items-center justify-center rounded-full"
+            style={{ backgroundColor: selected ? theme.accent : theme.secondary }}>
+            <MaterialCommunityIcons
+              name={subtitle ? 'phone-outline' : 'account-outline'}
+              size={22}
+              color={selected ? '#FFFFFF' : theme.text}
+            />
+          </View>
+        )}
+      </View>
+      <View className="flex-1">
+        <TText
+          className="text-xl"
+          numberOfLines={1}
+          style={{ color: theme.text, fontFamily: Fonts.body }}>
+          {title}
+        </TText>
+        {subtitle ? (
+          <TText className="mt-1 text-sm text-black/50 dark:text-white/50" numberOfLines={1}>
+            {subtitle}
+          </TText>
+        ) : null}
+      </View>
+      {selected ? (
+        <MaterialCommunityIcons name="check-circle" size={22} color={theme.accent} />
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -2403,11 +2839,15 @@ function GroupChoiceChip({
 function SplitModal({
   visible,
   title,
+  errorMessage,
+  footer,
   onClose,
   children,
 }: {
   visible: boolean;
   title: string;
+  errorMessage?: string | null;
+  footer?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -2429,9 +2869,24 @@ function SplitModal({
             <MaterialCommunityIcons name="close" size={20} color={theme.text} />
           </Pressable>
         </View>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 12 }}>
+        {errorMessage ? (
+          <View className="mb-3 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
+            <TText className="text-center text-sm text-red-600 dark:text-red-300">
+              {errorMessage}
+            </TText>
+          </View>
+        ) : null}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ gap: 12, paddingBottom: footer ? 12 : 0 }}>
           {children}
         </ScrollView>
+        {footer ? (
+          <View className="border-t pt-4" style={{ borderColor: theme.border }}>
+            {footer}
+          </View>
+        ) : null}
       </View>
     </AnimatedBottomSheet>
   );

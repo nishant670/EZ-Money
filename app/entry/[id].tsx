@@ -29,18 +29,12 @@ import {
   fetchUnreadBudgetNotificationIds,
 } from '@/lib/notifications';
 import {
-  createSplitBill,
-  createSplitFriend,
-  createSplitGroup,
-  deleteSplitBill,
   fetchSplitBills,
   fetchSplitFriends,
   fetchSplitGroups,
   type SplitBill,
-  type SplitBillPayload,
   type SplitFriend,
   type SplitGroup,
-  updateSplitBill,
 } from '@/lib/splits';
 import { notifyTransactionsChanged } from '@/lib/transaction-events';
 import {
@@ -226,6 +220,22 @@ export default function TransactionDetailsScreen() {
       if (formData.time) {
         payload.time = formData.time; // "10:30 PM" - backend stores as string
       }
+      if (formData.splitEnabled && formData.type === 'Expense') {
+        payload.split = {
+          group_id: formData.splitGroupId,
+          group_name: formData.splitGroupId ? '' : formData.splitGroupName.trim(),
+          notes: formData.notes.trim(),
+          participants: formData.splitParticipants.map((participant) => ({
+            ...(participant.friendId
+              ? { friend_id: participant.friendId }
+              : { friend: { name: participant.friendName.trim() } }),
+            share_amount: participant.shareAmount.trim(),
+            direction: participant.direction,
+          })),
+        };
+      } else if (splitBill) {
+        payload.split = null;
+      }
 
       if (!token) throw new Error('Missing session.');
       const budgetNotificationIds =
@@ -233,78 +243,6 @@ export default function TransactionDetailsScreen() {
           ? await fetchUnreadBudgetNotificationIds(token).catch(() => new Set<number>())
           : new Set<number>();
       await updateEntry(token, params.id, payload);
-
-      if (formData.splitEnabled && formData.type === 'Expense') {
-        const participants: SplitBillPayload['participants'] = [];
-        const splitFriendIds: number[] = [];
-        const createdFriends: SplitFriend[] = [];
-
-        for (const participant of formData.splitParticipants) {
-          let friendId = participant.friendId;
-          if (!friendId) {
-            const friendName = participant.friendName.trim();
-            if (!friendName) {
-              throw new Error('Please add a friend name for each split share.');
-            }
-            const createdFriend = await createSplitFriend(token, { name: friendName });
-            friendId = createdFriend.id;
-            createdFriends.push(createdFriend);
-          }
-
-          splitFriendIds.push(friendId);
-          participants.push({
-            friend_id: friendId,
-            share_amount: Number(participant.shareAmount),
-            direction: participant.direction,
-          });
-        }
-
-        if (createdFriends.length > 0) {
-          setSplitFriends((current) => [
-            ...createdFriends,
-            ...current.filter(
-              (friend) => !createdFriends.some((created) => created.id === friend.id)
-            ),
-          ]);
-        }
-
-        let groupId = formData.splitGroupId;
-        const groupName = formData.splitGroupName.trim();
-        if (!groupId && groupName.length > 0) {
-          const createdGroup = await createSplitGroup(token, {
-            name: groupName,
-            friend_ids: Array.from(new Set(splitFriendIds)),
-          });
-          groupId = createdGroup.id;
-          setSplitGroups((current) => [
-            createdGroup,
-            ...current.filter((group) => group.id !== createdGroup.id),
-          ]);
-        }
-
-        const apiDate =
-          parsedDate != null
-            ? formatApiDate(parsedDate)
-            : displayData.rawDate || formatApiDate(new Date());
-        const splitPayload = {
-          entry_id: entryID,
-          group_id: groupId,
-          title: formData.title.trim() || 'Split transaction',
-          total_amount: Number(formData.amount),
-          currency: 'INR' as const,
-          date: apiDate,
-          notes: formData.notes.trim(),
-          participants,
-        };
-
-        const savedSplitBill = splitBill
-          ? await updateSplitBill(token, splitBill.id, splitPayload)
-          : await createSplitBill(token, splitPayload);
-        setSplitBill(savedSplitBill);
-      } else if (splitBill) {
-        await deleteSplitBill(token, splitBill.id);
-        setSplitBill(null);
-      }
 
       // Refresh logic
       await fetchTransactionDetails();
