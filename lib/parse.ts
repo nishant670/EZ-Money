@@ -55,9 +55,8 @@ export type ParseDraftInput = {
   token?: string | null;
   hintText?: string;
   audio?: {
-    uri: string;
+    file: Blob;
     name: string;
-    type: string;
   };
   tz?: string;
 };
@@ -134,7 +133,7 @@ export const parseEntryDraft = async ({
     formData.append('hint_text', trimmedHint);
   }
   if (audio) {
-    formData.append('audio', audio as unknown as Blob);
+    formData.append('audio', audio.file, audio.name);
   }
   formData.append('tz', tz);
 

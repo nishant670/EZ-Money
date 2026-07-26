@@ -9,5 +9,5 @@ export function useColorScheme() {
   useAppMoodStore((state) => state.themeColor);
   useAppMoodStore((state) => state.iconStyle);
 
-  return resolveThemeMode(systemColorScheme, { nightMode });
+  return resolveThemeMode(systemColorScheme === 'unspecified' ? null : systemColorScheme, { nightMode });
 }

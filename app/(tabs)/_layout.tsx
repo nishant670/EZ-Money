@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { Fonts, type IconStyle } from '@/constants/theme';
@@ -11,7 +11,7 @@ type TabIconProps = {
   activeName: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   inactiveName: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   focused: boolean;
-  color: string;
+  color: ColorValue;
   iconStyle: IconStyle;
 };
 
