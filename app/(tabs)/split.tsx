@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Contacts from 'expo-contacts';
+import * as Contacts from 'expo-contacts/legacy';
 import { useFocusEffect } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import type { ReactNode } from 'react';

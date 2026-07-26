@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { Stack, useRouter } from 'expo-router';
 import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';

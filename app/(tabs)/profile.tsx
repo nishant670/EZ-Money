@@ -56,6 +56,12 @@ export default function ProfileScreen() {
   const hasEmail = !!user?.email?.trim();
   const hasPhone = !!user?.phone?.trim();
   const isProfileIncomplete = !user?.username?.trim() || !hasEmail || !hasPhone;
+  const creditSummary = billingStatus?.credits;
+  const aiUsageHistorySubtitle = creditSummary
+    ? `${creditSummary.daily_credits_used}/${creditSummary.daily_limit} used today\n${creditSummary.daily_credits_remaining} daily left · ${creditSummary.total_credits_remaining} total`
+    : isBillingLoading
+      ? 'Checking usage\nand credits'
+      : 'Credits spent\non AI capture';
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
@@ -310,7 +316,7 @@ export default function ProfileScreen() {
                     AI Usage History
                   </TText>
                   <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                    Credits spent{'\n'}on AI capture
+                    {aiUsageHistorySubtitle}
                   </TText>
                 </View>
                 <MaterialCommunityIcons

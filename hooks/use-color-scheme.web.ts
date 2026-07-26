@@ -20,7 +20,7 @@ export function useColorScheme() {
   const colorScheme = useRNColorScheme();
 
   if (hasHydrated) {
-    return resolveThemeMode(colorScheme, { nightMode });
+    return resolveThemeMode(colorScheme === 'unspecified' ? null : colorScheme, { nightMode });
   }
 
   return resolveThemeMode('light', { nightMode });

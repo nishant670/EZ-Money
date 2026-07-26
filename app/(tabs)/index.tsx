@@ -1,5 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import {
+  getRecordingPermissionsAsync,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
+import { File } from 'expo-file-system';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -189,13 +196,12 @@ export default function HomeScreen() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [form, setForm] = useState<EntryForm>(defaultForm);
   const [inputText, setInputText] = useState('');
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isTextInputVisible, setIsTextInputVisible] = useState(false);
-  const [permissionResponse, requestPermission] = Audio.usePermissions();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
@@ -215,6 +221,10 @@ export default function HomeScreen() {
     import('@/components/home/QuickPrompts').QuickPrompt | null
   >(null);
   const [modalMode, setModalMode] = useState<'audio' | 'manual' | 'quick-prompt'>('manual');
+  const dailyCreditLimit = billingStatus?.credits.daily_limit ?? 0;
+  const dailyCreditsRemaining = billingStatus?.credits.daily_credits_remaining ?? 0;
+  const shouldShowLowCreditNotice =
+    dailyCreditLimit > 0 && dailyCreditsRemaining / dailyCreditLimit < 0.2;
 
   const handleQuickPromptSelect = useCallback(
     (prompt: import('@/components/home/QuickPrompts').QuickPrompt) => {
@@ -460,12 +470,13 @@ export default function HomeScreen() {
   const hasTransactions = sections.length > 0;
 
   const ensureMicPermission = useCallback(async () => {
-    if (permissionResponse?.status === 'granted') {
+    const currentPermission = await getRecordingPermissionsAsync();
+    if (currentPermission.status === 'granted') {
       return true;
     }
-    const permission = await requestPermission?.();
-    return permission?.status === 'granted';
-  }, [permissionResponse?.status, requestPermission]);
+    const permission = await requestRecordingPermissionsAsync();
+    return permission.status === 'granted';
+  }, []);
 
   const startRecording = useCallback(async () => {
     const hasPermission = await ensureMicPermission();
@@ -476,41 +487,35 @@ export default function HomeScreen() {
     try {
       setErrorMessage(null);
       setRecordedUri(null);
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
-      const recordingObject = new Audio.Recording();
-      await recordingObject.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recordingObject.startAsync();
-      setRecording(recordingObject);
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setIsRecording(true);
     } catch {
       setErrorMessage('Unable to start recording. Please try again.');
-      setRecording(null);
       setIsRecording(false);
     }
-  }, [ensureMicPermission]);
+  }, [audioRecorder, ensureMicPermission]);
 
   const stopRecording = useCallback(async () => {
-    if (!recording) return;
+    if (!isRecording) return;
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecordedUri(uri);
+      await audioRecorder.stop();
+      setRecordedUri(audioRecorder.uri);
     } catch {
       setErrorMessage('Unable to stop recording. Please try again.');
     } finally {
-      setRecording(null);
       setIsRecording(false);
       try {
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+        await setAudioModeAsync({ allowsRecording: false });
       } catch {
         // Ignore
       }
     }
-  }, [recording]);
+  }, [audioRecorder, isRecording]);
 
   const handleToggleRecording = useCallback(async () => {
     if (isRecording) {
@@ -522,11 +527,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     return () => {
-      if (recording) {
-        recording.stopAndUnloadAsync().catch(() => undefined);
+      if (audioRecorder.isRecording) {
+        audioRecorder.stop().catch(() => undefined);
       }
     };
-  }, [recording]);
+  }, [audioRecorder]);
 
   useEffect(() => {
     if (!saveConfirmation) return undefined;
@@ -728,9 +733,8 @@ export default function HomeScreen() {
     try {
       let audio:
         | {
-            uri: string;
+            file: File;
             name: string;
-            type: string;
           }
         | undefined;
       if (trimmed) {
@@ -739,9 +743,8 @@ export default function HomeScreen() {
         const extension = recordedUri.split('.').pop();
         const fileName = `recording.${extension ?? 'm4a'}`;
         audio = {
-          uri: recordedUri,
+          file: new File(recordedUri),
           name: fileName,
-          type: extension === 'wav' ? 'audio/wav' : 'audio/m4a',
         };
       }
       const data: ParseResponse = await parseEntryDraft({ token, hintText: trimmed, audio });
@@ -1017,13 +1020,16 @@ export default function HomeScreen() {
           </ThemedText>
         </View>
 
-        <View style={{ marginBottom: themeTokens.spacing.md }}>
-          <CreditStatusCard
-            credits={billingStatus?.credits ?? null}
-            loading={isBillingLoading}
-            onPress={() => router.push('/billing')}
-          />
-        </View>
+        {shouldShowLowCreditNotice ? (
+          <View style={{ marginHorizontal: 24, marginBottom: themeTokens.spacing.md }}>
+            <CreditStatusCard
+              credits={billingStatus?.credits ?? null}
+              loading={isBillingLoading}
+              compact
+              onPress={() => router.push('/billing')}
+            />
+          </View>
+        ) : null}
 
         <VoiceInputCard
           onMicPress={handleToggleRecording}
@@ -1036,7 +1042,6 @@ export default function HomeScreen() {
           isProcessing={isSubmitting}
           isTextInputVisible={isTextInputVisible}
           onToggleTextInput={() => setIsTextInputVisible((current) => !current)}
-          dailyCreditsRemaining={billingStatus?.credits.daily_credits_remaining ?? null}
         />
 
         <QuickPrompts
