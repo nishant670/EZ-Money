@@ -300,6 +300,16 @@ export const updateSplitGroup = async (
   return response.json();
 };
 
+export const archiveSplitGroup = async (token: string, groupId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to delete this split group right now.');
+  }
+};
+
 export const fetchSplitBills = async (token: string): Promise<SplitBill[]> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/bills`, {
     headers: authHeaders(token),
