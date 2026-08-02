@@ -17,6 +17,7 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import type { Account } from '@/lib/accounts';
@@ -2043,58 +2044,18 @@ export function TransactionFormModal({
           </View>
         </AnimatedBottomSheet>
 
-        <Modal
-          transparent
-          animationType="fade"
+        <ThemedDeleteDialog
           visible={isDiscardDialogVisible}
-          statusBarTranslucent
-          onRequestClose={() => setIsDiscardDialogVisible(false)}>
-          <View className="flex-1 items-center justify-center px-6">
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Keep editing"
-              className="absolute inset-0 bg-black/60"
-              onPress={() => setIsDiscardDialogVisible(false)}
-            />
-            <View
-              className="w-full max-w-sm items-center rounded-[32px] border p-6 shadow-2xl"
-              style={{ backgroundColor: theme.background, borderColor: theme.border }}>
-              <View
-                className="h-14 w-14 items-center justify-center rounded-full"
-                style={{ backgroundColor: colorScheme === 'dark' ? '#3A2424' : '#FFF0EC' }}>
-                <MaterialCommunityIcons name="delete-outline" size={27} color="#EF5B5B" />
-              </View>
-              <ThemedText
-                className="mt-4 text-center text-xl font-black"
-                style={{ color: theme.text }}>
-                Discard this transaction?
-              </ThemedText>
-              <ThemedText className="mt-2 text-center text-sm leading-5 text-gray-500">
-                Your transcribed draft and any changes you made will be lost.
-              </ThemedText>
-
-              <View className="mt-6 w-full gap-3">
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setIsDiscardDialogVisible(false)}
-                  className="w-full items-center justify-center rounded-2xl py-4"
-                  style={{ backgroundColor: accent }}>
-                  <ThemedText className="font-black text-white">Keep editing</ThemedText>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    setIsDiscardDialogVisible(false);
-                    onClose();
-                  }}
-                  className="w-full items-center justify-center rounded-2xl border py-4"
-                  style={{ borderColor: theme.border }}>
-                  <ThemedText className="font-black text-red-500">Discard transaction</ThemedText>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
+          title="Discard this transaction?"
+          message="Your transcribed draft and any changes you made will be lost."
+          cancelLabel="Keep editing"
+          confirmLabel="Discard transaction"
+          onCancel={() => setIsDiscardDialogVisible(false)}
+          onConfirm={() => {
+            setIsDiscardDialogVisible(false);
+            onClose();
+          }}
+        />
       </View>
     </Modal>
   );

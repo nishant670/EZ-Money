@@ -588,11 +588,11 @@ export default function HomeScreen() {
         }
         const splitPayload =
           formData.splitEnabled && formData.type === 'Expense'
-              ? {
-                  group_id: formData.splitGroupId,
-                  group_name: formData.splitGroupId ? '' : formData.splitGroupName.trim(),
-                  notes: formData.notes.trim(),
-                  participants: formData.splitParticipants.map((participant) => ({
+            ? {
+                group_id: formData.splitGroupId,
+                group_name: formData.splitGroupId ? '' : formData.splitGroupName.trim(),
+                notes: formData.notes.trim(),
+                participants: formData.splitParticipants.map((participant) => ({
                   ...(participant.friendId
                     ? { friend_id: participant.friendId }
                     : { friend: { name: participant.friendName.trim() } }),

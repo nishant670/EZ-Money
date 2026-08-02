@@ -47,7 +47,14 @@ const statusOptions: { value: SubscriptionStatus; label: string }[] = [
   { value: 'paused', label: 'Paused' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
-const categoryOptions = ['Entertainment', 'Productivity', 'Cloud', 'Bills', 'Membership', 'Learning'];
+const categoryOptions = [
+  'Entertainment',
+  'Productivity',
+  'Cloud',
+  'Bills',
+  'Membership',
+  'Learning',
+];
 const reminderOptions = [0, 1, 3, 7, 14, 30];
 
 const todayISO = () => dateToApiDate(new Date());
@@ -183,7 +190,9 @@ export default function SubscriptionsScreen() {
       await syncSubscriptionReminders(token);
       setSubscriptions(await fetchSubscriptions(token));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load subscriptions right now.');
+      setError(
+        loadError instanceof Error ? loadError.message : 'Unable to load subscriptions right now.'
+      );
     } finally {
       setLoading(false);
     }
@@ -235,7 +244,8 @@ export default function SubscriptionsScreen() {
     const amountValue = parseAmount(amount);
     const validation: string[] = [];
     if (!name.trim()) validation.push('Name is required.');
-    if (!Number.isFinite(amountValue) || amountValue <= 0) validation.push('Amount must be positive.');
+    if (!Number.isFinite(amountValue) || amountValue <= 0)
+      validation.push('Amount must be positive.');
     if (!nextDueDate.match(/^\d{4}-\d{2}-\d{2}$/)) validation.push('Choose a valid next due date.');
     if (!Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 30) {
       validation.push('Reminder must be between 0 and 30 days.');
@@ -268,7 +278,9 @@ export default function SubscriptionsScreen() {
       resetForm();
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save this subscription.');
+      setError(
+        saveError instanceof Error ? saveError.message : 'Unable to save this subscription.'
+      );
     } finally {
       setSaving(false);
     }
@@ -280,7 +292,9 @@ export default function SubscriptionsScreen() {
       await markSubscriptionPaid(token, subscription.id, todayISO());
       await load();
     } catch (paidError) {
-      setError(paidError instanceof Error ? paidError.message : 'Unable to mark this subscription paid.');
+      setError(
+        paidError instanceof Error ? paidError.message : 'Unable to mark this subscription paid.'
+      );
     }
   };
 
@@ -303,28 +317,38 @@ export default function SubscriptionsScreen() {
       if (editing?.id === subscription.id) resetForm();
       await load();
     } catch (cancelError) {
-      setError(cancelError instanceof Error ? cancelError.message : 'Unable to cancel this subscription.');
+      setError(
+        cancelError instanceof Error ? cancelError.message : 'Unable to cancel this subscription.'
+      );
     }
   };
 
   const confirmDelete = (subscription: Subscription) => {
     if (!token) return;
-    Alert.alert('Delete subscription?', `${subscription.name} reminders will stop after deletion.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteSubscription(token, subscription.id);
-            if (editing?.id === subscription.id) resetForm();
-            await load();
-          } catch (deleteError) {
-            setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete this subscription.');
-          }
+    Alert.alert(
+      'Delete subscription?',
+      `${subscription.name} reminders will stop after deletion.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteSubscription(token, subscription.id);
+              if (editing?.id === subscription.id) resetForm();
+              await load();
+            } catch (deleteError) {
+              setError(
+                deleteError instanceof Error
+                  ? deleteError.message
+                  : 'Unable to delete this subscription.'
+              );
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   return (
@@ -346,10 +370,16 @@ export default function SubscriptionsScreen() {
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 32, gap: 16 }}>
           <View className="flex-row gap-3">
             <SummaryTile label="Active" value={String(activeCount)} colors={colors} />
-            <SummaryTile label="Monthly run-rate" value={formatMoney(projectedMonthly)} colors={colors} />
+            <SummaryTile
+              label="Monthly run-rate"
+              value={formatMoney(projectedMonthly)}
+              colors={colors}
+            />
           </View>
 
-          <View className="rounded-[28px] border p-4" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+          <View
+            className="rounded-[28px] border p-4"
+            style={{ backgroundColor: colors.card, borderColor: colors.border }}>
             <View className="mb-5 flex-row items-start justify-between gap-3">
               <View className="flex-1">
                 <ThemedText className="text-base font-black" style={{ fontFamily: Fonts.title }}>
@@ -360,7 +390,9 @@ export default function SubscriptionsScreen() {
                 </ThemedText>
               </View>
               <View className="rounded-2xl px-3 py-2" style={{ backgroundColor: colors.secondary }}>
-                <ThemedText className="text-[10px] font-black uppercase" style={{ color: colors.accent }}>
+                <ThemedText
+                  className="text-[10px] font-black uppercase"
+                  style={{ color: colors.accent }}>
                   INR
                 </ThemedText>
               </View>
@@ -397,7 +429,9 @@ export default function SubscriptionsScreen() {
             />
 
             <View className="mb-4">
-              <ThemedText className="mb-2 text-[11px] font-black uppercase" style={{ color: muted }}>
+              <ThemedText
+                className="mb-2 text-[11px] font-black uppercase"
+                style={{ color: muted }}>
                 Billing interval
               </ThemedText>
               <View className="flex-row flex-wrap gap-2">
@@ -431,8 +465,14 @@ export default function SubscriptionsScreen() {
               className="mb-4 flex-row items-center justify-between rounded-2xl border p-4"
               style={{ backgroundColor: colors.background, borderColor: colors.border }}>
               <View className="flex-row items-center gap-3">
-                <View className="h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: colors.secondary }}>
-                  <MaterialCommunityIcons name="calendar-check-outline" size={22} color={colors.accent} />
+                <View
+                  className="h-10 w-10 items-center justify-center rounded-xl"
+                  style={{ backgroundColor: colors.secondary }}>
+                  <MaterialCommunityIcons
+                    name="calendar-check-outline"
+                    size={22}
+                    color={colors.accent}
+                  />
                 </View>
                 <View>
                   <ThemedText className="text-[11px] font-black uppercase" style={{ color: muted }}>
@@ -447,7 +487,9 @@ export default function SubscriptionsScreen() {
             </Pressable>
 
             <View className="mb-4">
-              <ThemedText className="mb-2 text-[11px] font-black uppercase" style={{ color: muted }}>
+              <ThemedText
+                className="mb-2 text-[11px] font-black uppercase"
+                style={{ color: muted }}>
                 Reminder
               </ThemedText>
               <View className="flex-row flex-wrap gap-2">
@@ -463,7 +505,9 @@ export default function SubscriptionsScreen() {
               </View>
             </View>
 
-            <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.background }}>
+            <View
+              className="mb-4 rounded-2xl border p-4"
+              style={{ borderColor: colors.border, backgroundColor: colors.background }}>
               <View className="flex-row items-center justify-between gap-4">
                 <View className="flex-1">
                   <ThemedText className="text-sm font-black" style={{ fontFamily: Fonts.title }}>
@@ -527,8 +571,14 @@ export default function SubscriptionsScreen() {
           {loading ? (
             <ActivityIndicator color={colors.accent} />
           ) : subscriptions.length === 0 ? (
-            <View className="items-center rounded-[28px] border p-8" style={{ borderColor: colors.border }}>
-              <MaterialCommunityIcons name="calendar-sync-outline" size={36} color={colors.accent} />
+            <View
+              className="items-center rounded-[28px] border p-8"
+              style={{ borderColor: colors.border }}>
+              <MaterialCommunityIcons
+                name="calendar-sync-outline"
+                size={36}
+                color={colors.accent}
+              />
               <ThemedText className="mt-3 text-center text-sm font-black">
                 No subscriptions yet
               </ThemedText>
@@ -618,7 +668,9 @@ function Field({
 }: FieldProps) {
   return (
     <View className="mb-3">
-      <ThemedText className="mb-1 text-[11px] font-black uppercase" style={{ color: `${colors.text}99` }}>
+      <ThemedText
+        className="mb-1 text-[11px] font-black uppercase"
+        style={{ color: `${colors.text}99` }}>
         {label}
       </ThemedText>
       <TextInput
@@ -628,7 +680,11 @@ function Field({
         placeholder={placeholder}
         placeholderTextColor={`${colors.text}66`}
         className="h-12 rounded-2xl border px-4 text-sm"
-        style={{ borderColor: colors.border, color: colors.text, backgroundColor: colors.background }}
+        style={{
+          borderColor: colors.border,
+          color: colors.text,
+          backgroundColor: colors.background,
+        }}
       />
     </View>
   );
@@ -645,7 +701,9 @@ type ChipPickerProps = {
 function ChipPicker({ label, options, active, onSelect, colors }: ChipPickerProps) {
   return (
     <View className="mb-4">
-      <ThemedText className="mb-2 text-[11px] font-black uppercase" style={{ color: `${colors.text}99` }}>
+      <ThemedText
+        className="mb-2 text-[11px] font-black uppercase"
+        style={{ color: `${colors.text}99` }}>
         {label}
       </ThemedText>
       <View className="flex-row flex-wrap gap-2">
@@ -679,7 +737,9 @@ function Pill({ label, selected, onPress, colors }: PillProps) {
         backgroundColor: selected ? colors.secondary : colors.background,
         borderColor: selected ? colors.accent : colors.border,
       }}>
-      <ThemedText className="text-[11px] font-black" style={{ color: selected ? colors.accent : `${colors.text}99` }}>
+      <ThemedText
+        className="text-[11px] font-black"
+        style={{ color: selected ? colors.accent : `${colors.text}99` }}>
         {label}
       </ThemedText>
     </Pressable>
@@ -703,7 +763,9 @@ function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   return (
     <View className="mb-3">
-      <ThemedText className="mb-1 text-[11px] font-black uppercase" style={{ color: `${colors.text}99` }}>
+      <ThemedText
+        className="mb-1 text-[11px] font-black uppercase"
+        style={{ color: `${colors.text}99` }}>
         {label}
       </ThemedText>
       <View className="flex-row rounded-2xl p-1" style={{ backgroundColor: colors.background }}>
@@ -783,7 +845,8 @@ function SubscriptionCard({
             {subscription.name}
           </ThemedText>
           <ThemedText className="mt-1 text-xs" style={{ color: muted }}>
-            {subscription.category || 'Uncategorized'} · {intervalLabel(subscription.billing_interval)}
+            {subscription.category || 'Uncategorized'} ·{' '}
+            {intervalLabel(subscription.billing_interval)}
           </ThemedText>
         </View>
         <ThemedText className="text-base font-black" style={{ color: colors.accent }}>
@@ -792,14 +855,19 @@ function SubscriptionCard({
       </View>
       <View className="mt-4 flex-row items-center justify-between">
         <View className="flex-1 pr-3">
-          <ThemedText className="text-xs font-bold capitalize" style={{ color: urgent ? '#F57F17' : muted }}>
+          <ThemedText
+            className="text-xs font-bold capitalize"
+            style={{ color: urgent ? '#F57F17' : muted }}>
             {stateLabel}
           </ThemedText>
           <ThemedText className="mt-1 text-[11px]" style={{ color: muted }}>
-            Due {formatDueDateLabel(subscription.next_due_date)} · {reminderLabel(subscription.reminder_days)}
+            Due {formatDueDateLabel(subscription.next_due_date)} ·{' '}
+            {reminderLabel(subscription.reminder_days)}
           </ThemedText>
           {subscription.cancel_before_due && (
-            <View className="mt-2 self-start rounded-full px-2 py-1" style={{ backgroundColor: '#FFF3E0' }}>
+            <View
+              className="mt-2 self-start rounded-full px-2 py-1"
+              style={{ backgroundColor: '#FFF3E0' }}>
               <ThemedText className="text-[10px] font-black uppercase" style={{ color: '#EF6C00' }}>
                 Cancel reminder
               </ThemedText>

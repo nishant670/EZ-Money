@@ -152,7 +152,9 @@ export const markSubscriptionPaid = async (
     body: JSON.stringify({ paid_date: paidDate }),
   });
   if (!response.ok) {
-    throw new Error(await readSubscriptionError(response, 'Unable to mark this subscription paid.'));
+    throw new Error(
+      await readSubscriptionError(response, 'Unable to mark this subscription paid.')
+    );
   }
   return (await response.json()) as Subscription;
 };
