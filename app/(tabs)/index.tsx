@@ -526,14 +526,6 @@ export default function HomeScreen() {
   }, [isRecording, startRecording, stopRecording]);
 
   useEffect(() => {
-    return () => {
-      if (audioRecorder.isRecording) {
-        audioRecorder.stop().catch(() => undefined);
-      }
-    };
-  }, [audioRecorder]);
-
-  useEffect(() => {
     if (!saveConfirmation) return undefined;
     saveConfirmationAnim.stopAnimation();
     saveConfirmationAnim.setValue(0);
