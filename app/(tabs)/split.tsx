@@ -2,24 +2,28 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Contacts from 'expo-contacts/legacy';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   TextInput,
   View,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { StateView } from '@/components/ui/StateView';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -29,27 +33,36 @@ import {
   createSplitBill,
   createSplitFriend,
   createSplitGroup,
+  createSplitGroupDirectInvite,
+  createSplitGroupInviteLink,
   createSplitSettlement,
+  deleteSplitBill,
   fetchSplitActivity,
   fetchSplitBalances,
   fetchSplitBills,
   fetchSplitFriends,
   fetchSplitGroups,
+  fetchSplitGroupDirectInvites,
+  leaveSplitGroup,
+  revokeSplitGroupDirectInvite,
+  updateSplitBill,
   updateSplitFriend,
   updateSplitGroup,
   type SettlementDirection,
   type SplitActivityItem,
   type SplitBalance,
   type SplitBill,
+  type SplitBillPayload,
   type SplitDirection,
   type SplitFriend,
   type SplitGroup,
+  type SplitGroupDirectInvite,
 } from '@/lib/splits';
 
 const TView = cssInterop(ThemedView, { className: 'style' });
 const TText = cssInterop(ThemedText, { className: 'style' });
 
-type ModalKind = 'friend' | 'group' | 'bill' | 'settlement' | null;
+type ModalKind = 'friend' | 'group' | 'bill' | 'settlement' | 'group_invite' | null;
 type ActiveSection = 'groups' | 'friends' | 'activity';
 type BalanceFilter = 'all' | 'open' | 'owed_to_me' | 'i_owe' | 'settled';
 type GroupKind = 'trip' | 'home' | 'couple' | 'other';
@@ -140,6 +153,19 @@ const getInitials = (name: string) =>
 
 const todayApiDate = () => {
   const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseApiDate = (value: string) => {
+  const [year, month, day] = value.split('-').map((part) => Number(part));
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+};
+
+const formatApiDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -237,8 +263,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const [selectedGroupDetailId, setSelectedGroupDetailId] = useState<number | null>(null);
   const [groupSettingsId, setGroupSettingsId] = useState<number | null>(null);
+  const [pendingGroupDelete, setPendingGroupDelete] = useState<SplitGroupSummary | null>(null);
+  const [pendingGroupLeave, setPendingGroupLeave] = useState<SplitGroupSummary | null>(null);
   const [selectedFriendDetailId, setSelectedFriendDetailId] = useState<number | null>(null);
   const [selectedFriendActions, setSelectedFriendActions] = useState<SplitFriend | null>(null);
+  const [pendingFriendDelete, setPendingFriendDelete] = useState<SplitFriend | null>(null);
   const [editingFriendId, setEditingFriendId] = useState<number | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
   const [memberPickerGroupId, setMemberPickerGroupId] = useState<number | null>(null);
@@ -262,6 +291,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [groupKind, setGroupKind] = useState<GroupKind>('trip');
   const [groupBalanceAlertEnabled, setGroupBalanceAlertEnabled] = useState(false);
   const [groupBalanceAlertAmount, setGroupBalanceAlertAmount] = useState('');
+  const [groupInviteEmail, setGroupInviteEmail] = useState('');
+  const [groupInvitePhone, setGroupInvitePhone] = useState('');
+  const [groupInviteTargetId, setGroupInviteTargetId] = useState<number | null>(null);
+  const [pendingGroupInvites, setPendingGroupInvites] = useState<SplitGroupDirectInvite[]>([]);
+  const [pendingGroupInvitesLoading, setPendingGroupInvitesLoading] = useState(false);
+  const [pendingInviteRevoke, setPendingInviteRevoke] = useState<SplitGroupDirectInvite | null>(
+    null
+  );
   const [selectedGroupFriendIds, setSelectedGroupFriendIds] = useState<number[]>([]);
 
   const [billTitle, setBillTitle] = useState('');
@@ -269,6 +306,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [billDate, setBillDate] = useState(todayApiDate());
   const [billNotes, setBillNotes] = useState('');
   const [billGroupId, setBillGroupId] = useState<number | null>(null);
+  const [isBillGroupLocked, setIsBillGroupLocked] = useState(false);
+  const [editingBillId, setEditingBillId] = useState<number | null>(null);
+  const [selectedBillId, setSelectedBillId] = useState<number | null>(null);
+  const [pendingBillDelete, setPendingBillDelete] = useState<SplitBill | null>(null);
   const [expenseFlowScreen, setExpenseFlowScreen] = useState<ExpenseFlowScreen>('expense');
   const [splitChoiceMode, setSplitChoiceMode] = useState<SplitChoiceMode>('you_paid_equal');
   const [payerFriendId, setPayerFriendId] = useState<number | null>(null);
@@ -391,8 +432,21 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   }, [balances]);
 
   const friendById = useMemo(() => {
-    return new Map(friends.map((friend) => [friend.id, friend]));
-  }, [friends]);
+    const map = new Map(friends.map((friend) => [friend.id, friend]));
+    groups.forEach((group) => {
+      group.members?.forEach((member) => {
+        if (member.friend) map.set(member.friend.id, member.friend);
+      });
+    });
+    bills.forEach((bill) => {
+      bill.participants?.forEach((participant) => {
+        if (participant.friend) map.set(participant.friend.id, participant.friend);
+      });
+    });
+    return map;
+  }, [bills, friends, groups]);
+
+  const splitFriendCatalog = useMemo(() => [...friendById.values()], [friendById]);
 
   const groupSummaries = useMemo<SplitGroupSummary[]>(() => {
     return groups.map((group) => {
@@ -428,8 +482,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             ? `${friend.name} owes you ${formatMoney(balance)}`
             : `You owe ${friend.name} ${formatMoney(balance)}`;
         })
-        .filter((line): line is string => Boolean(line))
-        .slice(0, 2);
+        .filter((line): line is string => Boolean(line));
 
       return {
         group,
@@ -454,6 +507,34 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     [groupSettingsId, groupSummaries]
   );
 
+  const loadPendingGroupInvites = useCallback(
+    async (groupId: number) => {
+      if (!token) return;
+      setPendingGroupInvitesLoading(true);
+      try {
+        setPendingGroupInvites(await fetchSplitGroupDirectInvites(token, groupId));
+      } catch {
+        setPendingGroupInvites([]);
+      } finally {
+        setPendingGroupInvitesLoading(false);
+      }
+    },
+    [token]
+  );
+
+  useEffect(() => {
+    if (!groupSettingsSummary?.group.viewer_can_manage) {
+      setPendingGroupInvites([]);
+      setPendingGroupInvitesLoading(false);
+      return;
+    }
+    void loadPendingGroupInvites(groupSettingsSummary.group.id);
+  }, [
+    groupSettingsSummary?.group.id,
+    groupSettingsSummary?.group.viewer_can_manage,
+    loadPendingGroupInvites,
+  ]);
+
   const friendDetailSummaries = useMemo<FriendDetailSummary[]>(() => {
     return friends.map((friend) => {
       const friendBills = bills
@@ -477,9 +558,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const selectedFriendDetailSummary = useMemo(
     () =>
-      friendDetailSummaries.find((summary) => summary.friend.id === selectedFriendDetailId) ??
-      null,
+      friendDetailSummaries.find((summary) => summary.friend.id === selectedFriendDetailId) ?? null,
     [friendDetailSummaries, selectedFriendDetailId]
+  );
+
+  const selectedBill = useMemo(
+    () => bills.find((bill) => bill.id === selectedBillId) ?? null,
+    [bills, selectedBillId]
   );
 
   const memberPickerSummary = useMemo(
@@ -638,6 +723,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setBillDate(todayApiDate());
     setBillNotes('');
     setBillGroupId(null);
+    setIsBillGroupLocked(false);
+    setEditingBillId(null);
     setExpenseFlowScreen('expense');
     setSplitChoiceMode('you_paid_equal');
     setPayerFriendId(friends[0]?.id ?? null);
@@ -654,6 +741,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSettlementNotes('');
   };
 
+  const resetGroupInviteForm = () => {
+    setGroupInviteEmail('');
+    setGroupInvitePhone('');
+    setGroupInviteTargetId(null);
+  };
+
   const openModal = (kind: ModalKind) => {
     if (kind === 'friend') {
       resetFriendForm();
@@ -662,6 +755,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     if (kind === 'group') resetGroupForm();
     if (kind === 'bill') resetBillForm();
     if (kind === 'settlement') resetSettlementForm();
+    if (kind === 'group_invite') resetGroupInviteForm();
     setError(null);
     setModal(kind);
   };
@@ -674,6 +768,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSaving(false);
     setEditingFriendId(null);
     setEditingGroupId(null);
+    setEditingBillId(null);
+    setGroupInviteTargetId(null);
   };
 
   const handleSaveFriend = async () => {
@@ -737,6 +833,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setError('Group name is required.');
       return;
     }
+    const isEditingGroup = Boolean(editingGroupId);
     setSaving(true);
     setError(null);
     try {
@@ -757,8 +854,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       }));
       closeModal();
       setActiveSection('groups');
-      setSelectedGroupDetailId(null);
       await loadSplitData();
+      setSelectedGroupDetailId(isEditingGroup ? null : savedGroup.id);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save this group.');
     } finally {
@@ -767,6 +864,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const removeFriendFromActiveList = (friend: SplitFriend, action: 'archive' | 'delete') => {
+    if (action === 'delete') {
+      setSelectedFriendActions(null);
+      setPendingFriendDelete(friend);
+      return;
+    }
+
     const title = action === 'archive' ? `Archive ${friend.name}?` : `Delete ${friend.name}?`;
     const message =
       action === 'archive'
@@ -791,6 +894,21 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         },
       },
     ]);
+  };
+
+  const confirmDeleteFriend = () => {
+    if (!token || !pendingFriendDelete || saving) return;
+    setSaving(true);
+    setError(null);
+    void archiveSplitFriend(token, pendingFriendDelete.id)
+      .then(loadSplitData)
+      .catch((archiveError: unknown) => {
+        setError(archiveError instanceof Error ? archiveError.message : 'Unable to delete friend.');
+      })
+      .finally(() => {
+        setSaving(false);
+        setPendingFriendDelete(null);
+      });
   };
 
   const handleArchiveFriend = (friend: SplitFriend) => {
@@ -867,7 +985,9 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       let allocated = 0;
       return uniqueFriendIds.map((friendId, index) => {
         const share =
-          index === uniqueFriendIds.length - 1 ? Number((amount - allocated).toFixed(2)) : baseShare;
+          index === uniqueFriendIds.length - 1
+            ? Number((amount - allocated).toFixed(2))
+            : baseShare;
         allocated += share;
         return {
           friend_id: friendId,
@@ -909,7 +1029,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSaving(true);
     setError(null);
     try {
-      await createSplitBill(token, {
+      const payload: SplitBillPayload = {
         title: billTitle.trim(),
         total_amount: amount,
         currency: 'INR',
@@ -917,14 +1037,42 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         notes: billNotes.trim(),
         group_id: billGroupId,
         participants: finalParticipants,
-      });
+      };
+      const savedBill = editingBillId
+        ? await updateSplitBill(token, editingBillId, payload)
+        : await createSplitBill(token, payload);
       closeModal();
       await loadSplitData();
+      if (savedBill.group_id) {
+        setSelectedGroupDetailId(savedBill.group_id);
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save this split bill.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const confirmDeleteBill = () => {
+    if (!token || !pendingBillDelete || saving) return;
+    const groupId = pendingBillDelete.group_id ?? null;
+    setSaving(true);
+    setError(null);
+    void deleteSplitBill(token, pendingBillDelete.id)
+      .then(async () => {
+        setPendingBillDelete(null);
+        setSelectedBillId(null);
+        await loadSplitData();
+        if (groupId) {
+          setSelectedGroupDetailId(groupId);
+        }
+      })
+      .catch((deleteError: unknown) => {
+        setError(
+          deleteError instanceof Error ? deleteError.message : 'Unable to delete this expense.'
+        );
+      })
+      .finally(() => setSaving(false));
   };
 
   const handleCreateSettlement = async () => {
@@ -972,6 +1120,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const openGroupEditor = (summary: SplitGroupSummary) => {
+    if (!summary.group.viewer_can_manage) return;
     setGroupSettingsId(null);
     setGroupName(summary.group.name);
     setGroupKind(summary.metadata.kind);
@@ -984,12 +1133,101 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const openMemberPicker = (summary: SplitGroupSummary) => {
+    if (!summary.group.viewer_can_manage) return;
     setSelectedGroupDetailId(null);
     setGroupSettingsId(null);
     setMemberPickerGroupId(summary.group.id);
     setMemberPickerFriendIds(summary.memberIds);
     setMemberSearchQuery('');
     setError(null);
+  };
+
+  const shareGroupInviteLink = async (summary: SplitGroupSummary) => {
+    if (!token || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const invite = await createSplitGroupInviteLink(token, summary.group.id);
+      await Share.share({
+        title: `Join ${summary.group.name} on Finnri`,
+        message: `Join ${summary.group.name} on Finnri to track shared expenses together: ${invite.url}`,
+        url: invite.url,
+      });
+    } catch (inviteError) {
+      setError(
+        inviteError instanceof Error ? inviteError.message : 'Unable to share this invite link.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDirectGroupInvite = (summary: SplitGroupSummary) => {
+    if (!summary.group.viewer_can_manage) return;
+    setGroupSettingsId(null);
+    resetGroupInviteForm();
+    setGroupInviteTargetId(summary.group.id);
+    setError(null);
+    setModal('group_invite');
+  };
+
+  const handleSendGroupInvite = async () => {
+    if (!token || saving || !groupInviteTargetId) return;
+    const email = groupInviteEmail.trim();
+    const phone = groupInvitePhone.trim();
+    if (!email && !phone) {
+      setError('Enter an email or phone number.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const invite = await createSplitGroupDirectInvite(token, groupInviteTargetId, {
+        email,
+        phone,
+      });
+      await Share.share({
+        title: `Join ${invite.group.name} on Finnri`,
+        message: invite.message,
+        url: invite.url,
+      });
+      closeModal();
+      setGroupSettingsId(invite.group.id);
+      await loadPendingGroupInvites(invite.group.id);
+    } catch (inviteError) {
+      setError(
+        inviteError instanceof Error ? inviteError.message : 'Unable to invite this friend.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sharePendingGroupInvite = async (invite: SplitGroupDirectInvite) => {
+    if (!invite.message && !invite.url) return;
+    await Share.share({
+      title: `Join ${invite.group.name} on Finnri`,
+      message: invite.message || invite.url,
+      url: invite.url,
+    });
+  };
+
+  const confirmRevokeGroupInvite = () => {
+    if (!token || !pendingInviteRevoke || saving) return;
+    const groupId = pendingInviteRevoke.group.id;
+    setSaving(true);
+    setError(null);
+    void revokeSplitGroupDirectInvite(token, groupId, pendingInviteRevoke.id)
+      .then(async () => {
+        setPendingInviteRevoke(null);
+        await loadPendingGroupInvites(groupId);
+      })
+      .catch((revokeError: unknown) => {
+        setError(
+          revokeError instanceof Error ? revokeError.message : 'Unable to revoke this invite.'
+        );
+      })
+      .finally(() => setSaving(false));
   };
 
   const closeMemberPicker = (returnToGroup = true) => {
@@ -1012,6 +1250,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const handleSaveGroupMembers = async () => {
     if (!token || saving || !memberPickerSummary) return;
+    if (!memberPickerSummary.group.viewer_can_manage) return;
     setSaving(true);
     setError(null);
     try {
@@ -1031,36 +1270,51 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const handleDeleteGroup = (summary: SplitGroupSummary) => {
-    Alert.alert(
-      `Delete ${summary.group.name}?`,
-      'This removes the group from your active split list. Existing split records stay preserved for history.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            if (!token || saving) return;
-            setSaving(true);
-            setError(null);
-            void archiveSplitGroup(token, summary.group.id)
-              .then(async () => {
-                setGroupSettingsId(null);
-                setSelectedGroupDetailId(null);
-                await loadSplitData();
-              })
-              .catch((deleteError: unknown) => {
-                setError(
-                  deleteError instanceof Error
-                    ? deleteError.message
-                    : 'Unable to delete this split group.'
-                );
-              })
-              .finally(() => setSaving(false));
-          },
-        },
-      ]
-    );
+    if (!summary.group.viewer_can_manage) return;
+    setPendingGroupDelete(summary);
+  };
+
+  const handleLeaveGroup = (summary: SplitGroupSummary) => {
+    if (summary.group.viewer_can_manage) return;
+    setPendingGroupLeave(summary);
+  };
+
+  const confirmDeleteGroup = () => {
+    if (!token || !pendingGroupDelete || saving) return;
+    setSaving(true);
+    setError(null);
+    void archiveSplitGroup(token, pendingGroupDelete.group.id)
+      .then(async () => {
+        setPendingGroupDelete(null);
+        setGroupSettingsId(null);
+        setSelectedGroupDetailId(null);
+        await loadSplitData();
+      })
+      .catch((deleteError: unknown) => {
+        setError(
+          deleteError instanceof Error ? deleteError.message : 'Unable to delete this split group.'
+        );
+      })
+      .finally(() => setSaving(false));
+  };
+
+  const confirmLeaveGroup = () => {
+    if (!token || !pendingGroupLeave || saving) return;
+    setSaving(true);
+    setError(null);
+    void leaveSplitGroup(token, pendingGroupLeave.group.id)
+      .then(async () => {
+        setPendingGroupLeave(null);
+        setGroupSettingsId(null);
+        setSelectedGroupDetailId(null);
+        await loadSplitData();
+      })
+      .catch((leaveError: unknown) => {
+        setError(
+          leaveError instanceof Error ? leaveError.message : 'Unable to leave this split group.'
+        );
+      })
+      .finally(() => setSaving(false));
   };
 
   const requestContactsAccess = async () => {
@@ -1125,13 +1379,18 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const openBillForGroup = (groupId: number) => {
-    if (friends.length === 0) {
+    const group = groups.find((candidate) => candidate.id === groupId) ?? null;
+    const groupHasMembers = Boolean(
+      group?.members?.some((member) => friendById.has(member.friend_id))
+    );
+    if (!groupHasMembers && friends.length === 0) {
       setSelectedGroupDetailId(null);
       openModal('friend');
       return;
     }
     resetBillForm();
     handleSelectBillGroup(groupId);
+    setIsBillGroupLocked(true);
     setSelectedGroupDetailId(null);
     setModal('bill');
   };
@@ -1145,6 +1404,51 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setEqualSplitFriendIds([friend.id]);
     setIncludeCurrentUserInSplit(true);
     setSelectedFriendDetailId(null);
+    setModal('bill');
+  };
+
+  const openBillEditor = (bill: SplitBill) => {
+    const groupId = bill.group_id ?? null;
+    const friendIds = bill.participants?.map((participant) => participant.friend_id) ?? [];
+    const userOwesParticipant = bill.participants?.find(
+      (participant) => participant.direction === 'user_owes_friend'
+    );
+    const friendOwesParticipants =
+      bill.participants?.filter((participant) => participant.direction === 'friend_owes_user') ??
+      [];
+    const friendOwesTotal = friendOwesParticipants.reduce(
+      (sum, participant) => sum + participant.share_amount,
+      0
+    );
+
+    setBillTitle(bill.title);
+    setBillAmount(String(bill.total_amount));
+    setBillDate(bill.date || todayApiDate());
+    setBillNotes(bill.notes ?? '');
+    setBillGroupId(groupId);
+    setIsBillGroupLocked(Boolean(groupId));
+    setEditingBillId(bill.id);
+    setExpenseFlowScreen('expense');
+    setPayerFriendId(userOwesParticipant?.friend_id ?? friendIds[0] ?? friends[0]?.id ?? null);
+    setEqualSplitFriendIds([...new Set(friendIds)]);
+    setIncludeCurrentUserInSplit(
+      userOwesParticipant
+        ? userOwesParticipant.share_amount < bill.total_amount
+        : friendOwesTotal < bill.total_amount
+    );
+    setSplitChoiceMode(
+      userOwesParticipant
+        ? userOwesParticipant.share_amount >= bill.total_amount
+          ? 'friend_paid_full'
+          : 'friend_paid_equal'
+        : friendOwesTotal >= bill.total_amount
+          ? 'you_paid_full'
+          : 'you_paid_equal'
+    );
+    setAdjustSplitTab('equally');
+    setSelectedBillId(null);
+    setSelectedGroupDetailId(null);
+    setError(null);
     setModal('bill');
   };
 
@@ -1541,6 +1845,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onArchive={(friend) => removeFriendFromActiveList(friend, 'archive')}
         />
 
+        <ThemedDeleteDialog
+          visible={Boolean(pendingFriendDelete)}
+          title={`Delete ${pendingFriendDelete?.name ?? 'friend'}?`}
+          message="This removes the friend from active split lists while preserving past split records."
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          loading={saving}
+          onCancel={() => {
+            if (!saving) setPendingFriendDelete(null);
+          }}
+          onConfirm={confirmDeleteFriend}
+        />
+
         <FriendDetailModal
           summary={selectedFriendDetailSummary}
           currentUserName={currentUserName}
@@ -1556,12 +1873,35 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
         <GroupDetailModal
           summary={selectedGroupSummary}
-          friends={friends}
+          friends={splitFriendCatalog}
           currentUserName={currentUserName}
           onClose={() => setSelectedGroupDetailId(null)}
           onAddExpense={(groupId) => openBillForGroup(groupId)}
           onManageMembers={openMemberPicker}
+          onOpenExpense={(bill) => setSelectedBillId(bill.id)}
           onOpenSettings={(summary) => setGroupSettingsId(summary.group.id)}
+        />
+
+        <BillDetailModal
+          bill={selectedBill}
+          friends={splitFriendCatalog}
+          currentUserName={currentUserName}
+          onClose={() => setSelectedBillId(null)}
+          onEdit={openBillEditor}
+          onDelete={(bill) => setPendingBillDelete(bill)}
+        />
+
+        <ThemedDeleteDialog
+          visible={Boolean(pendingBillDelete)}
+          title={`Delete ${pendingBillDelete?.title ?? 'expense'}?`}
+          message="This removes the expense from the split group. Existing friend and group records stay preserved."
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          loading={saving}
+          onCancel={() => {
+            if (!saving) setPendingBillDelete(null);
+          }}
+          onConfirm={confirmDeleteBill}
         />
 
         <GroupSettingsModal
@@ -1570,11 +1910,59 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           currentUserName={currentUserName}
           currentUserContact={currentUserContact}
           simplifyGroupDebts={simplifyGroupDebts}
+          pendingInvites={pendingGroupInvites}
+          pendingInvitesLoading={pendingGroupInvitesLoading}
           onToggleSimplifyDebts={() => setSimplifyGroupDebts((current) => !current)}
           onClose={() => setGroupSettingsId(null)}
           onAddPeople={openMemberPicker}
+          onInvitePerson={openDirectGroupInvite}
+          onInviteViaLink={(summary) => void shareGroupInviteLink(summary)}
+          onSharePendingInvite={(invite) => void sharePendingGroupInvite(invite)}
+          onRevokePendingInvite={setPendingInviteRevoke}
           onEditGroup={openGroupEditor}
           onDeleteGroup={handleDeleteGroup}
+          onLeaveGroup={handleLeaveGroup}
+        />
+
+        <ThemedDeleteDialog
+          visible={Boolean(pendingGroupLeave)}
+          title={`Leave ${pendingGroupLeave?.group.name ?? 'group'}?`}
+          message="This removes the group from your split list. The group and existing expenses stay visible to the owner."
+          cancelLabel="Cancel"
+          confirmLabel="Leave"
+          loading={saving}
+          onCancel={() => {
+            if (!saving) setPendingGroupLeave(null);
+          }}
+          onConfirm={confirmLeaveGroup}
+        />
+
+        <ThemedDeleteDialog
+          visible={Boolean(pendingInviteRevoke)}
+          title="Revoke invite?"
+          message={`This removes the pending invite for ${
+            pendingInviteRevoke?.target_email || pendingInviteRevoke?.target_phone || 'this person'
+          }. The general group invite link stays active.`}
+          cancelLabel="Cancel"
+          confirmLabel="Revoke"
+          loading={saving}
+          onCancel={() => {
+            if (!saving) setPendingInviteRevoke(null);
+          }}
+          onConfirm={confirmRevokeGroupInvite}
+        />
+
+        <ThemedDeleteDialog
+          visible={Boolean(pendingGroupDelete)}
+          title={`Delete ${pendingGroupDelete?.group.name ?? 'group'}?`}
+          message="This removes the group from your active split list. Existing split records stay preserved for history."
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          loading={saving}
+          onCancel={() => {
+            if (!saving) setPendingGroupDelete(null);
+          }}
+          onConfirm={confirmDeleteGroup}
         />
 
         <GroupMembersModal
@@ -1624,6 +2012,33 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           />
         </SplitModal>
 
+        <SplitModal
+          visible={modal === 'group_invite'}
+          title="Invite friend"
+          errorMessage={modal === 'group_invite' ? error : null}
+          footer={
+            <PrimaryModalButton
+              label="Send invite"
+              loading={saving}
+              onPress={() => void handleSendGroupInvite()}
+            />
+          }
+          onClose={closeModal}>
+          <FormInput
+            label="Email"
+            value={groupInviteEmail}
+            onChangeText={setGroupInviteEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <FormInput
+            label="Phone"
+            value={groupInvitePhone}
+            onChangeText={setGroupInvitePhone}
+            keyboardType="phone-pad"
+          />
+        </SplitModal>
+
         <CreateGroupModal
           visible={modal === 'group'}
           saving={saving}
@@ -1656,6 +2071,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           groups={groups}
           selectedGroup={selectedBillGroup}
           selectedGroupId={billGroupId}
+          isGroupLocked={isBillGroupLocked}
           friends={billFriendOptions}
           allFriends={friends}
           currentUserName={currentUserName}
@@ -2523,17 +2939,14 @@ function FriendDetailModal({
             unsettledGroup ? ` in "${unsettledGroup.group.name}"` : ''
           }`
         : `You and ${friendFirstName} are settled up.`;
-  const groupedRows = groups.reduce(
-    (acc, group) => {
-      const date = group.latestBill?.date ?? group.group.created_at ?? todayApiDate();
-      const section = formatMonthYear(date);
-      const rows = acc.get(section) ?? [];
-      rows.push(group);
-      acc.set(section, rows);
-      return acc;
-    },
-    new Map<string, SplitGroupSummary[]>()
-  );
+  const groupedRows = groups.reduce((acc, group) => {
+    const date = group.latestBill?.date ?? group.group.created_at ?? todayApiDate();
+    const section = formatMonthYear(date);
+    const rows = acc.get(section) ?? [];
+    rows.push(group);
+    acc.set(section, rows);
+    return acc;
+  }, new Map<string, SplitGroupSummary[]>());
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -2613,7 +3026,10 @@ function FriendDetailModal({
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 132, paddingTop: 30 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 12 }}>
             <DetailPill
               label="Settle up"
               icon="hand-coin-outline"
@@ -2652,7 +3068,8 @@ function FriendDetailModal({
                   No shared groups yet
                 </TText>
                 <TText className="mt-2 text-center text-sm leading-5 text-black/55 dark:text-white/55">
-                  Add an expense with {friendFirstName} or include them in a group to see history here.
+                  Add an expense with {friendFirstName} or include them in a group to see history
+                  here.
                 </TText>
               </View>
             )}
@@ -2676,7 +3093,9 @@ function FriendSharedGroupRow({
 }) {
   const theme = useThemeTokens().colors;
   const kindConfig = getGroupKindConfig(summary.metadata.kind);
-  const date = formatBillListDate(summary.latestBill?.date ?? summary.group.created_at ?? todayApiDate());
+  const date = formatBillListDate(
+    summary.latestBill?.date ?? summary.group.created_at ?? todayApiDate()
+  );
   const friendNet = summary.bills.reduce((sum, bill) => {
     const participant = bill.participants?.find((item) => item.friend_id === friendId);
     if (!participant) return sum;
@@ -2737,6 +3156,7 @@ function GroupDetailModal({
   onClose,
   onAddExpense,
   onManageMembers,
+  onOpenExpense,
   onOpenSettings,
 }: {
   summary: SplitGroupSummary | null;
@@ -2745,42 +3165,70 @@ function GroupDetailModal({
   onClose: () => void;
   onAddExpense: (groupId: number) => void;
   onManageMembers: (summary: SplitGroupSummary) => void;
+  onOpenExpense: (bill: SplitBill) => void;
   onOpenSettings: (summary: SplitGroupSummary) => void;
 }) {
-  const theme = useThemeTokens().colors;
+  const [groupSearchVisible, setGroupSearchVisible] = useState(false);
+  const [groupSearchQuery, setGroupSearchQuery] = useState('');
   if (!summary) return null;
 
-  const kindConfig = getGroupKindConfig(summary.metadata.kind);
   const memberNames = summary.memberIds
     .map((memberId) => friends.find((friend) => friend.id === memberId)?.name)
     .filter(Boolean);
-  const tone = getBalanceTone(summary.netBalance);
-  const firstDetailLine = summary.detailLines[0];
+  const canManageGroup = summary.group.viewer_can_manage === true;
+  const canAddExpense = summary.group.viewer_can_add_expense !== false;
+  const normalizedGroupSearch = groupSearchQuery.trim().toLowerCase();
+  const filteredBills = normalizedGroupSearch
+    ? summary.bills.filter((bill) => {
+        const participantNames = bill.participants
+          .map((participant) => friends.find((friend) => friend.id === participant.friend_id)?.name)
+          .filter(Boolean)
+          .join(' ');
+        return [
+          bill.title,
+          bill.notes ?? '',
+          bill.date,
+          String(bill.total_amount),
+          participantNames,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedGroupSearch);
+      })
+    : summary.bills;
+  const overallCopy =
+    summary.netBalance === 0
+      ? summary.billCount > 0
+        ? 'Everyone is settled up'
+        : 'No expenses yet'
+      : summary.netBalance > 0
+        ? `You are owed ${formatMoney(summary.netBalance)} overall`
+        : `You owe ${formatMoney(Math.abs(summary.netBalance))} overall`;
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1" style={{ backgroundColor: theme.background }}>
-        <View className="min-h-[292px] overflow-hidden" style={{ backgroundColor: '#8A1238' }}>
+      <View className="flex-1" style={{ backgroundColor: '#FFFFFF' }}>
+        <View className="min-h-[270px] overflow-hidden" style={{ backgroundColor: '#155B6D' }}>
           <View
             style={{
               position: 'absolute',
-              top: -24,
-              left: -28,
-              width: 220,
+              top: -34,
+              left: 82,
+              width: 260,
               height: 170,
               backgroundColor: 'rgba(255,255,255,0.08)',
-              transform: [{ rotate: '-24deg' }],
+              transform: [{ rotate: '28deg' }],
             }}
           />
           <View
             style={{
               position: 'absolute',
-              right: -54,
-              bottom: 18,
-              width: 260,
-              height: 140,
-              backgroundColor: 'rgba(255,255,255,0.06)',
-              transform: [{ rotate: '-16deg' }],
+              right: -78,
+              bottom: -4,
+              width: 360,
+              height: 172,
+              backgroundColor: 'rgba(255,255,255,0.09)',
+              transform: [{ rotate: '-18deg' }],
             }}
           />
           <SafeAreaView edges={['top', 'left', 'right']}>
@@ -2796,49 +3244,98 @@ function GroupDetailModal({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Search group"
+                  onPress={() => {
+                    setGroupSearchVisible((current) => !current);
+                    if (groupSearchVisible) setGroupSearchQuery('');
+                  }}
                   className="h-12 w-12 items-center justify-center rounded-full bg-white">
-                  <MaterialCommunityIcons name="magnify" size={26} color="#202124" />
+                  <MaterialCommunityIcons
+                    name={groupSearchVisible ? 'close' : 'magnify'}
+                    size={26}
+                    color="#202124"
+                  />
                 </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Group settings"
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Group settings"
                   onPress={() => onOpenSettings(summary)}
-                className="h-12 w-12 items-center justify-center rounded-full bg-white">
-                <MaterialCommunityIcons name="cog-outline" size={26} color="#202124" />
-              </Pressable>
+                  className="h-12 w-12 items-center justify-center rounded-full bg-white">
+                  <MaterialCommunityIcons name="cog-outline" size={26} color="#202124" />
+                </Pressable>
               </View>
             </View>
-            <View className="px-6 pb-8 pt-14">
-              <TText className="mt-4 text-4xl text-white" style={{ fontFamily: Fonts.title }}>
+            <View className="px-6 pb-8 pt-12">
+              <TText className="text-5xl text-white" style={{ fontFamily: Fonts.title }}>
                 {summary.group.name}
               </TText>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => onManageMembers(summary)}
-                className="mt-4 min-h-12 flex-row items-center self-start rounded-full border px-4"
-                style={{
-                  backgroundColor: 'rgba(39,39,42,0.72)',
-                  borderColor: 'rgba(255,255,255,0.14)',
-                }}>
-                <MaterialCommunityIcons name="account-group-outline" size={19} color="#FFFFFF" />
-                <TText className="ml-3 text-base text-white" style={{ fontFamily: Fonts.title }}>
-                  {memberNames.length + 1} people
-                </TText>
-              </Pressable>
+              <View className="mt-5 flex-row gap-3">
+                <Pressable
+                  accessibilityRole="button"
+                  className="min-h-12 flex-row items-center rounded-full border px-4"
+                  style={{ borderColor: '#1BB99A', backgroundColor: 'rgba(0,0,0,0.08)' }}>
+                  <MaterialCommunityIcons name="calendar-blank-outline" size={19} color="#FFFFFF" />
+                  <TText className="ml-3 text-base text-white" style={{ fontFamily: Fonts.title }}>
+                    Add trip dates
+                  </TText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={!canManageGroup}
+                  onPress={() => onManageMembers(summary)}
+                  className="min-h-12 flex-row items-center rounded-full px-4"
+                  style={{ backgroundColor: 'rgba(39,39,42,0.72)' }}>
+                  <MaterialCommunityIcons name="account-group-outline" size={19} color="#FFFFFF" />
+                  <TText className="ml-3 text-base text-white" style={{ fontFamily: Fonts.title }}>
+                    {memberNames.length + 1} people
+                  </TText>
+                </Pressable>
+              </View>
             </View>
           </SafeAreaView>
         </View>
 
         <ScrollView
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 26, paddingBottom: 130 }}>
-          <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
-            {summary.netBalance === 0
-              ? summary.billCount > 0
-                ? 'Everyone is settled up'
-                : 'No expenses yet'
-              : firstDetailLine ?? tone.label}
-          </TText>
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 132 }}>
+          {groupSearchVisible ? (
+            <View
+              className="mb-5 min-h-13 flex-row items-center rounded-full border px-4"
+              style={{ borderColor: 'rgba(15,23,42,0.12)', backgroundColor: '#F8FAFC' }}>
+              <MaterialCommunityIcons name="magnify" size={22} color="#6B7280" />
+              <TextInput
+                value={groupSearchQuery}
+                onChangeText={setGroupSearchQuery}
+                autoFocus
+                autoCapitalize="none"
+                placeholder="Search expenses"
+                placeholderTextColor="#9CA3AF"
+                style={{
+                  flex: 1,
+                  marginLeft: 10,
+                  minHeight: 48,
+                  color: '#202124',
+                  fontFamily: Fonts.body,
+                  fontSize: 16,
+                }}
+              />
+            </View>
+          ) : null}
+
+          <View>
+            <TText className="text-2xl" style={{ color: '#202124', fontFamily: Fonts.title }}>
+              {overallCopy}
+            </TText>
+            {summary.detailLines.length > 0 ? (
+              <View className="mt-3 border-l-4 py-1 pl-5" style={{ borderColor: '#E5E7EB' }}>
+                {summary.detailLines.map((line) => (
+                  <TText key={line} className="py-1 text-lg leading-7" style={{ color: '#4B5563' }}>
+                    {line}
+                  </TText>
+                ))}
+              </View>
+            ) : null}
+          </View>
 
           <ScrollView
             horizontal
@@ -2851,31 +3348,45 @@ function GroupDetailModal({
           </ScrollView>
 
           <View className="mt-6">
-            {summary.bills.length > 0 ? (
-              summary.bills.map((bill) => (
+            {filteredBills.length > 0 ? (
+              filteredBills.map((bill) => (
                 <GroupExpenseRow
                   key={bill.id}
                   bill={bill}
                   currentUserName={currentUserName}
+                  friends={friends}
+                  onPress={() => onOpenExpense(bill)}
                 />
               ))
+            ) : normalizedGroupSearch ? (
+              <View className="items-center px-6 py-20">
+                <MaterialCommunityIcons name="magnify" size={34} color="#9CA3AF" />
+                <TText
+                  className="mt-4 text-center text-lg"
+                  style={{ color: '#202124', fontFamily: Fonts.title }}>
+                  No matching expenses
+                </TText>
+                <TText className="mt-2 text-center text-sm leading-5 text-black/55">
+                  Try searching by title, amount, date, notes, or friend name.
+                </TText>
+              </View>
             ) : (
               <View className="items-center px-6 py-24">
                 <View
                   className="h-16 w-16 items-center justify-center rounded-2xl"
-                  style={{ backgroundColor: theme.secondary }}>
+                  style={{ backgroundColor: '#EAF8F1' }}>
                   <MaterialCommunityIcons
-                    name={kindConfig.icon}
+                    name="receipt-text-plus-outline"
                     size={30}
-                    color={theme.accent}
+                    color="#17A978"
                   />
                 </View>
                 <TText
                   className="mt-5 text-center text-lg"
-                  style={{ color: theme.text, fontFamily: Fonts.title }}>
+                  style={{ color: '#202124', fontFamily: Fonts.title }}>
                   Add your first expense
                 </TText>
-                <TText className="mt-2 text-center text-sm leading-5 text-black/55 dark:text-white/55">
+                <TText className="mt-2 text-center text-sm leading-5 text-black/55">
                   Expenses for {summary.group.name} will appear here once you add them.
                 </TText>
               </View>
@@ -2883,7 +3394,9 @@ function GroupDetailModal({
           </View>
         </ScrollView>
 
-        <FloatingExpenseButton onPress={() => onAddExpense(summary.group.id)} />
+        {canAddExpense ? (
+          <FloatingExpenseButton onPress={() => onAddExpense(summary.group.id)} />
+        ) : null}
       </View>
     </Modal>
   );
@@ -2892,12 +3405,24 @@ function GroupDetailModal({
 function GroupExpenseRow({
   bill,
   currentUserName,
+  friends,
+  onPress,
 }: {
   bill: SplitBill;
   currentUserName: string;
+  friends: SplitFriend[];
+  onPress: () => void;
 }) {
-  const theme = useThemeTokens().colors;
   const date = formatBillListDate(bill.date);
+  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
+  const payerParticipant = bill.participants.find(
+    (participant) => participant.direction === 'user_owes_friend'
+  );
+  const payerName = payerParticipant
+    ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
+    : currentUserName;
+  const paidByYou = !payerParticipant || payerName === currentUserName;
+  const iconConfig = getExpenseIconConfig(bill.title);
   const youLent = bill.participants
     .filter((participant) => participant.direction === 'friend_owes_user')
     .reduce((sum, participant) => sum + participant.share_amount, 0);
@@ -2907,23 +3432,25 @@ function GroupExpenseRow({
   const net = youLent - youBorrowed;
 
   return (
-    <View className="min-h-[76px] flex-row items-start gap-4 py-3">
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      className="min-h-[88px] flex-row items-start gap-4 py-3">
       <View className="w-9 items-center pt-1">
-        <TText className="text-sm text-black/55 dark:text-white/55">{date.month}</TText>
-        <TText className="text-lg text-black/55 dark:text-white/55">{date.day}</TText>
+        <TText className="text-base text-black/55">{date.month}</TText>
+        <TText className="text-2xl text-black/55">{date.day}</TText>
       </View>
       <View
         className="h-16 w-16 items-center justify-center rounded"
-        style={{ backgroundColor: theme.secondary }}>
-        <MaterialCommunityIcons name="receipt-text-outline" size={34} color={theme.text} />
+        style={{ backgroundColor: iconConfig.background }}>
+        <MaterialCommunityIcons name={iconConfig.icon} size={34} color="#202124" />
       </View>
       <View className="flex-1 pt-1">
-        <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <TText className="text-2xl" style={{ color: '#202124', fontFamily: Fonts.title }}>
           {bill.title}
         </TText>
-        <TText className="mt-1 text-sm text-black/55 dark:text-white/55">
-          {currentUserName === 'You' ? 'You' : getFirstName(currentUserName)} paid{' '}
-          {formatMoney(bill.total_amount)}
+        <TText className="mt-1 text-base text-black/50">
+          {paidByYou ? 'You' : payerName} paid {formatMoney(bill.total_amount)}
         </TText>
       </View>
       {net !== 0 ? (
@@ -2940,7 +3467,166 @@ function GroupExpenseRow({
           </TText>
         </View>
       ) : null}
-    </View>
+    </Pressable>
+  );
+}
+
+function getExpenseIconConfig(title: string): {
+  icon: ComponentProps<typeof MaterialCommunityIcons>['name'];
+  background: string;
+} {
+  const normalized = title.toLowerCase();
+  if (/(dinner|lunch|snack|food|restaurant|meal)/.test(normalized)) {
+    return { icon: 'silverware-fork-knife', background: '#DFF2E8' };
+  }
+  if (/(airbnb|hotel|stay|room|rent)/.test(normalized)) {
+    return { icon: 'office-building-outline', background: '#F6C6D6' };
+  }
+  if (/(travel|cab|taxi|train|flight|trip)/.test(normalized)) {
+    return { icon: 'car-outline', background: '#DDEBFF' };
+  }
+  return { icon: 'receipt-text-outline', background: '#FFEDEA' };
+}
+
+function BillDetailModal({
+  bill,
+  friends,
+  currentUserName,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  bill: SplitBill | null;
+  friends: SplitFriend[];
+  currentUserName: string;
+  onClose: () => void;
+  onEdit: (bill: SplitBill) => void;
+  onDelete: (bill: SplitBill) => void;
+}) {
+  const theme = useThemeTokens().colors;
+  if (!bill) return null;
+
+  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
+  const payerParticipant = bill.participants.find(
+    (participant) => participant.direction === 'user_owes_friend'
+  );
+  const payerName = payerParticipant
+    ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
+    : currentUserName;
+  const paidLine = `${payerName === currentUserName ? 'You' : payerName} paid ${formatMoney(
+    bill.total_amount
+  )}`;
+  const canEdit = bill.viewer_can_edit === true;
+  const canDelete = bill.viewer_can_delete === true;
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView
+        className="flex-1"
+        edges={['top', 'left', 'right']}
+        style={{ backgroundColor: theme.background }}>
+        <View
+          className="min-h-16 flex-row items-center border-b px-5"
+          style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close expense details"
+            onPress={onClose}
+            className="h-11 w-11 items-center justify-center">
+            <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
+          </Pressable>
+          <View className="flex-1" />
+          {canDelete ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete expense"
+              onPress={() => onDelete(bill)}
+              className="h-11 w-11 items-center justify-center">
+              <MaterialCommunityIcons name="trash-can-outline" size={27} color="#EF5B5B" />
+            </Pressable>
+          ) : null}
+          {canEdit ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Edit expense"
+              onPress={() => onEdit(bill)}
+              className="h-11 w-11 items-center justify-center">
+              <MaterialCommunityIcons name="pencil-outline" size={27} color={theme.text} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40, paddingTop: 28 }}>
+          <View className="flex-row items-start gap-5">
+            <View
+              className="h-20 w-20 items-center justify-center rounded-xl border"
+              style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+              <MaterialCommunityIcons name="receipt-text-outline" size={44} color={theme.text} />
+            </View>
+            <View className="flex-1">
+              <TText className="text-3xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                {bill.title}
+              </TText>
+              <TText
+                className="mt-2 text-4xl"
+                style={{ color: theme.text, fontFamily: Fonts.title }}>
+                {formatMoney(bill.total_amount)}
+              </TText>
+              <TText className="mt-4 text-base leading-6 text-black/55 dark:text-white/55">
+                {bill.date}
+                {bill.created_at ? `\nAdded on ${bill.created_at.slice(0, 10)}` : ''}
+              </TText>
+            </View>
+          </View>
+
+          <View className="mt-10">
+            <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              {paidLine}
+            </TText>
+            <View className="mt-5 gap-4">
+              {bill.participants.map((participant) => {
+                const friendName = friendById.get(participant.friend_id)?.name ?? 'Friend';
+                const isUserOwes = participant.direction === 'user_owes_friend';
+                const label = isUserOwes
+                  ? `You owe ${friendName} ${formatMoney(participant.share_amount)}`
+                  : `${friendName} owes ${formatMoney(participant.share_amount)}`;
+                return (
+                  <View
+                    key={`${participant.friend_id}-${participant.direction}`}
+                    className="flex-row items-center">
+                    <View
+                      className="mr-4 h-10 w-10 items-center justify-center rounded-full"
+                      style={{ backgroundColor: theme.secondary }}>
+                      <TText style={{ color: theme.accent, fontFamily: Fonts.title }}>
+                        {friendName.charAt(0).toUpperCase()}
+                      </TText>
+                    </View>
+                    <TText className="flex-1 text-lg text-black/60 dark:text-white/60">
+                      {label}
+                    </TText>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {bill.notes ? (
+            <View className="mt-10 rounded-2xl border p-4" style={{ borderColor: theme.border }}>
+              <TText
+                className="text-xs text-black/45 dark:text-white/45"
+                style={{ fontFamily: Fonts.title }}>
+                Notes
+              </TText>
+              <TText className="mt-2 text-base leading-6" style={{ color: theme.text }}>
+                {bill.notes}
+              </TText>
+            </View>
+          ) : null}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -2963,6 +3649,7 @@ function AddExpenseModal({
   groups,
   selectedGroup,
   selectedGroupId,
+  isGroupLocked,
   friends,
   allFriends,
   currentUserName,
@@ -2999,6 +3686,7 @@ function AddExpenseModal({
   groups: SplitGroup[];
   selectedGroup: SplitGroup | null;
   selectedGroupId: number | null;
+  isGroupLocked: boolean;
   friends: SplitFriend[];
   allFriends: SplitFriend[];
   currentUserName: string;
@@ -3045,36 +3733,46 @@ function AddExpenseModal({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 110 }}>
-              <View
-                className="min-h-[74px] flex-row items-center border-b px-6"
-                style={{ borderColor: theme.border }}>
-                <TText className="text-xl" style={{ color: theme.text }}>
-                  With you and:
-                </TText>
-                <Pressable
-                  accessibilityRole="button"
-                  className="ml-3 min-h-12 flex-1 flex-row items-center rounded-full border px-3"
-                  style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                  <View
-                    className="h-10 w-10 items-center justify-center rounded-full"
-                    style={{ backgroundColor: '#8A1238' }}>
-                    <MaterialCommunityIcons name="receipt-text-outline" size={23} color="#FFFFFF" />
-                  </View>
-                  <TText
-                    className="ml-3 flex-1 text-lg"
-                    numberOfLines={1}
-                    style={{ color: theme.text, fontFamily: Fonts.title }}>
-                    {groupLabel}
+              {!isGroupLocked ? (
+                <View
+                  className="min-h-[74px] flex-row items-center border-b px-6"
+                  style={{ borderColor: theme.border }}>
+                  <TText className="text-xl" style={{ color: theme.text }}>
+                    With you and:
                   </TText>
-                </Pressable>
-              </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    className="ml-3 min-h-12 flex-1 flex-row items-center rounded-full border px-3"
+                    style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                    <View
+                      className="h-10 w-10 items-center justify-center rounded-full"
+                      style={{ backgroundColor: '#8A1238' }}>
+                      <MaterialCommunityIcons
+                        name="receipt-text-outline"
+                        size={23}
+                        color="#FFFFFF"
+                      />
+                    </View>
+                    <TText
+                      className="ml-3 flex-1 text-lg"
+                      numberOfLines={1}
+                      style={{ color: theme.text, fontFamily: Fonts.title }}>
+                      {groupLabel}
+                    </TText>
+                  </Pressable>
+                </View>
+              ) : null}
 
               <View className="px-8 pt-12">
                 <View className="flex-row items-center gap-4">
                   <View
                     className="h-[70px] w-[70px] items-center justify-center rounded border"
                     style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                    <MaterialCommunityIcons name="receipt-text-outline" size={40} color={theme.text} />
+                    <MaterialCommunityIcons
+                      name="receipt-text-outline"
+                      size={40}
+                      color={theme.text}
+                    />
                   </View>
                   <TextInput
                     value={title}
@@ -3128,7 +3826,7 @@ function AddExpenseModal({
                   </TText>
                 </Pressable>
 
-                {groups.length > 0 ? (
+                {!isGroupLocked && groups.length > 0 ? (
                   <View className="mt-8">
                     <TText className="text-xs text-black/55 dark:text-white/55">Group</TText>
                     <View className="mt-3 flex-row flex-wrap gap-2">
@@ -3158,13 +3856,7 @@ function AddExpenseModal({
                 ) : null}
               </View>
             </ScrollView>
-            <ExpenseBottomBar
-              groupName={selectedGroup?.name ?? 'Split expense'}
-              date={date}
-              notes={notes}
-              onChangeDate={onChangeDate}
-              onChangeNotes={onChangeNotes}
-            />
+            <ExpenseBottomBar date={date} onChangeDate={onChangeDate} />
           </View>
         ) : flowScreen === 'split_choice' ? (
           <SplitChoiceScreen
@@ -3216,7 +3908,9 @@ function ExpenseTopBar({
 }) {
   const theme = useThemeTokens().colors;
   return (
-    <View className="min-h-16 flex-row items-center border-b px-5" style={{ borderColor: theme.border }}>
+    <View
+      className="min-h-16 flex-row items-center border-b px-5"
+      style={{ borderColor: theme.border }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Close expense"
@@ -3224,7 +3918,9 @@ function ExpenseTopBar({
         className="h-11 w-11 items-center justify-center">
         <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
       </Pressable>
-      <TText className="ml-4 flex-1 text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+      <TText
+        className="ml-4 flex-1 text-2xl"
+        style={{ color: theme.text, fontFamily: Fonts.title }}>
         {title}
       </TText>
       <Pressable
@@ -3243,45 +3939,60 @@ function ExpenseTopBar({
 }
 
 function ExpenseBottomBar({
-  groupName,
   date,
-  notes,
   onChangeDate,
-  onChangeNotes,
 }: {
-  groupName: string;
   date: string;
-  notes: string;
   onChangeDate: (value: string) => void;
-  onChangeNotes: (value: string) => void;
 }) {
   const theme = useThemeTokens().colors;
+  const [showIosDatePicker, setShowIosDatePicker] = useState(false);
+  const openDatePicker = () => {
+    const currentDate = parseApiDate(date);
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: currentDate,
+        mode: 'date',
+        onValueChange: (_event, selectedDate) => {
+          if (selectedDate) {
+            onChangeDate(formatApiDate(selectedDate));
+          }
+        },
+        onDismiss: () => undefined,
+      });
+      return;
+    }
+    setShowIosDatePicker((current) => !current);
+  };
+
   return (
     <View
-      className="absolute bottom-0 left-0 right-0 min-h-20 flex-row items-center border-t px-6 pb-3"
+      className="absolute bottom-0 left-0 right-0 min-h-20 border-t px-6 pb-3"
       style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-      <MaterialCommunityIcons name="account-group" size={30} color={theme.accent} />
-      <TText
-        className="ml-3 flex-1 text-lg"
-        numberOfLines={1}
-        style={{ color: theme.text, fontFamily: Fonts.title }}>
-        {groupName}
-      </TText>
-      <TextInput
-        value={date}
-        onChangeText={onChangeDate}
-        accessibilityLabel="Expense date"
-        style={{ position: 'absolute', height: 1, width: 1, opacity: 0 }}
-      />
-      <TextInput
-        value={notes}
-        onChangeText={onChangeNotes}
-        accessibilityLabel="Expense notes"
-        style={{ position: 'absolute', height: 1, width: 1, opacity: 0 }}
-      />
-      <MaterialCommunityIcons name="calendar-blank-outline" size={30} color="#0E7490" />
-      <MaterialCommunityIcons name="camera-outline" size={30} color="#A855F7" style={{ marginLeft: 24 }} />
-      <MaterialCommunityIcons name="note-edit-outline" size={30} color={theme.accent} style={{ marginLeft: 24 }} />
+      <View className="min-h-16 flex-row items-center justify-between">
+        <TText className="text-base text-black/55 dark:text-white/55">{date}</TText>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Select expense date"
+          onPress={openDatePicker}
+          className="h-12 w-12 items-center justify-center rounded-full"
+          style={{ backgroundColor: theme.secondary }}>
+          <MaterialCommunityIcons name="calendar-blank-outline" size={30} color="#0E7490" />
+        </Pressable>
+      </View>
+      {showIosDatePicker ? (
+        <DateTimePicker
+          value={parseApiDate(date)}
+          mode="date"
+          display="spinner"
+          onValueChange={(_event, selectedDate) => {
+            if (selectedDate) {
+              onChangeDate(formatApiDate(selectedDate));
+            }
+          }}
+          onDismiss={() => setShowIosDatePicker(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -3311,13 +4022,26 @@ function SplitChoiceScreen({
   const choices: { mode: SplitChoiceMode; label: string; payerId?: number | null }[] = [
     { mode: 'you_paid_equal', label: 'You paid, split equally.', payerId: null },
     { mode: 'you_paid_full', label: 'You are owed the full amount.', payerId: null },
-    { mode: 'friend_paid_equal', label: `${payerName} paid, split equally.`, payerId: firstFriend?.id },
-    { mode: 'friend_paid_full', label: `${payerName} is owed the full amount.`, payerId: firstFriend?.id },
+    {
+      mode: 'friend_paid_equal',
+      label: `${payerName} paid, split equally.`,
+      payerId: firstFriend?.id,
+    },
+    {
+      mode: 'friend_paid_full',
+      label: `${payerName} is owed the full amount.`,
+      payerId: firstFriend?.id,
+    },
   ];
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <ExpenseTopBar title="How was this expense split?" saving={false} onBack={onBack} onDone={onBack} />
+      <ExpenseTopBar
+        title="How was this expense split?"
+        saving={false}
+        onBack={onBack}
+        onDone={onBack}
+      />
       <View className="px-6 pt-5">
         {choices.map((choice) => (
           <Pressable
@@ -3433,10 +4157,14 @@ function AdjustSplitScreen({
 }) {
   const theme = useThemeTokens().colors;
   const payerFriend = friends.find((friend) => friend.id === payerFriendId) ?? friends[0] ?? null;
-  const payerName = selectedMode.startsWith('friend_paid') ? payerFriend?.name ?? 'Friend' : currentUserName;
+  const payerName = selectedMode.startsWith('friend_paid')
+    ? (payerFriend?.name ?? 'Friend')
+    : currentUserName;
   const totalSelected = selectedFriendIds.length + (includeCurrentUser ? 1 : 0);
-  const perPerson = Number.isFinite(amount) && amount > 0 && totalSelected > 0 ? amount / totalSelected : 0;
-  const allSelected = friends.every((friend) => selectedFriendIds.includes(friend.id)) && includeCurrentUser;
+  const perPerson =
+    Number.isFinite(amount) && amount > 0 && totalSelected > 0 ? amount / totalSelected : 0;
+  const allSelected =
+    friends.every((friend) => selectedFriendIds.includes(friend.id)) && includeCurrentUser;
   const tabs: { key: AdjustSplitTab; label: string }[] = [
     { key: 'equally', label: 'Equally' },
     { key: 'unequally', label: 'Unequally' },
@@ -3447,7 +4175,9 @@ function AdjustSplitScreen({
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
       <ExpenseTopBar title="Adjust split" saving={false} onBack={onBack} onDone={onDone} />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 110 }}>
         <View className="flex-row items-center gap-4 px-6 py-5">
           <AvatarCircle label={payerName} size={52} />
           <TText className="flex-1 text-xl" style={{ color: theme.text }}>
@@ -3605,27 +4335,43 @@ function GroupSettingsModal({
   currentUserName,
   currentUserContact,
   simplifyGroupDebts,
+  pendingInvites,
+  pendingInvitesLoading,
   onToggleSimplifyDebts,
   onClose,
   onAddPeople,
+  onInvitePerson,
+  onInviteViaLink,
+  onSharePendingInvite,
+  onRevokePendingInvite,
   onEditGroup,
   onDeleteGroup,
+  onLeaveGroup,
 }: {
   summary: SplitGroupSummary | null;
   friends: SplitFriend[];
   currentUserName: string;
   currentUserContact: string;
   simplifyGroupDebts: boolean;
+  pendingInvites: SplitGroupDirectInvite[];
+  pendingInvitesLoading: boolean;
   onToggleSimplifyDebts: () => void;
   onClose: () => void;
   onAddPeople: (summary: SplitGroupSummary) => void;
+  onInvitePerson: (summary: SplitGroupSummary) => void;
+  onInviteViaLink: (summary: SplitGroupSummary) => void;
+  onSharePendingInvite: (invite: SplitGroupDirectInvite) => void;
+  onRevokePendingInvite: (invite: SplitGroupDirectInvite) => void;
   onEditGroup: (summary: SplitGroupSummary) => void;
   onDeleteGroup: (summary: SplitGroupSummary) => void;
+  onLeaveGroup: (summary: SplitGroupSummary) => void;
 }) {
   const theme = useThemeTokens().colors;
   if (!summary) return null;
 
   const kindConfig = getGroupKindConfig(summary.metadata.kind);
+  const canManageGroup = summary.group.viewer_can_manage === true;
+  const roleLabel = summary.group.viewer_role === 'owner' ? 'Owner' : 'Shared member';
   const memberFriends = summary.memberIds
     .map((memberId) => friends.find((friend) => friend.id === memberId))
     .filter((friend): friend is SplitFriend => Boolean(friend));
@@ -3636,7 +4382,9 @@ function GroupSettingsModal({
         className="flex-1"
         edges={['top', 'left', 'right']}
         style={{ backgroundColor: theme.background }}>
-        <View className="min-h-16 flex-row items-center border-b px-5" style={{ borderColor: theme.border }}>
+        <View
+          className="min-h-16 flex-row items-center border-b px-5"
+          style={{ borderColor: theme.border }}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close group settings"
@@ -3644,42 +4392,59 @@ function GroupSettingsModal({
             className="h-11 w-11 items-center justify-center">
             <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
           </Pressable>
-          <TText className="ml-4 flex-1 text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+          <TText
+            className="ml-4 flex-1 text-2xl"
+            style={{ color: theme.text, fontFamily: Fonts.title }}>
             Group settings
           </TText>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 44 }}>
-          <View className="flex-row items-center gap-5 border-b px-6 py-4" style={{ borderColor: theme.border }}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 44 }}>
+          <View
+            className="flex-row items-center gap-5 border-b px-6 py-4"
+            style={{ borderColor: theme.border }}>
             <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
             <View className="flex-1">
               <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
                 {summary.group.name}
               </TText>
               <TText className="mt-1 text-base text-black/55 dark:text-white/55">
-                {kindConfig.label}
+                {kindConfig.label} • {roleLabel}
               </TText>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Edit group"
-              onPress={() => onEditGroup(summary)}
-              className="h-11 w-11 items-center justify-center">
-              <MaterialCommunityIcons name="pencil-outline" size={25} color={theme.text} />
-            </Pressable>
+            {canManageGroup ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Edit group"
+                onPress={() => onEditGroup(summary)}
+                className="h-11 w-11 items-center justify-center">
+                <MaterialCommunityIcons name="pencil-outline" size={25} color={theme.text} />
+              </Pressable>
+            ) : null}
           </View>
 
           <SettingsSectionTitle label="Group members" />
-          <SettingsActionRow
-            icon="account-plus-outline"
-            label="Add people to group"
-            onPress={() => onAddPeople(summary)}
-          />
-          <SettingsActionRow
-            icon="link-variant"
-            label="Invite via link"
-            onPress={() => Alert.alert('Invite via link', 'Group invite links are not available yet.')}
-          />
+          {canManageGroup ? (
+            <>
+              <SettingsActionRow
+                icon="account-plus-outline"
+                label="Add existing friend"
+                onPress={() => onAddPeople(summary)}
+              />
+              <SettingsActionRow
+                icon="email-plus-outline"
+                label="Invite by email or phone"
+                onPress={() => onInvitePerson(summary)}
+              />
+              <SettingsActionRow
+                icon="link-variant"
+                label="Invite via link"
+                onPress={() => onInviteViaLink(summary)}
+              />
+            </>
+          ) : null}
           <SettingsMemberRow label={`${currentUserName} (you)`} subtitle={currentUserContact} />
           {memberFriends.map((friend) => (
             <SettingsMemberRow
@@ -3689,6 +4454,26 @@ function GroupSettingsModal({
             />
           ))}
 
+          {canManageGroup && (pendingInvitesLoading || pendingInvites.length > 0) ? (
+            <>
+              <SettingsSectionTitle label="Pending invites" />
+              {pendingInvitesLoading ? (
+                <View className="px-6 py-4">
+                  <ActivityIndicator color={theme.accent} />
+                </View>
+              ) : (
+                pendingInvites.map((invite) => (
+                  <PendingInviteRow
+                    key={invite.id}
+                    invite={invite}
+                    onShare={() => onSharePendingInvite(invite)}
+                    onRevoke={() => onRevokePendingInvite(invite)}
+                  />
+                ))
+              )}
+            </>
+          ) : null}
+
           <SettingsSectionTitle label="Advanced settings" />
           <View className="flex-row items-start gap-5 px-6 py-4">
             <MaterialCommunityIcons name="call-split" size={27} color={theme.text} />
@@ -3697,7 +4482,8 @@ function GroupSettingsModal({
                 Simplify group debts
               </TText>
               <TText className="mt-3 text-base leading-6 text-black/55 dark:text-white/55">
-                Automatically combines debts to reduce the total number of repayments between group members.{' '}
+                Automatically combines debts to reduce the total number of repayments between group
+                members.{' '}
                 <TText style={{ color: theme.accent, fontFamily: Fonts.title }}>Learn more</TText>
               </TText>
             </View>
@@ -3720,22 +4506,27 @@ function GroupSettingsModal({
                 Paid by you and split equally
               </TText>
               <TText className="mt-7 text-base leading-6 text-black/50 dark:text-white/50">
-                New expenses you add to this group will default to this setting, which is personal, not group-wide.
+                New expenses you add to this group will default to this setting, which is personal,
+                not group-wide.
               </TText>
             </View>
           </View>
-          <SettingsActionRow
-            icon="exit-to-app"
-            label="Leave group"
-            destructive
-            onPress={() => Alert.alert('Leave group', 'Leaving groups is not available yet.')}
-          />
-          <SettingsActionRow
-            icon="trash-can-outline"
-            label="Delete group"
-            destructive
-            onPress={() => onDeleteGroup(summary)}
-          />
+          {!canManageGroup ? (
+            <SettingsActionRow
+              icon="exit-to-app"
+              label="Leave group"
+              destructive
+              onPress={() => onLeaveGroup(summary)}
+            />
+          ) : null}
+          {canManageGroup ? (
+            <SettingsActionRow
+              icon="trash-can-outline"
+              label="Delete group"
+              destructive
+              onPress={() => onDeleteGroup(summary)}
+            />
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -3762,7 +4553,8 @@ function AvatarCircle({
         borderColor: borderColor ?? theme.background,
         borderWidth: borderColor ? 2 : 0,
       }}>
-      <TText style={{ color: theme.accent, fontFamily: Fonts.title, fontSize: Math.max(13, size / 3) }}>
+      <TText
+        style={{ color: theme.accent, fontFamily: Fonts.title, fontSize: Math.max(13, size / 3) }}>
         {getInitials(label)}
       </TText>
     </View>
@@ -3771,7 +4563,9 @@ function AvatarCircle({
 
 function SettingsSectionTitle({ label }: { label: string }) {
   return (
-    <TText className="px-6 pb-3 pt-6 text-base text-black/70 dark:text-white/70" style={{ fontFamily: Fonts.title }}>
+    <TText
+      className="px-6 pb-3 pt-6 text-base text-black/70 dark:text-white/70"
+      style={{ fontFamily: Fonts.title }}>
       {label}
     </TText>
   );
@@ -3802,6 +4596,61 @@ function SettingsActionRow({
         {label}
       </TText>
     </Pressable>
+  );
+}
+
+function PendingInviteRow({
+  invite,
+  onShare,
+  onRevoke,
+}: {
+  invite: SplitGroupDirectInvite;
+  onShare: () => void;
+  onRevoke: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+  const label = invite.target_email || invite.target_phone || 'Invite';
+  const subtitle = [
+    invite.matched_user ? 'Finnri user notified' : 'Share link sent manually',
+    invite.status,
+  ]
+    .filter(Boolean)
+    .join(' • ');
+  return (
+    <View className="min-h-[72px] flex-row items-center gap-4 px-6 py-3">
+      <View
+        className="h-10 w-10 items-center justify-center rounded-full"
+        style={{ backgroundColor: theme.secondary }}>
+        <MaterialCommunityIcons name="email-outline" size={21} color={theme.accent} />
+      </View>
+      <View className="flex-1">
+        <TText
+          className="text-base"
+          numberOfLines={1}
+          style={{ color: theme.text, fontFamily: Fonts.title }}>
+          {label}
+        </TText>
+        <TText className="mt-1 text-xs text-black/50 dark:text-white/50" numberOfLines={1}>
+          {subtitle}
+        </TText>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Share invite"
+        onPress={onShare}
+        className="h-10 w-10 items-center justify-center rounded-full"
+        style={{ backgroundColor: theme.card }}>
+        <MaterialCommunityIcons name="share-variant-outline" size={21} color={theme.text} />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Revoke invite"
+        onPress={onRevoke}
+        className="h-10 w-10 items-center justify-center rounded-full"
+        style={{ backgroundColor: theme.card }}>
+        <MaterialCommunityIcons name="trash-can-outline" size={21} color="#EF5B5B" />
+      </Pressable>
+    </View>
   );
 }
 

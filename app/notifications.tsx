@@ -42,6 +42,14 @@ const formatNotificationTime = (value: string) => {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 };
 
+const splitInviteTokenFromActionURL = (actionURL?: string) => {
+  if (!actionURL) return null;
+  const trimmed = actionURL.trim();
+  const path = trimmed.startsWith('ezmoney://') ? trimmed.replace(/^ezmoney:\/\//, '/') : trimmed;
+  const match = path.match(/^\/invite\/split\/([^/?#]+)$/);
+  return match?.[1] ?? null;
+};
+
 export default function NotificationsScreen() {
   const router = useRouter();
   const { token } = useAuthStore();
@@ -102,6 +110,18 @@ export default function NotificationsScreen() {
     const entryMatch = notification.action_url?.match(/^\/entry\/(\d+)$/);
     if (entryMatch) {
       router.push({ pathname: '/entry/[id]', params: { id: entryMatch[1] } });
+      return;
+    }
+
+    const splitGroupMatch = notification.action_url?.match(/^\/split\/groups\/(\d+)$/);
+    if (splitGroupMatch) {
+      router.push('/(tabs)/split');
+      return;
+    }
+
+    const splitInviteToken = splitInviteTokenFromActionURL(notification.action_url);
+    if (splitInviteToken) {
+      router.push({ pathname: '/invite/split/[token]', params: { token: splitInviteToken } });
     }
   };
 

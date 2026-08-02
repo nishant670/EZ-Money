@@ -39,8 +39,48 @@ export type SplitGroup = {
   name: string;
   archived: boolean;
   members?: SplitGroupMember[];
+  viewer_role?: 'owner' | 'member';
+  viewer_can_add_expense?: boolean;
+  viewer_can_manage?: boolean;
   created_at?: string;
   updated_at?: string;
+};
+
+export type SplitGroupInvite = {
+  token: string;
+  url: string;
+  deep_link: string;
+  group: SplitGroup;
+  expires_at?: string | null;
+};
+
+export type SplitGroupDirectInvite = {
+  id: number;
+  target_email: string;
+  target_phone: string;
+  matched_user: boolean;
+  notification_sent: boolean;
+  url: string;
+  deep_link: string;
+  message: string;
+  status: string;
+  group: SplitGroup;
+  created_at?: string;
+};
+
+export type SplitGroupInviteDetails = {
+  token: string;
+  group: SplitGroup;
+  owner_name: string;
+  member_count: number;
+  status: string;
+  expires_at?: string | null;
+};
+
+export type SplitGroupInviteAcceptResponse = {
+  group: SplitGroup;
+  friend: SplitFriend;
+  member: SplitGroupMember;
 };
 
 export type SplitBill = {
@@ -55,6 +95,8 @@ export type SplitBill = {
   date: string;
   notes?: string;
   participants: SplitParticipant[];
+  viewer_can_edit?: boolean;
+  viewer_can_delete?: boolean;
   created_at?: string;
   updated_at?: string;
 };
@@ -300,6 +342,94 @@ export const updateSplitGroup = async (
   return response.json();
 };
 
+export const createSplitGroupInviteLink = async (
+  token: string,
+  groupId: number
+): Promise<SplitGroupInvite> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}/invite-link`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to create this group invite link right now.');
+  }
+  return response.json();
+};
+
+export const createSplitGroupDirectInvite = async (
+  token: string,
+  groupId: number,
+  payload: { email?: string; phone?: string }
+): Promise<SplitGroupDirectInvite> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}/invites`, {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to invite this friend right now.');
+  }
+  return response.json();
+};
+
+export const fetchSplitGroupDirectInvites = async (
+  token: string,
+  groupId: number
+): Promise<SplitGroupDirectInvite[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}/invites`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load pending invites right now.');
+  }
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error('The pending invites response was invalid.');
+  }
+  return payload as SplitGroupDirectInvite[];
+};
+
+export const revokeSplitGroupDirectInvite = async (
+  token: string,
+  groupId: number,
+  inviteId: number
+): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}/invites/${inviteId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to revoke this invite right now.');
+  }
+};
+
+export const fetchSplitGroupInvite = async (
+  token: string,
+  inviteToken: string
+): Promise<SplitGroupInviteDetails> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/invites/${inviteToken}`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to load this split group invite right now.');
+  }
+  return response.json();
+};
+
+export const acceptSplitGroupInvite = async (
+  token: string,
+  inviteToken: string
+): Promise<SplitGroupInviteAcceptResponse> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/invites/${inviteToken}/accept`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to join this split group right now.');
+  }
+  return response.json();
+};
+
 export const archiveSplitGroup = async (token: string, groupId: number): Promise<void> => {
   const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}`, {
     method: 'DELETE',
@@ -307,6 +437,16 @@ export const archiveSplitGroup = async (token: string, groupId: number): Promise
   });
   if (!response.ok) {
     throw await readSplitError(response, 'Unable to delete this split group right now.');
+  }
+};
+
+export const leaveSplitGroup = async (token: string, groupId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}/leave`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to leave this split group right now.');
   }
 };
 
