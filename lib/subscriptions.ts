@@ -1,7 +1,14 @@
 import { API_BASE_URL } from './transactions';
 
 export type SubscriptionStatus = 'active' | 'paused' | 'cancelled';
-export type BillingInterval = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
+export type BillingInterval =
+  | 'daily'
+  | 'business_daily'
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'yearly';
 
 export type Subscription = {
   id: number;
@@ -145,7 +152,9 @@ export const markSubscriptionPaid = async (
     body: JSON.stringify({ paid_date: paidDate }),
   });
   if (!response.ok) {
-    throw new Error(await readSubscriptionError(response, 'Unable to mark this subscription paid.'));
+    throw new Error(
+      await readSubscriptionError(response, 'Unable to mark this subscription paid.')
+    );
   }
   return (await response.json()) as Subscription;
 };

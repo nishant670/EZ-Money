@@ -6,6 +6,7 @@ import {
   type AiReviewMetadata,
 } from '@/components/transactions/TransactionFormModal';
 import type { Account } from '@/lib/accounts';
+import { formatDateLabel } from '@/lib/transactions';
 
 const cashAccount: Account = {
   id: 1,
@@ -151,6 +152,28 @@ describe('TransactionFormModal', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it('falls back blank category and date without blocking save', async () => {
+    const { findByTestId, onSave } = await renderModal({
+      mode: 'audio',
+      aiReview: { missingFields: ['category', 'date'] },
+      initialData: {
+        ...completeInitialData,
+        category: '',
+        date: '',
+      },
+    });
+
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        category: 'Misc',
+        date: formatDateLabel(new Date()),
+      })
+    );
+  });
+
   it('disables repeat submit while save is pending', async () => {
     let resolveSave: () => void = () => undefined;
     const pendingSave = new Promise<void>((resolve) => {
@@ -171,5 +194,26 @@ describe('TransactionFormModal', () => {
       resolveSave();
       await firstPress;
     });
+  });
+
+  it('labels subscription date and reminder controls clearly', async () => {
+    const { findByTestId, findByText } = await renderModal({
+      mode: 'audio',
+      initialData: {
+        ...completeInitialData,
+        tag: 'Subscription',
+        subscriptionEnabled: true,
+        subscriptionName: 'INDmoney',
+        subscriptionAmount: '100',
+        subscriptionBillingInterval: 'daily',
+        subscriptionNextDueDate: '2026-07-12',
+        subscriptionReminderDays: '3',
+      },
+    });
+
+    expect(await findByTestId('subscription-next-payment-picker')).toBeTruthy();
+    expect(await findByText('Next payment date')).toBeTruthy();
+    expect(await findByText('Remind before')).toBeTruthy();
+    expect(await findByText('days')).toBeTruthy();
   });
 });

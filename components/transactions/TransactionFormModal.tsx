@@ -13,13 +13,11 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, {
-  DateTimePickerAndroid,
-  type DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import type { Account } from '@/lib/accounts';
@@ -32,6 +30,7 @@ import { formatDisplayTime } from '@/lib/datetime';
 import { buildParticipantsForGroup } from '@/lib/split-draft';
 import type { SplitFriend, SplitGroup } from '@/lib/splits';
 import type { BillingInterval } from '@/lib/subscriptions';
+import { inferNextSubscriptionDate } from '@/lib/subscription-schedule';
 import { formatDateLabel, parseDateLabel } from '@/lib/transactions';
 
 export type SplitParticipantForm = {
@@ -135,6 +134,7 @@ const fieldLabels: Record<keyof EntryForm, string> = {
 const modeOptions = ['Cash', 'UPI', 'Credit Card', 'Wallets'];
 const subscriptionIntervalOptions: BillingInterval[] = [
   'daily',
+  'business_daily',
   'weekly',
   'biweekly',
   'monthly',
@@ -143,6 +143,7 @@ const subscriptionIntervalOptions: BillingInterval[] = [
 ];
 const categoryOptions = [
   'Food & Drinks',
+  'Food',
   'Travel',
   'Shopping',
   'Bills',
@@ -150,6 +151,7 @@ const categoryOptions = [
   'Family/Gifts',
   'Misc',
 ];
+const defaultFallbackCategory = 'Misc';
 const tagOptions = ['Investment', 'Lending', 'EMI', 'Subscription', 'General'];
 type SplitShareMode = 'amount' | 'percentage';
 
@@ -179,6 +181,33 @@ const formatFieldName = (field: string) => {
   const normalized = field === 'account_hint' ? 'account' : field;
   return normalized.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
+
+const normalizeCategoryValue = (category?: string | null) => {
+  const trimmed = category?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : defaultFallbackCategory;
+};
+
+const normalizeDateValue = (date?: string | null) => {
+  const trimmed = date?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : formatDateLabel(new Date());
+};
+
+const mergeCategoryOptions = (category: string) => {
+  const normalized = normalizeCategoryValue(category);
+  return categoryOptions.some((option) => option.toLowerCase() === normalized.toLowerCase())
+    ? categoryOptions
+    : [...categoryOptions, normalized];
+};
+
+const formatApiDate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatSubscriptionInterval = (interval: BillingInterval) =>
+  interval === 'business_daily' ? 'Market days' : interval;
 
 export function TransactionFormModal({
   visible,
@@ -273,6 +302,7 @@ export function TransactionFormModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [splitShareMode, setSplitShareMode] = useState<SplitShareMode>('amount');
   const [isDiscardDialogVisible, setIsDiscardDialogVisible] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
 
   useEffect(() => {
     if (visible) onDraftChange?.(form);
@@ -280,6 +310,8 @@ export function TransactionFormModal({
 
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [pendingDate, setPendingDate] = useState<Date>(parseDateLabel(form.date) ?? new Date());
+  const [isSubscriptionDatePickerVisible, setIsSubscriptionDatePickerVisible] = useState(false);
+  const [pendingSubscriptionDate, setPendingSubscriptionDate] = useState<Date>(new Date());
   const [isModePickerVisible, setIsModePickerVisible] = useState(false);
   const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
   const [isAccountPickerVisible, setIsAccountPickerVisible] = useState(false);
@@ -317,6 +349,11 @@ export function TransactionFormModal({
       aiReview?.clarifications
   );
   const categoryNeedsReview = reviewFields.includes('category');
+  const displayedCategory = normalizeCategoryValue(form.category);
+  const selectableCategoryOptions = useMemo(
+    () => mergeCategoryOptions(form.category),
+    [form.category]
+  );
 
   useEffect(() => {
     if (visible) {
@@ -419,23 +456,25 @@ export function TransactionFormModal({
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: parseDateLabel(form.date) ?? new Date(),
-        onChange: (event: DateTimePickerEvent, selectedDate?: Date) => {
-          if (event.type === 'set' && selectedDate) {
+        onValueChange: (_event, selectedDate) => {
+          if (selectedDate) {
             const dateStr = formatDateLabel(selectedDate);
             setForm((prev) => ({ ...prev, date: dateStr }));
             DateTimePickerAndroid.open({
               value: new Date(),
               mode: 'time',
               is24Hour: false,
-              onChange: (event: DateTimePickerEvent, selectedTime?: Date) => {
-                if (event.type === 'set' && selectedTime) {
+              onValueChange: (_event, selectedTime) => {
+                if (selectedTime) {
                   const timeStr = formatDisplayTime(selectedTime);
                   setForm((prev) => ({ ...prev, time: timeStr }));
                 }
               },
+              onDismiss: () => undefined,
             });
           }
         },
+        onDismiss: () => undefined,
         mode: 'date',
       });
     } else {
@@ -453,9 +492,37 @@ export function TransactionFormModal({
     setIsDatePickerVisible(false);
   };
 
+  const handleOpenSubscriptionDatePicker = () => {
+    const selectedDate = parseDateLabel(form.subscriptionNextDueDate) ?? new Date();
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: selectedDate,
+        mode: 'date',
+        minimumDate: new Date(),
+        onValueChange: (_event, date) => {
+          if (date) {
+            setForm((prev) => ({ ...prev, subscriptionNextDueDate: formatApiDate(date) }));
+          }
+        },
+        onDismiss: () => undefined,
+      });
+      return;
+    }
+    setPendingSubscriptionDate(selectedDate);
+    setIsSubscriptionDatePickerVisible(true);
+  };
+
   const handleConfirmEntry = async () => {
+    const normalizedForm = {
+      ...form,
+      category: normalizeCategoryValue(form.category),
+      date: normalizeDateValue(form.date),
+      subscriptionCategory: form.subscriptionEnabled
+        ? normalizeCategoryValue(form.subscriptionCategory || form.category)
+        : form.subscriptionCategory,
+    };
     const missingField = requiredFields.find((field) => {
-      const value = form[field];
+      const value = normalizedForm[field];
       return typeof value === 'string' ? value.trim().length === 0 : !value;
     });
 
@@ -532,7 +599,7 @@ export function TransactionFormModal({
     setFormError(null);
     setIsSaving(true);
     try {
-      await onSave(form);
+      await onSave(normalizedForm);
       onClose();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Something went wrong.');
@@ -1405,6 +1472,9 @@ export function TransactionFormModal({
                                       setForm((p) => ({
                                         ...p,
                                         subscriptionBillingInterval: interval,
+                                        subscriptionNextDueDate:
+                                          p.subscriptionNextDueDate ||
+                                          inferNextSubscriptionDate(p.date, interval),
                                       }))
                                     }
                                     className="rounded-full border px-3 py-2"
@@ -1426,7 +1496,7 @@ export function TransactionFormModal({
                                             ? accent
                                             : theme.text,
                                       }}>
-                                      {interval}
+                                      {formatSubscriptionInterval(interval)}
                                     </ThemedText>
                                   </Pressable>
                                 ))}
@@ -1434,30 +1504,52 @@ export function TransactionFormModal({
                             </View>
 
                             <View className="flex-row gap-3">
-                              <TextInput
-                                value={form.subscriptionNextDueDate}
-                                onChangeText={(text) =>
-                                  setForm((p) => ({ ...p, subscriptionNextDueDate: text }))
-                                }
-                                placeholder="Next payment: YYYY-MM-DD"
-                                placeholderTextColor="#9CA3AF"
-                                className="flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
-                                style={{ color: theme.text }}
-                              />
-                              <TextInput
-                                value={form.subscriptionReminderDays}
-                                onChangeText={(text) =>
-                                  setForm((p) => ({
-                                    ...p,
-                                    subscriptionReminderDays: text.replace(/[^0-9]/g, ''),
-                                  }))
-                                }
-                                keyboardType="number-pad"
-                                placeholder="Reminder"
-                                placeholderTextColor="#9CA3AF"
-                                className="w-28 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
-                                style={{ color: theme.text }}
-                              />
+                              <Pressable
+                                testID="subscription-next-payment-picker"
+                                accessibilityRole="button"
+                                accessibilityLabel="Choose next payment date"
+                                onPress={handleOpenSubscriptionDatePicker}
+                                className="flex-1 flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                                <View className="flex-1">
+                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                    Next payment date
+                                  </ThemedText>
+                                  <ThemedText
+                                    className="mt-1 text-sm font-bold"
+                                    style={{
+                                      color: form.subscriptionNextDueDate
+                                        ? theme.text
+                                        : detailInputPlaceholderColor,
+                                    }}>
+                                    {form.subscriptionNextDueDate || 'Choose date'}
+                                  </ThemedText>
+                                </View>
+                                <MaterialCommunityIcons
+                                  name="calendar-month-outline"
+                                  size={20}
+                                  color={accent}
+                                />
+                              </Pressable>
+                              <View className="w-28 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
+                                <ThemedText className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                                  Remind before
+                                </ThemedText>
+                                <TextInput
+                                  value={form.subscriptionReminderDays}
+                                  onChangeText={(text) =>
+                                    setForm((p) => ({
+                                      ...p,
+                                      subscriptionReminderDays: text.replace(/[^0-9]/g, ''),
+                                    }))
+                                  }
+                                  keyboardType="number-pad"
+                                  placeholder="Days"
+                                  placeholderTextColor="#9CA3AF"
+                                  className="p-0 pt-1 text-sm font-bold"
+                                  style={{ color: theme.text }}
+                                />
+                                <ThemedText className="text-[10px] text-gray-400">days</ThemedText>
+                              </View>
                             </View>
 
                             <Pressable
@@ -1515,6 +1607,7 @@ export function TransactionFormModal({
                       </View>
                     )}
                     <Pressable
+                      testID="entry-category-picker"
                       onPress={() => setIsCategoryPickerVisible(true)}
                       className="w-full rounded-[24px] border p-3 flex-row items-center justify-between"
                       style={{
@@ -1543,7 +1636,7 @@ export function TransactionFormModal({
                             Category
                           </ThemedText>
                           <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
-                            {form.category}
+                            {displayedCategory}
                           </ThemedText>
                         </View>
                       </View>
@@ -1717,7 +1810,8 @@ export function TransactionFormModal({
                 value={pendingDate}
                 mode="datetime"
                 display="spinner"
-                onChange={(_e, d) => d && setPendingDate(d)}
+                onValueChange={(_e, d) => d && setPendingDate(d)}
+                onDismiss={() => setIsDatePickerVisible(false)}
                 style={{ width: '100%' }}
               />
               <View className="mt-4 flex-row gap-3">
@@ -1731,6 +1825,48 @@ export function TransactionFormModal({
                   style={{ backgroundColor: accent }}
                   onPress={handleConfirmDatePicker}>
                   <ThemedText className="text-white font-bold">Set Date</ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          </AnimatedBottomSheet>
+        )}
+
+        {Platform.OS === 'ios' && isSubscriptionDatePickerVisible && (
+          <AnimatedBottomSheet
+            visible={isSubscriptionDatePickerVisible}
+            onClose={() => setIsSubscriptionDatePickerVisible(false)}
+            backdropOpacity={0.3}>
+            <View
+              className="rounded-t-3xl px-4 pb-6 pt-4"
+              style={{ backgroundColor: theme.background }}>
+              <ThemedText className="text-center text-sm font-bold">Next payment date</ThemedText>
+              <DateTimePicker
+                value={pendingSubscriptionDate}
+                mode="date"
+                display="spinner"
+                minimumDate={new Date()}
+                onValueChange={(_event, date) => date && setPendingSubscriptionDate(date)}
+                onDismiss={() => setIsSubscriptionDatePickerVisible(false)}
+                style={{ width: '100%' }}
+              />
+              <View className="mt-4 flex-row gap-3">
+                <Pressable
+                  className="flex-1 items-center rounded-2xl border py-3"
+                  style={{ borderColor: theme.border }}
+                  onPress={() => setIsSubscriptionDatePickerVisible(false)}>
+                  <ThemedText>Cancel</ThemedText>
+                </Pressable>
+                <Pressable
+                  className="flex-1 items-center rounded-2xl py-3"
+                  style={{ backgroundColor: accent }}
+                  onPress={() => {
+                    setForm((prev) => ({
+                      ...prev,
+                      subscriptionNextDueDate: formatApiDate(pendingSubscriptionDate),
+                    }));
+                    setIsSubscriptionDatePickerVisible(false);
+                  }}>
+                  <ThemedText className="font-bold text-white">Set date</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -1791,9 +1927,9 @@ export function TransactionFormModal({
             <ThemedText className="text-center text-base font-bold mb-6">
               Select Category
             </ThemedText>
-            <ScrollView style={{ maxHeight: 400 }}>
+            <ScrollView style={{ maxHeight: 430 }}>
               <View className="flex-row flex-wrap gap-4 justify-between">
-                {categoryOptions.map((c) => (
+                {selectableCategoryOptions.map((c) => (
                   <Pressable
                     key={c}
                     onPress={() => {
@@ -1817,6 +1953,35 @@ export function TransactionFormModal({
                     </ThemedText>
                   </Pressable>
                 ))}
+              </View>
+              <View className="mt-5 rounded-3xl border p-4" style={{ borderColor: theme.border }}>
+                <ThemedText className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Custom category
+                </ThemedText>
+                <View className="flex-row gap-3">
+                  <TextInput
+                    testID="entry-custom-category-input"
+                    value={customCategory}
+                    onChangeText={setCustomCategory}
+                    placeholder="Add category"
+                    placeholderTextColor="#9CA3AF"
+                    className="flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                    style={{ color: theme.text }}
+                  />
+                  <Pressable
+                    testID="entry-add-custom-category-button"
+                    accessibilityRole="button"
+                    onPress={() => {
+                      const nextCategory = normalizeCategoryValue(customCategory);
+                      setForm((p) => ({ ...p, category: nextCategory }));
+                      setCustomCategory('');
+                      setIsCategoryPickerVisible(false);
+                    }}
+                    className="items-center justify-center rounded-2xl px-4"
+                    style={{ backgroundColor: accent }}>
+                    <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+                  </Pressable>
+                </View>
               </View>
             </ScrollView>
           </View>
@@ -1879,58 +2044,18 @@ export function TransactionFormModal({
           </View>
         </AnimatedBottomSheet>
 
-        <Modal
-          transparent
-          animationType="fade"
+        <ThemedDeleteDialog
           visible={isDiscardDialogVisible}
-          statusBarTranslucent
-          onRequestClose={() => setIsDiscardDialogVisible(false)}>
-          <View className="flex-1 items-center justify-center px-6">
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Keep editing"
-              className="absolute inset-0 bg-black/60"
-              onPress={() => setIsDiscardDialogVisible(false)}
-            />
-            <View
-              className="w-full max-w-sm items-center rounded-[32px] border p-6 shadow-2xl"
-              style={{ backgroundColor: theme.background, borderColor: theme.border }}>
-              <View
-                className="h-14 w-14 items-center justify-center rounded-full"
-                style={{ backgroundColor: colorScheme === 'dark' ? '#3A2424' : '#FFF0EC' }}>
-                <MaterialCommunityIcons name="delete-outline" size={27} color="#EF5B5B" />
-              </View>
-              <ThemedText
-                className="mt-4 text-center text-xl font-black"
-                style={{ color: theme.text }}>
-                Discard this transaction?
-              </ThemedText>
-              <ThemedText className="mt-2 text-center text-sm leading-5 text-gray-500">
-                Your transcribed draft and any changes you made will be lost.
-              </ThemedText>
-
-              <View className="mt-6 w-full gap-3">
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setIsDiscardDialogVisible(false)}
-                  className="w-full items-center justify-center rounded-2xl py-4"
-                  style={{ backgroundColor: accent }}>
-                  <ThemedText className="font-black text-white">Keep editing</ThemedText>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    setIsDiscardDialogVisible(false);
-                    onClose();
-                  }}
-                  className="w-full items-center justify-center rounded-2xl border py-4"
-                  style={{ borderColor: theme.border }}>
-                  <ThemedText className="font-black text-red-500">Discard transaction</ThemedText>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
+          title="Discard this transaction?"
+          message="Your transcribed draft and any changes you made will be lost."
+          cancelLabel="Keep editing"
+          confirmLabel="Discard transaction"
+          onCancel={() => setIsDiscardDialogVisible(false)}
+          onConfirm={() => {
+            setIsDiscardDialogVisible(false);
+            onClose();
+          }}
+        />
       </View>
     </Modal>
   );

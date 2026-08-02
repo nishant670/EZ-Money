@@ -23,7 +23,15 @@ export type ParseResponse = {
     merchant?: string | null;
     category?: string | null;
     amount?: number | null;
-    billing_interval?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly' | null;
+    billing_interval?:
+      | 'daily'
+      | 'business_daily'
+      | 'weekly'
+      | 'biweekly'
+      | 'monthly'
+      | 'quarterly'
+      | 'yearly'
+      | null;
     next_due_date?: string | null;
     last_charged_date?: string | null;
     reminder_days?: number | null;
@@ -78,9 +86,12 @@ const parseErrorMessages: Record<string, string> = {
   daily_ai_limit_reached: 'You have reached today’s Finnri AI credit limit.',
   feature_locked: 'This AI feature needs an active plan.',
   guest_not_allowed: 'Create an account to use this AI feature.',
-  non_transactional_prompt: 'Tell Finnri about an expense, income, bill, split, subscription, or payment to add.',
-  could_not_parse: 'I could not find a clear transaction in that. Try including the amount, merchant, and payment method.',
-  schema_invalid: 'I could not turn that into a clean transaction. Try again with the amount, merchant, and payment method.',
+  non_transactional_prompt:
+    'Tell Finnri about an expense, income, bill, split, subscription, or payment to add.',
+  could_not_parse:
+    'I could not find a clear transaction in that. Try including the amount, merchant, and payment method.',
+  schema_invalid:
+    'I could not turn that into a clean transaction. Try again with the amount, merchant, and payment method.',
 };
 
 export class ParseApiError extends Error {

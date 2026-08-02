@@ -72,6 +72,14 @@ export type AIUsageList = {
   total: number;
 };
 
+const normalizeCreditSummary = (credits: CreditSummary): CreditSummary => ({
+  ...credits,
+  daily_credits_remaining: Math.min(
+    Math.max(0, credits.daily_credits_remaining),
+    Math.max(0, credits.total_credits_remaining)
+  ),
+});
+
 export const fetchBillingPlans = async (): Promise<BillingPlan[]> => {
   const response = await fetch(`${API_BASE_URL}/v1/billing/plans`);
   if (!response.ok) {
@@ -88,7 +96,8 @@ export const fetchBillingStatus = async (token?: string | null): Promise<Billing
   if (!response.ok) {
     throw await readApiError(response, 'Unable to load billing status right now.');
   }
-  return response.json();
+  const status = (await response.json()) as BillingStatus;
+  return { ...status, credits: normalizeCreditSummary(status.credits) };
 };
 
 export const fetchAICredits = async (token?: string | null): Promise<CreditSummary> => {
@@ -98,7 +107,7 @@ export const fetchAICredits = async (token?: string | null): Promise<CreditSumma
   if (!response.ok) {
     throw await readApiError(response, 'Unable to load AI credits right now.');
   }
-  return response.json();
+  return normalizeCreditSummary((await response.json()) as CreditSummary);
 };
 
 export const fetchAIUsage = async (

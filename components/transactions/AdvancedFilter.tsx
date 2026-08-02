@@ -3,7 +3,7 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { Account } from '@/lib/accounts';
 import { formatApiDate, parseDateLabel } from '@/lib/transactions';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import React from 'react';
 import {
   Dimensions,
@@ -69,7 +69,7 @@ export const AdvancedFilter = ({
   const [minAmount, setMinAmount] = React.useState(currentFilters.amountRange.min);
   const [maxAmount, setMaxAmount] = React.useState(currentFilters.amountRange.max);
 
-  const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+  const onDateChange = (selectedDate?: Date) => {
     const currentDate = selectedDate || (showPicker === 'start' ? startDate : endDate);
     setShowPicker(null);
     if (showPicker === 'start') {
@@ -187,7 +187,8 @@ export const AdvancedFilter = ({
             value={showPicker === 'start' ? startDate || new Date() : endDate || new Date()}
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={onDateChange}
+            onValueChange={(_, selectedDate) => onDateChange(selectedDate)}
+            onDismiss={() => setShowPicker(null)}
           />
         )}
 
