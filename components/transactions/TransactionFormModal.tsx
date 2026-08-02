@@ -13,10 +13,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, {
-  DateTimePickerAndroid,
-  type DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
@@ -145,6 +142,7 @@ const subscriptionIntervalOptions: BillingInterval[] = [
 ];
 const categoryOptions = [
   'Food & Drinks',
+  'Food',
   'Travel',
   'Shopping',
   'Bills',
@@ -152,6 +150,7 @@ const categoryOptions = [
   'Family/Gifts',
   'Misc',
 ];
+const defaultFallbackCategory = 'Misc';
 const tagOptions = ['Investment', 'Lending', 'EMI', 'Subscription', 'General'];
 type SplitShareMode = 'amount' | 'percentage';
 
@@ -180,6 +179,23 @@ const shareFromPercent = (percent: string, totalAmount: string) => {
 const formatFieldName = (field: string) => {
   const normalized = field === 'account_hint' ? 'account' : field;
   return normalized.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+const normalizeCategoryValue = (category?: string | null) => {
+  const trimmed = category?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : defaultFallbackCategory;
+};
+
+const normalizeDateValue = (date?: string | null) => {
+  const trimmed = date?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : formatDateLabel(new Date());
+};
+
+const mergeCategoryOptions = (category: string) => {
+  const normalized = normalizeCategoryValue(category);
+  return categoryOptions.some((option) => option.toLowerCase() === normalized.toLowerCase())
+    ? categoryOptions
+    : [...categoryOptions, normalized];
 };
 
 const formatApiDate = (value: Date) => {
@@ -285,6 +301,7 @@ export function TransactionFormModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [splitShareMode, setSplitShareMode] = useState<SplitShareMode>('amount');
   const [isDiscardDialogVisible, setIsDiscardDialogVisible] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
 
   useEffect(() => {
     if (visible) onDraftChange?.(form);
@@ -331,6 +348,11 @@ export function TransactionFormModal({
       aiReview?.clarifications
   );
   const categoryNeedsReview = reviewFields.includes('category');
+  const displayedCategory = normalizeCategoryValue(form.category);
+  const selectableCategoryOptions = useMemo(
+    () => mergeCategoryOptions(form.category),
+    [form.category]
+  );
 
   useEffect(() => {
     if (visible) {
@@ -433,23 +455,25 @@ export function TransactionFormModal({
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: parseDateLabel(form.date) ?? new Date(),
-        onChange: (event: DateTimePickerEvent, selectedDate?: Date) => {
-          if (event.type === 'set' && selectedDate) {
+        onValueChange: (_event, selectedDate) => {
+          if (selectedDate) {
             const dateStr = formatDateLabel(selectedDate);
             setForm((prev) => ({ ...prev, date: dateStr }));
             DateTimePickerAndroid.open({
               value: new Date(),
               mode: 'time',
               is24Hour: false,
-              onChange: (event: DateTimePickerEvent, selectedTime?: Date) => {
-                if (event.type === 'set' && selectedTime) {
+              onValueChange: (_event, selectedTime) => {
+                if (selectedTime) {
                   const timeStr = formatDisplayTime(selectedTime);
                   setForm((prev) => ({ ...prev, time: timeStr }));
                 }
               },
+              onDismiss: () => undefined,
             });
           }
         },
+        onDismiss: () => undefined,
         mode: 'date',
       });
     } else {
@@ -488,8 +512,16 @@ export function TransactionFormModal({
   };
 
   const handleConfirmEntry = async () => {
+    const normalizedForm = {
+      ...form,
+      category: normalizeCategoryValue(form.category),
+      date: normalizeDateValue(form.date),
+      subscriptionCategory: form.subscriptionEnabled
+        ? normalizeCategoryValue(form.subscriptionCategory || form.category)
+        : form.subscriptionCategory,
+    };
     const missingField = requiredFields.find((field) => {
-      const value = form[field];
+      const value = normalizedForm[field];
       return typeof value === 'string' ? value.trim().length === 0 : !value;
     });
 
@@ -566,7 +598,7 @@ export function TransactionFormModal({
     setFormError(null);
     setIsSaving(true);
     try {
-      await onSave(form);
+      await onSave(normalizedForm);
       onClose();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Something went wrong.');
@@ -1574,6 +1606,7 @@ export function TransactionFormModal({
                       </View>
                     )}
                     <Pressable
+                      testID="entry-category-picker"
                       onPress={() => setIsCategoryPickerVisible(true)}
                       className="w-full rounded-[24px] border p-3 flex-row items-center justify-between"
                       style={{
@@ -1602,7 +1635,7 @@ export function TransactionFormModal({
                             Category
                           </ThemedText>
                           <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
-                            {form.category}
+                            {displayedCategory}
                           </ThemedText>
                         </View>
                       </View>
@@ -1776,7 +1809,8 @@ export function TransactionFormModal({
                 value={pendingDate}
                 mode="datetime"
                 display="spinner"
-                onChange={(_e, d) => d && setPendingDate(d)}
+                onValueChange={(_e, d) => d && setPendingDate(d)}
+                onDismiss={() => setIsDatePickerVisible(false)}
                 style={{ width: '100%' }}
               />
               <View className="mt-4 flex-row gap-3">
@@ -1892,9 +1926,9 @@ export function TransactionFormModal({
             <ThemedText className="text-center text-base font-bold mb-6">
               Select Category
             </ThemedText>
-            <ScrollView style={{ maxHeight: 400 }}>
+            <ScrollView style={{ maxHeight: 430 }}>
               <View className="flex-row flex-wrap gap-4 justify-between">
-                {categoryOptions.map((c) => (
+                {selectableCategoryOptions.map((c) => (
                   <Pressable
                     key={c}
                     onPress={() => {
@@ -1918,6 +1952,35 @@ export function TransactionFormModal({
                     </ThemedText>
                   </Pressable>
                 ))}
+              </View>
+              <View className="mt-5 rounded-3xl border p-4" style={{ borderColor: theme.border }}>
+                <ThemedText className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Custom category
+                </ThemedText>
+                <View className="flex-row gap-3">
+                  <TextInput
+                    testID="entry-custom-category-input"
+                    value={customCategory}
+                    onChangeText={setCustomCategory}
+                    placeholder="Add category"
+                    placeholderTextColor="#9CA3AF"
+                    className="flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold dark:bg-gray-800"
+                    style={{ color: theme.text }}
+                  />
+                  <Pressable
+                    testID="entry-add-custom-category-button"
+                    accessibilityRole="button"
+                    onPress={() => {
+                      const nextCategory = normalizeCategoryValue(customCategory);
+                      setForm((p) => ({ ...p, category: nextCategory }));
+                      setCustomCategory('');
+                      setIsCategoryPickerVisible(false);
+                    }}
+                    className="items-center justify-center rounded-2xl px-4"
+                    style={{ backgroundColor: accent }}>
+                    <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+                  </Pressable>
+                </View>
               </View>
             </ScrollView>
           </View>

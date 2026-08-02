@@ -726,7 +726,9 @@ export default function HomeScreen() {
       setForm((prev) => {
         const missing = new Set(data.missing_fields ?? []);
         const formattedDate =
-          missing.has('date') || !data.date ? '' : normalizeDateLabel(data.date, '');
+          missing.has('date') || !data.date
+            ? formatDateLabel(new Date())
+            : normalizeDateLabel(data.date, formatDateLabel(new Date()));
         const tagValue = data.tag ?? data.tags?.[0] ?? '';
         const newType = missing.has('type') ? '' : (toTitleCase(data.type) ?? '');
         const splitDraft = resolveSplitDraft(data, splitFriends, splitGroups);
@@ -747,7 +749,7 @@ export default function HomeScreen() {
           time: data.time ?? prev.time,
           type: newType,
           mode: smartSorting && !missing.has('mode') ? (data.mode ?? '') : '',
-          category: smartSorting && !missing.has('category') ? (data.category ?? '') : '',
+          category: smartSorting && !missing.has('category') ? (data.category ?? 'Misc') : 'Misc',
           merchant: data.merchant ?? '',
           notes: data.note ?? '',
           date: formattedDate,
@@ -759,7 +761,7 @@ export default function HomeScreen() {
           subscriptionEnabled: Boolean(subscriptionCandidate),
           subscriptionName: subscriptionCandidate?.name ?? data.merchant ?? data.title ?? '',
           subscriptionMerchant: subscriptionCandidate?.merchant ?? data.merchant ?? '',
-          subscriptionCategory: subscriptionCandidate?.category ?? data.category ?? '',
+          subscriptionCategory: subscriptionCandidate?.category ?? data.category ?? 'Misc',
           subscriptionAmount:
             subscriptionCandidate?.amount != null
               ? subscriptionCandidate.amount.toFixed(2)

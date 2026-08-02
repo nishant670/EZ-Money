@@ -6,6 +6,7 @@ import {
   type AiReviewMetadata,
 } from '@/components/transactions/TransactionFormModal';
 import type { Account } from '@/lib/accounts';
+import { formatDateLabel } from '@/lib/transactions';
 
 const cashAccount: Account = {
   id: 1,
@@ -149,6 +150,28 @@ describe('TransactionFormModal', () => {
 
     expect(await findByText('Please provide Transaction Title.')).toBeTruthy();
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('falls back blank category and date without blocking save', async () => {
+    const { findByTestId, onSave } = await renderModal({
+      mode: 'audio',
+      aiReview: { missingFields: ['category', 'date'] },
+      initialData: {
+        ...completeInitialData,
+        category: '',
+        date: '',
+      },
+    });
+
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        category: 'Misc',
+        date: formatDateLabel(new Date()),
+      })
+    );
   });
 
   it('disables repeat submit while save is pending', async () => {

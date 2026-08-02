@@ -1,7 +1,4 @@
-import DateTimePicker, {
-  DateTimePickerAndroid,
-  type DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -220,11 +217,12 @@ export default function SubscriptionsScreen() {
         value: currentDate,
         mode: 'date',
         minimumDate: new Date(),
-        onChange: (event: DateTimePickerEvent, selectedDate?: Date) => {
-          if (event.type === 'set' && selectedDate) {
+        onValueChange: (_event, selectedDate) => {
+          if (selectedDate) {
             setNextDueDate(dateToApiDate(selectedDate));
           }
         },
+        onDismiss: () => undefined,
       });
       return;
     }
@@ -589,9 +587,10 @@ export default function SubscriptionsScreen() {
               mode="date"
               display="spinner"
               minimumDate={new Date()}
-              onChange={(_, selectedDate) => {
+              onValueChange={(_, selectedDate) => {
                 if (selectedDate) setPendingDate(selectedDate);
               }}
+              onDismiss={() => setIsDatePickerVisible(false)}
             />
           </View>
         </View>
