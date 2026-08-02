@@ -1,7 +1,14 @@
 import { API_BASE_URL } from './transactions';
 
 export type SubscriptionStatus = 'active' | 'paused' | 'cancelled';
-export type BillingInterval = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
+export type BillingInterval =
+  | 'daily'
+  | 'business_daily'
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'yearly';
 
 export type Subscription = {
   id: number;

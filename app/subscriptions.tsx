@@ -38,6 +38,7 @@ import {
 
 const intervalOptions: { value: BillingInterval; label: string; helper: string }[] = [
   { value: 'daily', label: 'Daily', helper: 'Every day' },
+  { value: 'business_daily', label: 'Market days', helper: 'Skips weekends and market holidays' },
   { value: 'weekly', label: 'Weekly', helper: 'Every 7 days' },
   { value: 'biweekly', label: 'Biweekly', helper: 'Every 14 days' },
   { value: 'monthly', label: 'Monthly', helper: 'Every month' },

@@ -172,4 +172,25 @@ describe('TransactionFormModal', () => {
       await firstPress;
     });
   });
+
+  it('labels subscription date and reminder controls clearly', async () => {
+    const { findByTestId, findByText } = await renderModal({
+      mode: 'audio',
+      initialData: {
+        ...completeInitialData,
+        tag: 'Subscription',
+        subscriptionEnabled: true,
+        subscriptionName: 'INDmoney',
+        subscriptionAmount: '100',
+        subscriptionBillingInterval: 'daily',
+        subscriptionNextDueDate: '2026-07-12',
+        subscriptionReminderDays: '3',
+      },
+    });
+
+    expect(await findByTestId('subscription-next-payment-picker')).toBeTruthy();
+    expect(await findByText('Next payment date')).toBeTruthy();
+    expect(await findByText('Remind before')).toBeTruthy();
+    expect(await findByText('days')).toBeTruthy();
+  });
 });

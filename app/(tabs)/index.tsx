@@ -67,6 +67,7 @@ import {
 } from '@/lib/splits';
 import { resolveSplitDraft } from '@/lib/split-draft';
 import { createSubscription, type BillingInterval } from '@/lib/subscriptions';
+import { inferNextSubscriptionDate } from '@/lib/subscription-schedule';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
 import {
@@ -85,6 +86,7 @@ const formatCompactCurrency = (amount: number) => {
 
 const billingIntervals: BillingInterval[] = [
   'daily',
+  'business_daily',
   'weekly',
   'biweekly',
   'monthly',
@@ -100,40 +102,6 @@ type CreditActionState = {
   message: string;
   actionLabel: string;
   action: 'upgrade' | 'login';
-};
-
-const addBillingInterval = (date: Date, interval: BillingInterval) => {
-  const next = new Date(date);
-  switch (interval) {
-    case 'daily':
-      next.setDate(next.getDate() + 1);
-      break;
-    case 'weekly':
-      next.setDate(next.getDate() + 7);
-      break;
-    case 'biweekly':
-      next.setDate(next.getDate() + 14);
-      break;
-    case 'quarterly':
-      next.setMonth(next.getMonth() + 3);
-      break;
-    case 'yearly':
-      next.setFullYear(next.getFullYear() + 1);
-      break;
-    default:
-      next.setMonth(next.getMonth() + 1);
-      break;
-  }
-  return formatApiDate(next);
-};
-
-const inferNextSubscriptionDate = (
-  paidDate: string | null | undefined,
-  interval: BillingInterval | ''
-) => {
-  if (!paidDate || !interval) return '';
-  const parsed = parseDateLabel(paidDate);
-  return parsed ? addBillingInterval(parsed, interval) : '';
 };
 
 export default function HomeScreen() {
@@ -766,7 +734,8 @@ export default function HomeScreen() {
         const subscriptionInterval = isBillingInterval(subscriptionCandidate?.billing_interval)
           ? subscriptionCandidate.billing_interval
           : '';
-        const subscriptionPaidDate = subscriptionCandidate?.last_charged_date ?? data.date;
+        const subscriptionPaidDate =
+          subscriptionCandidate?.last_charged_date ?? data.date ?? formatApiDate(new Date());
         const inferredNextDueDate =
           subscriptionCandidate?.next_due_date ??
           inferNextSubscriptionDate(subscriptionPaidDate, subscriptionInterval);

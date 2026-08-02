@@ -23,7 +23,15 @@ export type ParseResponse = {
     merchant?: string | null;
     category?: string | null;
     amount?: number | null;
-    billing_interval?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly' | null;
+    billing_interval?:
+      | 'daily'
+      | 'business_daily'
+      | 'weekly'
+      | 'biweekly'
+      | 'monthly'
+      | 'quarterly'
+      | 'yearly'
+      | null;
     next_due_date?: string | null;
     last_charged_date?: string | null;
     reminder_days?: number | null;
