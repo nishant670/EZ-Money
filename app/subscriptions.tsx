@@ -21,6 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { fetchAccounts, getAccountsForPaymentMode, type Account } from '@/lib/accounts';
 import {
   BillingInterval,
   Subscription,
@@ -111,10 +112,12 @@ export default function SubscriptionsScreen() {
   const muted = `${colors.text}99`;
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Subscription | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('Streaming');
   const [merchant, setMerchant] = useState('');
   const [category, setCategory] = useState('Entertainment');
@@ -124,9 +127,14 @@ export default function SubscriptionsScreen() {
   const [status, setStatus] = useState<SubscriptionStatus>('active');
   const [reminderDays, setReminderDays] = useState(3);
   const [cancelBeforeDue, setCancelBeforeDue] = useState(false);
+  const [cancelOnDate, setCancelOnDate] = useState('');
+  const [autopay, setAutopay] = useState(false);
+  const [paymentMode, setPaymentMode] = useState('Cash');
+  const [accountID, setAccountID] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [pendingDate, setPendingDate] = useState(apiDateToLocalDate(nextDueDate));
+  const [datePickerTarget, setDatePickerTarget] = useState<'due' | 'cancel'>('due');
 
   const dueCount = useMemo(
     () =>
@@ -174,6 +182,10 @@ export default function SubscriptionsScreen() {
     setStatus('active');
     setReminderDays(3);
     setCancelBeforeDue(false);
+    setCancelOnDate('');
+    setAutopay(false);
+    setPaymentMode('Cash');
+    setAccountID(null);
     setNotes('');
     setError(null);
   };
@@ -188,7 +200,10 @@ export default function SubscriptionsScreen() {
     setError(null);
     try {
       await syncSubscriptionReminders(token);
-      setSubscriptions(await fetchSubscriptions(token));
+      const [subscriptionItems, accountItems] = await Promise.all([fetchSubscriptions(token), fetchAccounts(token)]);
+      setSubscriptions(subscriptionItems);
+      if (subscriptionItems.length === 0) setShowForm(true);
+      setAccounts(accountItems);
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : 'Unable to load subscriptions right now.'
@@ -215,8 +230,18 @@ export default function SubscriptionsScreen() {
     setStatus(subscription.status);
     setReminderDays(subscription.reminder_days);
     setCancelBeforeDue(!!subscription.cancel_before_due);
+    setCancelOnDate(subscription.cancel_on_date ?? '');
+    setAutopay(subscription.autopay);
+    setPaymentMode(subscription.payment_mode || 'Cash');
+    setAccountID(subscription.account_id ?? null);
     setNotes(subscription.notes ?? '');
     setError(null);
+    setShowForm(true);
+  };
+
+  const openCreateForm = () => {
+    resetForm();
+    setShowForm(true);
   };
 
   const openDueDatePicker = () => {
@@ -235,6 +260,18 @@ export default function SubscriptionsScreen() {
       });
       return;
     }
+    setDatePickerTarget('due');
+    setPendingDate(currentDate);
+    setIsDatePickerVisible(true);
+  };
+
+  const openCancellationDatePicker = () => {
+    const currentDate = apiDateToLocalDate(cancelOnDate || todayISO());
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({ value: currentDate, mode: 'date', minimumDate: new Date(), onValueChange: (_event, selectedDate) => selectedDate && setCancelOnDate(dateToApiDate(selectedDate)), onDismiss: () => undefined });
+      return;
+    }
+    setDatePickerTarget('cancel');
     setPendingDate(currentDate);
     setIsDatePickerVisible(true);
   };
@@ -250,6 +287,9 @@ export default function SubscriptionsScreen() {
     if (!Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 30) {
       validation.push('Reminder must be between 0 and 30 days.');
     }
+    if (cancelBeforeDue && !cancelOnDate.match(/^\d{4}-\d{2}-\d{2}$/)) validation.push('Choose a cancellation reminder date.');
+    if ((interval === 'daily' || interval === 'business_daily') && !autopay) validation.push('Daily schedules require Autopay.');
+    if (autopay && !accountID) validation.push('Select the account used for Autopay.');
     if (validation.length > 0) {
       setError(validation.join('\n'));
       return;
@@ -268,6 +308,12 @@ export default function SubscriptionsScreen() {
         status,
         reminder_days: reminderDays,
         cancel_before_due: cancelBeforeDue,
+        cancel_on_date: cancelBeforeDue ? cancelOnDate : '',
+        autopay,
+        payment_mode: paymentMode,
+        transaction_tag: editing?.transaction_tag ?? 'Subscription',
+        purpose_type: editing?.purpose_type ?? 'normal_spend',
+        account_id: accountID,
         notes: notes.trim(),
       };
       if (editing) {
@@ -277,6 +323,7 @@ export default function SubscriptionsScreen() {
       }
       resetForm();
       await load();
+      setShowForm(false);
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : 'Unable to save this subscription.'
@@ -358,26 +405,33 @@ export default function SubscriptionsScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <AppHeader
           title="Subscriptions"
-          subtitle={`${dueCount} need review`}
-          onBack={() => router.back()}
-          rightIcon="plus"
-          onRightPress={resetForm}
+          subtitle={showForm ? undefined : `${dueCount} need review`}
+          onBack={() => {
+            if (showForm && subscriptions.length > 0) {
+              resetForm();
+              setShowForm(false);
+              return;
+            }
+            router.back();
+          }}
+          rightIcon={!loading && subscriptions.length > 0 && !showForm ? 'plus' : undefined}
+          onRightPress={openCreateForm}
         />
 
         <ScrollView
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 32, gap: 16 }}>
-          <View className="flex-row gap-3">
+          {!showForm && <View className="flex-row gap-3">
             <SummaryTile label="Active" value={String(activeCount)} colors={colors} />
             <SummaryTile
               label="Monthly run-rate"
               value={formatMoney(projectedMonthly)}
               colors={colors}
             />
-          </View>
+          </View>}
 
-          <View
+          {showForm && <View
             className="rounded-[28px] border p-4"
             style={{ backgroundColor: colors.card, borderColor: colors.border }}>
             <View className="mb-5 flex-row items-start justify-between gap-3">
@@ -440,7 +494,13 @@ export default function SubscriptionsScreen() {
                   return (
                     <Pressable
                       key={option.value}
-                      onPress={() => setInterval(option.value)}
+                      onPress={() => {
+                        setInterval(option.value);
+                        if (option.value === 'daily' || option.value === 'business_daily') {
+                          setAutopay(true);
+                          setReminderDays(0);
+                        }
+                      }}
                       className="w-[31%] rounded-2xl border p-3"
                       style={{
                         backgroundColor: selected ? colors.secondary : colors.background,
@@ -458,6 +518,15 @@ export default function SubscriptionsScreen() {
                   );
                 })}
               </View>
+            </View>
+
+            <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.background }}>
+              <View className="flex-row items-center justify-between"><View className="flex-1 pr-3"><ThemedText className="text-sm font-black">Autopay</ThemedText><ThemedText className="mt-1 text-xs" style={{ color: muted }}>Add each recurring payment automatically and ask you to confirm it.</ThemedText></View><Switch value={autopay} onValueChange={setAutopay} trackColor={{ false: '#E0E0E0', true: colors.accent }} thumbColor="white" /></View>
+              {autopay && <>
+                <View className="mt-4 flex-row flex-wrap gap-2">{['Bank Account', 'UPI', 'Credit Card'].map((mode) => <Pill key={mode} label={mode} selected={paymentMode === mode} onPress={() => { setPaymentMode(mode); setAccountID(null); }} colors={colors} />)}</View>
+                <View className="mt-3 flex-row flex-wrap gap-2">{getAccountsForPaymentMode(accounts, paymentMode).map((account) => <Pill key={account.id} label={account.name} selected={accountID === account.id} onPress={() => setAccountID(account.id)} colors={colors} />)}</View>
+                <Pressable className="mt-3 flex-row items-center gap-2" onPress={() => router.push('/accounts/manage')}><MaterialCommunityIcons name="plus-circle-outline" size={18} color={colors.accent} /><ThemedText className="text-xs font-black" style={{ color: colors.accent }}>Add or manage payment account</ThemedText></Pressable>
+              </>}
             </View>
 
             <Pressable
@@ -486,7 +555,7 @@ export default function SubscriptionsScreen() {
               <MaterialCommunityIcons name="chevron-down" size={22} color={muted} />
             </Pressable>
 
-            <View className="mb-4">
+            {interval !== 'daily' && interval !== 'business_daily' ? <View className="mb-4">
               <ThemedText
                 className="mb-2 text-[11px] font-black uppercase"
                 style={{ color: muted }}>
@@ -503,7 +572,14 @@ export default function SubscriptionsScreen() {
                   />
                 ))}
               </View>
-            </View>
+            </View> : <View className="mb-4 rounded-2xl p-3" style={{ backgroundColor: colors.secondary }}><ThemedText className="text-xs font-bold" style={{ color: colors.accent }}>Daily and market-day transactions are added automatically. No daily reminder is sent.</ThemedText></View>}
+
+            {cancelBeforeDue && (
+              <Pressable onPress={openCancellationDatePicker} className="mb-4 flex-row items-center justify-between rounded-2xl border p-4" style={{ borderColor: colors.border, backgroundColor: colors.background }}>
+                <View><ThemedText className="text-[11px] font-black uppercase" style={{ color: muted }}>Cancellation reminder date</ThemedText><ThemedText className="mt-1 text-sm font-black">{cancelOnDate || 'Choose date'}</ThemedText></View>
+                <MaterialCommunityIcons name="calendar-month-outline" size={22} color={colors.accent} />
+              </Pressable>
+            )}
 
             <View
               className="mb-4 rounded-2xl border p-4"
@@ -566,27 +642,11 @@ export default function SubscriptionsScreen() {
                 </ThemedText>
               )}
             </Pressable>
-          </View>
+          </View>}
 
           {loading ? (
             <ActivityIndicator color={colors.accent} />
-          ) : subscriptions.length === 0 ? (
-            <View
-              className="items-center rounded-[28px] border p-8"
-              style={{ borderColor: colors.border }}>
-              <MaterialCommunityIcons
-                name="calendar-sync-outline"
-                size={36}
-                color={colors.accent}
-              />
-              <ThemedText className="mt-3 text-center text-sm font-black">
-                No subscriptions yet
-              </ThemedText>
-              <ThemedText className="mt-1 text-center text-xs" style={{ color: muted }}>
-                Add rent, apps, memberships, or recurring services.
-              </ThemedText>
-            </View>
-          ) : (
+          ) : !showForm && subscriptions.length > 0 ? (
             <View className="gap-3">
               {subscriptions.map((subscription) => (
                 <SubscriptionCard
@@ -602,7 +662,7 @@ export default function SubscriptionsScreen() {
                 />
               ))}
             </View>
-          )}
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -620,11 +680,12 @@ export default function SubscriptionsScreen() {
                 </ThemedText>
               </Pressable>
               <ThemedText className="text-base font-black" style={{ fontFamily: Fonts.title }}>
-                Next payment
+                {datePickerTarget === 'cancel' ? 'Cancellation reminder' : 'Next payment'}
               </ThemedText>
               <Pressable
                 onPress={() => {
-                  setNextDueDate(dateToApiDate(pendingDate));
+                  if (datePickerTarget === 'cancel') setCancelOnDate(dateToApiDate(pendingDate));
+                  else setNextDueDate(dateToApiDate(pendingDate));
                   setIsDatePickerVisible(false);
                 }}>
                 <ThemedText className="text-sm font-black" style={{ color: colors.accent }}>

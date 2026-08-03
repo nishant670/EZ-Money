@@ -66,7 +66,15 @@ import {
   type SplitGroup,
 } from '@/lib/splits';
 import { resolveSplitDraft } from '@/lib/split-draft';
-import { createSubscription, type BillingInterval } from '@/lib/subscriptions';
+import {
+  confirmSubscriptionOccurrence,
+  createSubscription,
+  fetchSubscriptionOccurrences,
+  revertSubscriptionOccurrence,
+  syncSubscriptionAutomation,
+  type BillingInterval,
+  type SubscriptionOccurrence,
+} from '@/lib/subscriptions';
 import { inferNextSubscriptionDate } from '@/lib/subscription-schedule';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
@@ -142,6 +150,8 @@ export default function HomeScreen() {
       subscriptionNextDueDate: '',
       subscriptionReminderDays: '3',
       subscriptionCancelBeforeDue: false,
+      subscriptionCancelOnDate: '',
+      subscriptionAutopay: false,
       subscriptionNotes: '',
     }),
     []
@@ -180,6 +190,7 @@ export default function HomeScreen() {
   const [creditAction, setCreditAction] = useState<CreditActionState | null>(null);
   const [aiSourceText, setAiSourceText] = useState('');
   const [aiInputSource, setAiInputSource] = useState<'text' | 'voice'>('text');
+  const [autopayReviews, setAutopayReviews] = useState<SubscriptionOccurrence[]>([]);
   const createIdempotencyKey = useRef<string | null>(null);
   const resumeDraftAfterAccounts = useRef(false);
   const saveConfirmationAnim = useRef(new Animated.Value(0)).current;
@@ -423,7 +434,13 @@ export default function HomeScreen() {
       void fetchSplitOptions();
       void fetchCredits();
       void fetchNotificationCount();
-    }, [fetchAccountOptions, fetchCredits, fetchEntries, fetchNotificationCount, fetchSplitOptions])
+      if (token) {
+        void syncSubscriptionAutomation(token)
+          .then(() => fetchSubscriptionOccurrences(token))
+          .then(setAutopayReviews)
+          .catch(() => undefined);
+      }
+    }, [fetchAccountOptions, fetchCredits, fetchEntries, fetchNotificationCount, fetchSplitOptions, token])
   );
 
   useEffect(
@@ -640,6 +657,11 @@ export default function HomeScreen() {
             status: 'active',
             reminder_days: Number(formData.subscriptionReminderDays || 0),
             cancel_before_due: formData.subscriptionCancelBeforeDue,
+            cancel_on_date: formData.subscriptionCancelOnDate.trim(),
+            autopay: formData.subscriptionAutopay,
+            payment_mode: formData.mode,
+            transaction_tag: formData.tag || 'Subscription',
+            purpose_type: formData.tag.toLowerCase() === 'investment' ? 'investment' : 'normal_spend',
             notes: formData.subscriptionNotes.trim(),
             account_id: resolvedAccount.id,
           });
@@ -775,6 +797,8 @@ export default function HomeScreen() {
               ? String(subscriptionCandidate.reminder_days)
               : '3',
           subscriptionCancelBeforeDue: Boolean(subscriptionCandidate?.cancel_before_due),
+          subscriptionCancelOnDate: subscriptionCandidate?.cancel_on_date ?? '',
+          subscriptionAutopay: Boolean(subscriptionCandidate?.autopay),
           subscriptionNotes: subscriptionCandidate?.notes ?? '',
         };
       });
@@ -982,6 +1006,30 @@ export default function HomeScreen() {
             Speak naturally. Finnri will organize it.
           </ThemedText>
         </View>
+
+        {autopayReviews[0] ? (
+          <View className="mx-6 mb-4 rounded-3xl border p-4" style={{ backgroundColor: themeTokens.colors.card, borderColor: themeTokens.colors.accent }}>
+            <View className="flex-row items-start gap-3">
+              <MaterialCommunityIcons name="bank-check" size={24} color={themeTokens.colors.accent} />
+              <View className="flex-1">
+                <ThemedText className="font-black">Autopay transaction added</ThemedText>
+                <ThemedText className="mt-1 text-xs opacity-60">Review the recurring payment. It is already in your transaction list.</ThemedText>
+                <View className="mt-3 flex-row gap-2">
+                  <Pressable className="rounded-xl px-4 py-2" style={{ backgroundColor: themeTokens.colors.accent }} onPress={() => {
+                    const item = autopayReviews[0];
+                    if (!token) return;
+                    void confirmSubscriptionOccurrence(token, item.id).then(() => setAutopayReviews((items) => items.filter((entry) => entry.id !== item.id)));
+                  }}><ThemedText className="text-xs font-black text-white">Confirm</ThemedText></Pressable>
+                  <Pressable className="rounded-xl border px-4 py-2" style={{ borderColor: themeTokens.colors.accent }} onPress={() => {
+                    const item = autopayReviews[0];
+                    if (!token) return;
+                    void revertSubscriptionOccurrence(token, item.id).then((result) => router.push({ pathname: '/entry/[id]', params: { id: String(result.entry_id), edit: '1' } }));
+                  }}><ThemedText className="text-xs font-black" style={{ color: themeTokens.colors.accent }}>Correct / revert</ThemedText></Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         {shouldShowLowCreditNotice ? (
           <View style={{ marginHorizontal: 24, marginBottom: themeTokens.spacing.md }}>

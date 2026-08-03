@@ -68,6 +68,8 @@ export type EntryForm = {
   subscriptionNextDueDate: string;
   subscriptionReminderDays: string;
   subscriptionCancelBeforeDue: boolean;
+  subscriptionCancelOnDate: string;
+  subscriptionAutopay: boolean;
   subscriptionNotes: string;
 };
 
@@ -128,10 +130,12 @@ const fieldLabels: Record<keyof EntryForm, string> = {
   subscriptionNextDueDate: 'Next payment date',
   subscriptionReminderDays: 'Reminder',
   subscriptionCancelBeforeDue: 'Cancellation reminder',
+  subscriptionCancelOnDate: 'Cancellation date',
+  subscriptionAutopay: 'Autopay',
   subscriptionNotes: 'Subscription notes',
 };
 
-const modeOptions = ['Cash', 'UPI', 'Credit Card', 'Wallets'];
+const modeOptions = ['Cash', 'UPI', 'Bank Account', 'Credit Card', 'Wallets'];
 const subscriptionIntervalOptions: BillingInterval[] = [
   'daily',
   'business_daily',
@@ -292,6 +296,8 @@ export function TransactionFormModal({
       subscriptionNextDueDate: '',
       subscriptionReminderDays: '3',
       subscriptionCancelBeforeDue: false,
+      subscriptionCancelOnDate: '',
+      subscriptionAutopay: false,
       subscriptionNotes: '',
       ...initialData,
     })
@@ -312,6 +318,8 @@ export function TransactionFormModal({
   const [pendingDate, setPendingDate] = useState<Date>(parseDateLabel(form.date) ?? new Date());
   const [isSubscriptionDatePickerVisible, setIsSubscriptionDatePickerVisible] = useState(false);
   const [pendingSubscriptionDate, setPendingSubscriptionDate] = useState<Date>(new Date());
+  const [isCancellationDatePickerVisible, setIsCancellationDatePickerVisible] = useState(false);
+  const [pendingCancellationDate, setPendingCancellationDate] = useState<Date>(new Date());
   const [isModePickerVisible, setIsModePickerVisible] = useState(false);
   const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
   const [isAccountPickerVisible, setIsAccountPickerVisible] = useState(false);
@@ -387,6 +395,8 @@ export function TransactionFormModal({
           subscriptionNextDueDate: '',
           subscriptionReminderDays: '3',
           subscriptionCancelBeforeDue: false,
+          subscriptionCancelOnDate: '',
+          subscriptionAutopay: false,
           subscriptionNotes: '',
           ...initialData,
         })
@@ -592,6 +602,14 @@ export function TransactionFormModal({
       }
       if (!Number.isInteger(reminderDays) || reminderDays < 0 || reminderDays > 30) {
         setFormError('Reminder must be between 0 and 30 days.');
+        return;
+      }
+      if (form.subscriptionCancelBeforeDue && !/^\d{4}-\d{2}-\d{2}$/.test(form.subscriptionCancelOnDate.trim())) {
+        setFormError('Please choose the date when you want the cancellation reminder.');
+        return;
+      }
+      if ((form.subscriptionBillingInterval === 'daily' || form.subscriptionBillingInterval === 'business_daily') && !form.subscriptionAutopay) {
+        setFormError('Enable Autopay for daily or market-day transactions.');
         return;
       }
     }
@@ -1468,15 +1486,13 @@ export function TransactionFormModal({
                                 {subscriptionIntervalOptions.map((interval) => (
                                   <Pressable
                                     key={interval}
-                                    onPress={() =>
-                                      setForm((p) => ({
-                                        ...p,
-                                        subscriptionBillingInterval: interval,
-                                        subscriptionNextDueDate:
-                                          p.subscriptionNextDueDate ||
-                                          inferNextSubscriptionDate(p.date, interval),
-                                      }))
-                                    }
+                                    onPress={() => setForm((p) => ({
+                                      ...p,
+                                      subscriptionBillingInterval: interval,
+                                      subscriptionNextDueDate: p.subscriptionNextDueDate || inferNextSubscriptionDate(p.date, interval),
+                                      subscriptionAutopay: interval === 'daily' || interval === 'business_daily' ? true : p.subscriptionAutopay,
+                                      subscriptionReminderDays: interval === 'daily' || interval === 'business_daily' ? '0' : (p.subscriptionReminderDays || '3'),
+                                    }))}
                                     className="rounded-full border px-3 py-2"
                                     style={{
                                       backgroundColor:
@@ -1504,7 +1520,7 @@ export function TransactionFormModal({
                             </View>
 
                             <View className="flex-row gap-3">
-                              <Pressable
+                              {form.subscriptionBillingInterval !== 'daily' && form.subscriptionBillingInterval !== 'business_daily' ? <Pressable
                                 testID="subscription-next-payment-picker"
                                 accessibilityRole="button"
                                 accessibilityLabel="Choose next payment date"
@@ -1529,8 +1545,11 @@ export function TransactionFormModal({
                                   size={20}
                                   color={accent}
                                 />
-                              </Pressable>
-                              <View className="w-28 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
+                              </Pressable> : <View className="flex-1 rounded-2xl px-4 py-3" style={{ backgroundColor: accentSurface }}>
+                                <ThemedText className="text-[10px] font-black uppercase tracking-widest" style={{ color: accent }}>Automatic schedule</ThemedText>
+                                <ThemedText className="mt-1 text-xs font-bold" style={{ color: theme.text }}>{form.subscriptionBillingInterval === 'business_daily' ? 'Next market day; weekends and holidays are skipped.' : 'Runs every day automatically.'}</ThemedText>
+                              </View>}
+                              {form.subscriptionBillingInterval !== 'daily' && form.subscriptionBillingInterval !== 'business_daily' ? <View className="w-28 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
                                 <ThemedText className="text-[9px] font-black uppercase tracking-wider text-gray-400">
                                   Remind before
                                 </ThemedText>
@@ -1549,8 +1568,18 @@ export function TransactionFormModal({
                                   style={{ color: theme.text }}
                                 />
                                 <ThemedText className="text-[10px] text-gray-400">days</ThemedText>
-                              </View>
+                              </View> : null}
                             </View>
+
+                            <Pressable
+                              onPress={() => setForm((p) => ({ ...p, subscriptionAutopay: !p.subscriptionAutopay }))}
+                              className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                              <View className="flex-1 pr-3">
+                                <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>Autopay</ThemedText>
+                                <ThemedText className="mt-1 text-[11px] text-gray-400">Automatically add each payment from the selected account, then ask you to confirm or correct it.</ThemedText>
+                              </View>
+                              <MaterialCommunityIcons name={form.subscriptionAutopay ? 'toggle-switch' : 'toggle-switch-off-outline'} size={34} color={form.subscriptionAutopay ? accent : '#9CA3AF'} />
+                            </Pressable>
 
                             <Pressable
                               onPress={() =>
@@ -1575,6 +1604,22 @@ export function TransactionFormModal({
                                 color={form.subscriptionCancelBeforeDue ? accent : '#9CA3AF'}
                               />
                             </Pressable>
+
+                            {form.subscriptionCancelBeforeDue && (
+                              <Pressable
+                                accessibilityRole="button"
+                                onPress={() => {
+                                  setPendingCancellationDate(form.subscriptionCancelOnDate ? new Date(`${form.subscriptionCancelOnDate}T12:00:00`) : new Date());
+                                  setIsCancellationDatePickerVisible(true);
+                                }}
+                                className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                                <View>
+                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cancellation reminder date</ThemedText>
+                                  <ThemedText className="mt-1 text-sm font-bold">{form.subscriptionCancelOnDate || 'Choose date'}</ThemedText>
+                                </View>
+                                <MaterialCommunityIcons name="calendar-month-outline" size={20} color={accent} />
+                              </Pressable>
+                            )}
 
                             <TextInput
                               multiline
@@ -1831,6 +1876,19 @@ export function TransactionFormModal({
           </AnimatedBottomSheet>
         )}
 
+        {isCancellationDatePickerVisible && (
+          <AnimatedBottomSheet visible onClose={() => setIsCancellationDatePickerVisible(false)} backdropOpacity={0.3}>
+            <View className="rounded-t-3xl px-4 pb-6 pt-4" style={{ backgroundColor: theme.background }}>
+              <ThemedText className="text-center text-sm font-bold">Cancellation reminder date</ThemedText>
+              <DateTimePicker value={pendingCancellationDate} mode="date" display="spinner" minimumDate={new Date()} onValueChange={(_event, date) => date && setPendingCancellationDate(date)} onDismiss={() => setIsCancellationDatePickerVisible(false)} style={{ width: '100%' }} />
+              <Pressable className="mt-4 items-center rounded-2xl py-3" style={{ backgroundColor: accent }} onPress={() => {
+                setForm((p) => ({ ...p, subscriptionCancelOnDate: formatApiDate(pendingCancellationDate) }));
+                setIsCancellationDatePickerVisible(false);
+              }}><ThemedText className="font-bold text-white">Set reminder date</ThemedText></Pressable>
+            </View>
+          </AnimatedBottomSheet>
+        )}
+
         {Platform.OS === 'ios' && isSubscriptionDatePickerVisible && (
           <AnimatedBottomSheet
             visible={isSubscriptionDatePickerVisible}
@@ -2039,6 +2097,12 @@ export function TransactionFormModal({
                     </Pressable>
                   )}
                 </View>
+              )}
+              {compatibleAccounts.length > 0 && onManageAccounts && (
+                <Pressable accessibilityRole="button" onPress={() => { setIsAccountPickerVisible(false); onManageAccounts(); }} className="mt-2 flex-row items-center justify-center gap-2 rounded-2xl border p-4" style={{ borderColor: accent }}>
+                  <MaterialCommunityIcons name="plus-circle-outline" size={20} color={accent} />
+                  <ThemedText className="font-bold" style={{ color: accent }}>Add or manage payment accounts</ThemedText>
+                </Pressable>
               )}
             </View>
           </View>

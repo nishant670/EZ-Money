@@ -196,8 +196,8 @@ describe('TransactionFormModal', () => {
     });
   });
 
-  it('labels subscription date and reminder controls clearly', async () => {
-    const { findByTestId, findByText } = await renderModal({
+  it('uses Autopay instead of a reminder for daily subscriptions', async () => {
+    const { findByText, queryByText } = await renderModal({
       mode: 'audio',
       initialData: {
         ...completeInitialData,
@@ -211,9 +211,9 @@ describe('TransactionFormModal', () => {
       },
     });
 
-    expect(await findByTestId('subscription-next-payment-picker')).toBeTruthy();
-    expect(await findByText('Next payment date')).toBeTruthy();
-    expect(await findByText('Remind before')).toBeTruthy();
-    expect(await findByText('days')).toBeTruthy();
+    expect(queryByText('Next payment date')).toBeNull();
+    expect(await findByText('Automatic schedule')).toBeTruthy();
+    expect(await findByText('Autopay')).toBeTruthy();
+    expect(queryByText('Remind before')).toBeNull();
   });
 });

@@ -30,6 +30,11 @@ export type Subscription = {
   status: SubscriptionStatus;
   reminder_days: number;
   cancel_before_due: boolean;
+  cancel_on_date?: string;
+  autopay: boolean;
+  payment_mode: string;
+  transaction_tag: string;
+  purpose_type: string;
   notes: string;
   days_until_due: number;
   due_state: 'scheduled' | 'due_soon' | 'overdue' | 'paused' | 'cancelled' | 'unknown';
@@ -48,8 +53,56 @@ export type SubscriptionPayload = {
   status?: SubscriptionStatus;
   reminder_days?: number;
   cancel_before_due?: boolean;
+  cancel_on_date?: string;
+  autopay?: boolean;
+  payment_mode?: string;
+  transaction_tag?: string;
+  purpose_type?: string;
   notes?: string;
   account_id?: number | null;
+};
+
+export type SubscriptionOccurrence = {
+  id: number;
+  subscription_id: number;
+  entry_id: number;
+  due_date: string;
+  status: 'pending' | 'confirmed' | 'reverted';
+  subscription?: Subscription;
+};
+
+export const syncSubscriptionAutomation = async (token?: string | null): Promise<number> => {
+  if (!token) return 0;
+  const response = await fetch(`${API_BASE_URL}/v1/subscriptions/sync`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) return 0;
+  const payload = await response.json();
+  return Number(payload?.created ?? 0);
+};
+
+export const fetchSubscriptionOccurrences = async (token: string): Promise<SubscriptionOccurrence[]> => {
+  const response = await fetch(`${API_BASE_URL}/v1/subscription-occurrences?status=pending`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Unable to load Autopay reviews.');
+  const payload = await response.json();
+  return Array.isArray(payload) ? payload : [];
+};
+
+export const confirmSubscriptionOccurrence = async (token: string, id: number) => {
+  const response = await fetch(`${API_BASE_URL}/v1/subscription-occurrences/${id}/confirm`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Unable to confirm this transaction.');
+};
+
+export const revertSubscriptionOccurrence = async (token: string, id: number): Promise<SubscriptionOccurrence> => {
+  const response = await fetch(`${API_BASE_URL}/v1/subscription-occurrences/${id}/revert`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Unable to open this transaction for correction.');
+  return response.json();
 };
 
 const authHeaders = (token: string) => ({

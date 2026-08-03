@@ -61,6 +61,7 @@ export default function TransactionDetailsScreen() {
     merchant?: string;
     dateLabel?: string;
     tag?: string;
+    edit?: string;
   }>();
 
   const { token } = useAuthStore();
@@ -80,6 +81,12 @@ export default function TransactionDetailsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const entryID = Number(params.id);
+
+  useEffect(() => {
+    if (params.edit === '1' && transaction && !isLoading) {
+      setIsEditModalVisible(true);
+    }
+  }, [isLoading, params.edit, transaction]);
 
   // Hydrate state from params initially, then update with API data
   const displayData = transaction || {
@@ -312,6 +319,8 @@ export default function TransactionDetailsScreen() {
     subscriptionNextDueDate: '',
     subscriptionReminderDays: '3',
     subscriptionCancelBeforeDue: false,
+    subscriptionCancelOnDate: '',
+    subscriptionAutopay: false,
     subscriptionNotes: '',
   };
 

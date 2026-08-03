@@ -63,6 +63,7 @@ export const getAccountTypeForPaymentMode = (mode?: string | null) => {
     if (normalized === 'cash') return 'cash';
     if (normalized === 'upi') return 'upi';
     if (normalized === 'credit card') return 'credit_card';
+    if (normalized === 'bank account' || normalized === 'bank') return 'bank';
     if (normalized === 'wallets' || normalized === 'wallet') return 'wallet';
     return null;
 };

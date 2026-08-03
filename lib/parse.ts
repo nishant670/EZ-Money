@@ -36,6 +36,9 @@ export type ParseResponse = {
     last_charged_date?: string | null;
     reminder_days?: number | null;
     cancel_before_due?: boolean | null;
+    cancel_on_date?: string | null;
+    autopay?: boolean | null;
+    payment_mode?: string | null;
     notes?: string | null;
     missing_fields?: string[];
   } | null;

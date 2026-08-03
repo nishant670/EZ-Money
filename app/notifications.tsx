@@ -15,6 +15,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/notifications';
+import { confirmSubscriptionOccurrence, revertSubscriptionOccurrence } from '@/lib/subscriptions';
 
 type Filter = 'all' | 'unread' | 'read';
 
@@ -131,6 +132,24 @@ export default function NotificationsScreen() {
     await load(true);
   };
 
+  const occurrenceID = (actionURL?: string) => {
+    const match = actionURL?.match(/^\/subscription-occurrences\/(\d+)$/);
+    return match ? Number(match[1]) : null;
+  };
+
+  const handleOccurrence = async (notification: AppNotification, action: 'confirm' | 'revert') => {
+    if (!token) return;
+    const id = occurrenceID(notification.action_url);
+    if (!id) return;
+    if (action === 'confirm') {
+      await confirmSubscriptionOccurrence(token, id);
+      await load(true);
+      return;
+    }
+    const occurrence = await revertSubscriptionOccurrence(token, id);
+    router.push({ pathname: '/entry/[id]', params: { id: String(occurrence.entry_id), edit: '1' } });
+  };
+
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }}>
       <AppHeader
@@ -220,6 +239,16 @@ export default function NotificationsScreen() {
                     <ThemedText className="mt-1 text-xs leading-5 opacity-60">
                       {notification.body}
                     </ThemedText>
+                    {occurrenceID(notification.action_url) && (
+                      <View className="mt-3 flex-row gap-2">
+                        <Pressable onPress={(event) => { event.stopPropagation(); void handleOccurrence(notification, 'confirm'); }} className="rounded-xl px-4 py-2" style={{ backgroundColor: colors.accent }}>
+                          <ThemedText className="text-xs font-black text-white">Confirm</ThemedText>
+                        </Pressable>
+                        <Pressable onPress={(event) => { event.stopPropagation(); void handleOccurrence(notification, 'revert'); }} className="rounded-xl border px-4 py-2" style={{ borderColor: colors.accent }}>
+                          <ThemedText className="text-xs font-black" style={{ color: colors.accent }}>Correct / revert</ThemedText>
+                        </Pressable>
+                      </View>
+                    )}
                   </View>
                   {unread && (
                     <View

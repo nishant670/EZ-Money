@@ -3,6 +3,7 @@ import { Stack, useRouter } from 'expo-router';
 import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import Constants from 'expo-constants';
 import React, { useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 
@@ -26,7 +27,7 @@ export default function RootLayout() {
   const themeTokens = useThemeTokens();
   const [isAppReady, setIsAppReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
-  const { clearAuth } = useAuthStore();
+  const { clearAuth, token } = useAuthStore();
   const router = useRouter();
   const navigationTheme = useMemo(
     () => ({
@@ -108,6 +109,27 @@ export default function RootLayout() {
   useEffect(() => {
     setColorScheme(colorScheme);
   }, [colorScheme, setColorScheme]);
+
+  useEffect(() => {
+    if (!token || Constants.appOwnership === 'expo') return;
+
+    let responseSubscription: { remove: () => void } | undefined;
+    let cancelled = false;
+    void Promise.all([import('expo-notifications'), import('@/lib/push-notifications')])
+      .then(([Notifications, { registerForPushNotifications }]) => {
+        if (cancelled) return;
+        void registerForPushNotifications(token).catch(() => undefined);
+        responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+          router.push('/notifications');
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      responseSubscription?.remove();
+    };
+  }, [router, token]);
 
   if (!isAppReady) {
     return null;
