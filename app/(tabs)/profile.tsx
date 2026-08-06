@@ -371,7 +371,8 @@ export default function ProfileScreen() {
 
               <Pressable
                 onPress={() => router.push('/help-support')}
-                className="flex-row items-center p-5">
+                className="flex-row items-center p-5 border-b"
+                style={{ borderColor }}>
                 <View
                   className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
                   style={{ backgroundColor: '#F3E5F5' }}>
@@ -387,6 +388,55 @@ export default function ProfileScreen() {
                   </TText>
                   <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
                     Get Answers & Talk to Us
+                  </TText>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color={colors.text}
+                  style={{ opacity: 0.3 }}
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() => router.push('/feedback')}
+                className="flex-row items-center p-5 border-b"
+                style={{ borderColor }}>
+                <View
+                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
+                  style={{ backgroundColor: '#E0F2F1' }}>
+                  <MaterialCommunityIcons name="message-draw" size={20} color="#00796B" />
+                </View>
+                <View className="flex-1">
+                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
+                    Feedback & Ideas
+                  </TText>
+                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+                    Suggest features{'\n'}or report issues
+                  </TText>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color={colors.text}
+                  style={{ opacity: 0.3 }}
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() => router.push('/upcoming')}
+                className="flex-row items-center p-5">
+                <View
+                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
+                  style={{ backgroundColor: '#E1F5FE' }}>
+                  <MaterialCommunityIcons name="rocket-launch-outline" size={20} color="#0288D1" />
+                </View>
+                <View className="flex-1">
+                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
+                    Upcoming
+                  </TText>
+                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+                    Features, changes{'\n'}& bug fixes
                   </TText>
                 </View>
                 <MaterialCommunityIcons

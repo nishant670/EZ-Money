@@ -178,6 +178,8 @@ export default function RootLayout() {
         <Stack.Screen name="tools" />
         <Stack.Screen name="about-finnri" />
         <Stack.Screen name="help-support" />
+        <Stack.Screen name="feedback" />
+        <Stack.Screen name="upcoming" />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>

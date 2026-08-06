@@ -41,12 +41,20 @@ const supportActions = [
     surface: '#FFEBEE',
   },
   {
-    icon: 'message-question-outline',
-    title: 'Request a feature',
-    body: 'Share what would make money tracking easier for you.',
-    url: 'mailto:support@finnri.app?subject=Finnri%20Feature%20Request',
+    icon: 'message-draw',
+    title: 'Feedback & ideas',
+    body: 'Send feature requests, improvement ideas, or bug reports.',
+    route: '/feedback',
     color: '#00796B',
     surface: '#E0F2F1',
+  },
+  {
+    icon: 'rocket-launch-outline',
+    title: 'Upcoming',
+    body: 'See planned features, changes, and bug fixes.',
+    route: '/upcoming',
+    color: '#0288D1',
+    surface: '#E1F5FE',
   },
 ] as const;
 
@@ -93,7 +101,13 @@ export default function HelpSupportScreen() {
             {supportActions.map((item) => (
               <Pressable
                 key={item.title}
-                onPress={() => void openSupportLink(item.url)}
+                onPress={() => {
+                  if ('route' in item) {
+                    router.push(item.route);
+                    return;
+                  }
+                  void openSupportLink(item.url);
+                }}
                 className="flex-row items-center rounded-[28px] p-5"
                 style={{ backgroundColor: colors.card }}>
                 <View className="mr-4 h-12 w-12 items-center justify-center rounded-2xl" style={{ backgroundColor: item.surface }}>
