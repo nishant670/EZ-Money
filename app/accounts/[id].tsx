@@ -2,11 +2,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { StateView } from '@/components/ui/StateView';
+import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -36,6 +38,11 @@ const formatActivityAmount = (transaction: Transaction) => {
   return `${isIncome ? '+ ' : '- '}${formatCurrency(Math.abs(transaction.amount))}`;
 };
 
+type SetupItem = {
+  label: string;
+  complete: boolean;
+};
+
 export default function AccountDetailsScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const accountId = Number(id);
@@ -49,6 +56,8 @@ export default function AccountDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isActionsSheetVisible, setIsActionsSheetVisible] = useState(false);
+  const [isDeleteDialogVisible, setIsDeleteDialogVisible] = useState(false);
 
   const loadDetails = useCallback(async () => {
     if (!token || !Number.isFinite(accountId) || accountId <= 0) {
@@ -92,10 +101,51 @@ export default function AccountDetailsScreen() {
   const isCreditCard = accountType === 'credit_card';
   const dueLabel = account ? getCreditDueLabel(account.due_day) : null;
   const amountLabel = isCreditCard ? 'Total Due' : 'Balance';
+  const setupItems = useMemo<SetupItem[]>(() => {
+    if (!account) return [];
+    const hasProvider = Boolean(account.provider?.trim());
+    const hasIdentifier = Boolean(account.identifier?.trim());
+    const hasBalance = typeof account.balance === 'number' && account.balance !== 0;
+    const hasCreditLimit = Boolean(account.credit_limit && account.credit_limit > 0);
+    const hasDueDay = Boolean(account.due_day && account.due_day >= 1 && account.due_day <= 31);
 
-  const handleEdit = () => {
+    if (isCreditCard) {
+      return [
+        { label: 'Card issuer added', complete: hasProvider },
+        { label: 'Last 4 digits added', complete: hasIdentifier },
+        { label: 'Credit limit added', complete: hasCreditLimit },
+        { label: 'Due date added', complete: hasDueDay },
+      ];
+    }
+
+    if (accountType === 'cash') {
+      return [{ label: 'Opening cash balance added', complete: hasBalance }];
+    }
+
+    const providerLabel =
+      accountType === 'upi' ? 'UPI app added' : accountType === 'wallet' ? 'Wallet added' : 'Provider added';
+    const identifierLabel =
+      accountType === 'upi'
+        ? 'UPI handle or nickname added'
+        : accountType === 'wallet'
+          ? 'Wallet nickname added'
+          : 'Last 4 digits added';
+
+    return [
+      { label: providerLabel, complete: hasProvider },
+      { label: identifierLabel, complete: hasIdentifier },
+      { label: 'Manual balance added', complete: hasBalance },
+    ];
+  }, [account, accountType, isCreditCard]);
+  const incompleteSetupItems = setupItems.filter((item) => !item.complete);
+  const setupComplete = incompleteSetupItems.length === 0;
+
+  const handleEdit = (focus?: 'details') => {
     if (!account) return;
-    router.push({ pathname: '/accounts/manage', params: { id: String(account.id) } });
+    router.push({
+      pathname: '/accounts/manage',
+      params: { id: String(account.id), ...(focus ? { focus } : {}) },
+    });
   };
 
   const handleSetDefault = async () => {
@@ -114,52 +164,29 @@ export default function AccountDetailsScreen() {
 
   const handleDelete = () => {
     if (!token || !account) return;
-    Alert.alert(
-      `Delete ${account.name}?`,
-      'This is allowed only when no transactions use this account.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setIsPending(true);
-            setError(null);
-            void deleteAccount(token, account.id)
-              .then(() => router.back())
-              .catch((deleteError: unknown) => {
-                if (
-                  deleteError instanceof AccountApiError &&
-                  deleteError.code === 'account_in_use'
-                ) {
-                  setError('Move or delete linked transactions before deleting this account.');
-                  return;
-                }
-                setError(
-                  deleteError instanceof Error ? deleteError.message : 'Unable to delete account.'
-                );
-              })
-              .finally(() => setIsPending(false));
-          },
-        },
-      ]
-    );
+    setIsPending(true);
+    setError(null);
+    void deleteAccount(token, account.id)
+      .then(() => {
+        setIsDeleteDialogVisible(false);
+        router.back();
+      })
+      .catch((deleteError: unknown) => {
+        if (
+          deleteError instanceof AccountApiError &&
+          deleteError.code === 'account_in_use'
+        ) {
+          setError('Move or delete linked transactions before deleting this account.');
+          return;
+        }
+        setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete account.');
+      })
+      .finally(() => setIsPending(false));
   };
 
   const openSettings = () => {
     if (!account) return;
-    Alert.alert(account.name, 'Account actions', [
-      ...(!account.is_default
-        ? [{ text: 'Set as default', onPress: () => void handleSetDefault() }]
-        : []),
-      { text: 'Edit account', onPress: handleEdit },
-      { text: 'Delete account', style: 'destructive' as const, onPress: handleDelete },
-      { text: 'Cancel', style: 'cancel' as const },
-    ]);
-  };
-
-  const openPayNow = () => {
-    Alert.alert('Pay Now', 'Payment reminders are not connected yet.');
+    setIsActionsSheetVisible(true);
   };
 
   const openAllTransactions = () => {
@@ -344,9 +371,10 @@ export default function AccountDetailsScreen() {
               {amountLabel}
             </TText>
             <TText
-              className="mt-1 text-[38px]"
+              className="mt-2 text-[38px]"
               numberOfLines={1}
-              style={{ fontFamily: Fonts.title, color: theme.text }}>
+              adjustsFontSizeToFit
+              style={{ fontFamily: Fonts.title, color: theme.text, lineHeight: 48 }}>
               {formatCurrency(getAccountDisplayAmount(account))}
             </TText>
 
@@ -362,17 +390,17 @@ export default function AccountDetailsScreen() {
 
           <View className="mt-7 flex-row gap-3">
             <DetailActionButton
-              icon="cash"
-              label="Pay Now"
+              icon={setupComplete ? 'receipt-text-outline' : 'clipboard-check-outline'}
+              label={setupComplete ? 'Activity' : 'Complete'}
               active
-              onPress={openPayNow}
+              onPress={setupComplete ? openAllTransactions : () => handleEdit('details')}
               textColor="#FFFFFF"
-              backgroundColor="#0F172A"
+              backgroundColor={setupComplete ? theme.accent : '#0F172A'}
             />
             <DetailActionButton
               icon="pencil-outline"
               label="Edit"
-              onPress={handleEdit}
+              onPress={() => handleEdit()}
               textColor={theme.text}
               backgroundColor={theme.card}
               borderColor={theme.border}
@@ -385,6 +413,69 @@ export default function AccountDetailsScreen() {
               backgroundColor={theme.card}
               borderColor={theme.border}
             />
+          </View>
+
+          <View
+            className="mt-7 rounded-[26px] border px-5 py-5"
+            style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+            <View className="flex-row items-start justify-between gap-4">
+              <View className="min-w-0 flex-1">
+                <TText
+                  className="text-base"
+                  style={{ fontFamily: Fonts.title, color: theme.text }}>
+                  {setupComplete ? 'Setup complete' : 'Complete setup'}
+                </TText>
+                <TText
+                  className="mt-1 text-sm"
+                  style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
+                  {setupComplete
+                    ? 'This account has the key details Finnri needs for cleaner tracking.'
+                    : `${incompleteSetupItems.length} detail${incompleteSetupItems.length > 1 ? 's' : ''} missing for better tracking.`}
+                </TText>
+              </View>
+              {!setupComplete && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => handleEdit('details')}
+                  className="rounded-full px-4 py-2"
+                  style={{ backgroundColor: theme.accent }}>
+                  <TText
+                    className="text-xs"
+                    style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
+                    Update
+                  </TText>
+                </Pressable>
+              )}
+            </View>
+
+            <View className="mt-4 gap-3">
+              {setupItems.map((item) => (
+                <View key={item.label} className="flex-row items-center gap-3">
+                  <View
+                    className="h-7 w-7 items-center justify-center rounded-full"
+                    style={{
+                      backgroundColor: item.complete
+                        ? colorScheme === 'light'
+                          ? '#DCFCE7'
+                          : '#17351F'
+                        : colorScheme === 'light'
+                          ? '#F1F5F9'
+                          : '#243142',
+                    }}>
+                    <MaterialCommunityIcons
+                      name={item.complete ? 'check' : 'minus'}
+                      size={16}
+                      color={item.complete ? '#15803D' : '#64748B'}
+                    />
+                  </View>
+                  <TText
+                    className="flex-1 text-sm"
+                    style={{ fontFamily: Fonts.body, color: item.complete ? theme.text : '#64748B' }}>
+                    {item.label}
+                  </TText>
+                </View>
+              ))}
+            </View>
           </View>
 
           <View className="mt-9 flex-row items-center justify-between">
@@ -413,8 +504,138 @@ export default function AccountDetailsScreen() {
             )}
           </View>
         </ScrollView>
+
+        <AnimatedBottomSheet
+          visible={isActionsSheetVisible}
+          onClose={() => setIsActionsSheetVisible(false)}
+          sheetStyle={{
+            backgroundColor: theme.card,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            paddingHorizontal: 22,
+            paddingTop: 18,
+            paddingBottom: 34,
+          }}>
+          <View className="gap-4">
+            <View className="flex-row items-center justify-between">
+              <View className="min-w-0 flex-1 pr-3">
+                <TText className="text-lg" style={{ fontFamily: Fonts.title, color: theme.text }}>
+                  {account.name}
+                </TText>
+                <TText className="mt-1 text-xs" style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
+                  Account actions
+                </TText>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close account actions"
+                onPress={() => setIsActionsSheetVisible(false)}
+                className="h-9 w-9 items-center justify-center rounded-full"
+                style={{ backgroundColor: theme.secondary }}>
+                <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <View className="gap-2">
+              {!account.is_default && (
+                <AccountActionRow
+                  icon="star-outline"
+                  label="Set as default"
+                  description="Use this account first for matching transactions."
+                  color={theme.accent}
+                  backgroundColor={theme.secondary}
+                  textColor={theme.text}
+                  mutedColor="#7C8EA8"
+                  onPress={() => {
+                    setIsActionsSheetVisible(false);
+                    void handleSetDefault();
+                  }}
+                />
+              )}
+              <AccountActionRow
+                icon="pencil-outline"
+                label="Edit account"
+                description="Update type, name, balance, or reminders."
+                color={theme.accent}
+                backgroundColor={theme.secondary}
+                textColor={theme.text}
+                mutedColor="#7C8EA8"
+                onPress={() => {
+                  setIsActionsSheetVisible(false);
+                  handleEdit();
+                }}
+              />
+              <AccountActionRow
+                icon="delete-outline"
+                label="Delete account"
+                description="Allowed only when no transactions use this account."
+                color="#EF4444"
+                backgroundColor={colorScheme === 'light' ? '#FEF2F2' : '#3A2020'}
+                textColor={theme.text}
+                mutedColor="#7C8EA8"
+                onPress={() => {
+                  setIsActionsSheetVisible(false);
+                  setIsDeleteDialogVisible(true);
+                }}
+              />
+            </View>
+          </View>
+        </AnimatedBottomSheet>
+
+        <ThemedDeleteDialog
+          visible={isDeleteDialogVisible}
+          title={`Delete ${account.name}?`}
+          message="This is allowed only when no transactions use this account."
+          confirmLabel="Delete"
+          loading={isPending}
+          onCancel={() => setIsDeleteDialogVisible(false)}
+          onConfirm={handleDelete}
+        />
       </View>
     </SafeAreaView>
+  );
+}
+
+type AccountActionRowProps = {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  description: string;
+  color: string;
+  backgroundColor: string;
+  textColor: string;
+  mutedColor: string;
+  onPress: () => void;
+};
+
+function AccountActionRow({
+  icon,
+  label,
+  description,
+  color,
+  backgroundColor,
+  textColor,
+  mutedColor,
+  onPress,
+}: AccountActionRowProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      className="min-h-[72px] flex-row items-center rounded-[22px] px-4 py-4"
+      style={{ backgroundColor }}>
+      <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-white/80">
+        <MaterialCommunityIcons name={icon} size={21} color={color} />
+      </View>
+      <View className="min-w-0 flex-1">
+        <TText className="text-sm" style={{ fontFamily: Fonts.title, color: textColor }}>
+          {label}
+        </TText>
+        <TText className="mt-1 text-xs" style={{ fontFamily: Fonts.body, color: mutedColor }}>
+          {description}
+        </TText>
+      </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={mutedColor} />
+    </Pressable>
   );
 }
 

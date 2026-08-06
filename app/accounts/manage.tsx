@@ -17,7 +17,15 @@ import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { AccountApiError, fetchAccounts, normalizeAccountType, saveAccount, updateAccount, type AccountType } from '@/lib/accounts';
+import {
+  Account,
+  AccountApiError,
+  fetchAccounts,
+  normalizeAccountType,
+  saveAccount,
+  updateAccount,
+  type AccountType,
+} from '@/lib/accounts';
 
 type AccountTypeOption = {
   key: AccountType;
@@ -25,6 +33,12 @@ type AccountTypeOption = {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   color: string;
   bgColor: string;
+};
+
+type ProviderOption = {
+  id: string;
+  name: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
 };
 
 const typeOptions: AccountTypeOption[] = [
@@ -48,7 +62,7 @@ const COLORS = [
   '#FF79B0',
 ];
 
-const CARD_ISSUERS = [
+const CARD_ISSUERS: ProviderOption[] = [
   { id: '1', name: 'HDFC Bank', icon: 'bank' },
   { id: '2', name: 'ICICI Bank', icon: 'bank' },
   { id: '3', name: 'SBI (State Bank of India)', icon: 'bank' },
@@ -59,6 +73,24 @@ const CARD_ISSUERS = [
   { id: '8', name: 'Kotak Mahindra Bank', icon: 'bank' },
   { id: '9', name: 'Citibank', icon: 'bank' },
 ];
+
+const ACCOUNT_PROVIDER_OPTIONS: Partial<Record<AccountType, ProviderOption[]>> = {
+  credit_card: CARD_ISSUERS,
+  debit_card: CARD_ISSUERS,
+  bank: CARD_ISSUERS,
+  wallet: [
+    { id: 'wallet_1', name: 'Paytm', icon: 'wallet' },
+    { id: 'wallet_2', name: 'PhonePe Wallet', icon: 'wallet' },
+    { id: 'wallet_3', name: 'Amazon Pay', icon: 'wallet' },
+    { id: 'wallet_4', name: 'MobiKwik', icon: 'wallet' },
+  ],
+  upi: [
+    { id: 'upi_1', name: 'Google Pay', icon: 'qrcode-scan' },
+    { id: 'upi_2', name: 'PhonePe', icon: 'qrcode-scan' },
+    { id: 'upi_3', name: 'Paytm UPI', icon: 'qrcode-scan' },
+    { id: 'upi_4', name: 'BHIM', icon: 'qrcode-scan' },
+  ],
+};
 
 const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
 const MONTHS = [
@@ -76,11 +108,125 @@ const MONTHS = [
   'December',
 ];
 
+const DEFAULT_ACCOUNT_NAMES: Record<AccountType, string> = {
+  cash: 'Cash',
+  upi: 'UPI',
+  bank: 'Bank Account',
+  credit_card: 'Credit Card',
+  debit_card: 'Debit Card',
+  wallet: 'Wallet',
+  other: 'Other Account',
+};
+
+const DEFAULT_ACCOUNT_COLORS: Record<AccountType, string> = {
+  cash: '#2ECC71',
+  upi: '#00D2B4',
+  bank: '#54A0FF',
+  credit_card: '#8257E5',
+  debit_card: '#00A8FF',
+  wallet: '#FF9F43',
+  other: '#546E7A',
+};
+
+const ACCOUNT_DETAIL_COPY: Record<
+  AccountType,
+  {
+    message: string;
+    providerLabel?: string;
+    providerPlaceholder?: string;
+    balanceLabel: string;
+    identifierLabel?: string;
+    identifierPlaceholder?: string;
+    identifierIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  }
+> = {
+  cash: {
+    message: 'Set a starting cash amount now, or save it blank and update it later.',
+    balanceLabel: 'Cash in hand',
+  },
+  upi: {
+    message: 'Add the UPI app or handle you use most so scan payments stay grouped.',
+    providerLabel: 'UPI app',
+    providerPlaceholder: 'Search app or enter custom UPI source',
+    balanceLabel: 'Tracked balance',
+    identifierLabel: 'UPI handle or nickname (Optional)',
+    identifierPlaceholder: 'name@bank or personal UPI',
+    identifierIcon: 'at',
+  },
+  bank: {
+    message: 'Add the bank and last 4 digits so transfers are easier to identify.',
+    providerLabel: 'Bank',
+    providerPlaceholder: 'Search bank or enter custom bank',
+    balanceLabel: 'Initial balance',
+    identifierLabel: 'Last 4 digits (Optional)',
+    identifierPlaceholder: '1234',
+    identifierIcon: 'numeric-4-box-outline',
+  },
+  credit_card: {
+    message: 'Add reminders and limits so this card is easier to track.',
+    providerLabel: 'Card issuer',
+    providerPlaceholder: 'Search issuer (e.g. HDFC, Amex)',
+    balanceLabel: 'Current outstanding',
+    identifierLabel: 'Last 4 digits',
+    identifierPlaceholder: '••••',
+    identifierIcon: 'numeric-4-box-outline',
+  },
+  debit_card: {
+    message: 'Add the bank and last 4 digits so card spends can be categorized faster.',
+    providerLabel: 'Bank',
+    providerPlaceholder: 'Search bank or enter custom bank',
+    balanceLabel: 'Linked balance',
+    identifierLabel: 'Last 4 digits (Optional)',
+    identifierPlaceholder: '1234',
+    identifierIcon: 'numeric-4-box-outline',
+  },
+  wallet: {
+    message: 'Add the wallet provider and balance to keep prepaid spends separate.',
+    providerLabel: 'Wallet',
+    providerPlaceholder: 'Search wallet or enter custom wallet',
+    balanceLabel: 'Wallet balance',
+    identifierLabel: 'Wallet nickname (Optional)',
+    identifierPlaceholder: 'Personal wallet',
+    identifierIcon: 'wallet-outline',
+  },
+  other: {
+    message: 'Add a balance or short identifier if this source needs extra context.',
+    balanceLabel: 'Initial balance',
+    identifierLabel: 'Identifier (Optional)',
+    identifierPlaceholder: 'Reference or nickname',
+    identifierIcon: 'card-text-outline',
+  },
+};
+
+const getMissingSetupCount = (account: Account) => {
+  const accountType = normalizeAccountType(account.type);
+  const hasProvider = Boolean(account.provider?.trim());
+  const hasIdentifier = Boolean(account.identifier?.trim());
+  const hasBalance = typeof account.balance === 'number' && account.balance !== 0;
+  const hasCreditLimit = Boolean(account.credit_limit && account.credit_limit > 0);
+  const hasDueDay = Boolean(account.due_day && account.due_day >= 1 && account.due_day <= 31);
+
+  if (accountType === 'credit_card') {
+    return [hasProvider, hasIdentifier, hasCreditLimit, hasDueDay].filter((complete) => !complete)
+      .length;
+  }
+
+  if (accountType === 'cash') {
+    return hasBalance ? 0 : 1;
+  }
+
+  return [hasProvider, hasIdentifier, hasBalance].filter((complete) => !complete).length;
+};
+
 export default function ManageAccountScreen() {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
   const { token } = useAuthStore();
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, type, focus } = useLocalSearchParams<{
+    id?: string;
+    type?: string;
+    focus?: string;
+  }>();
   const accountId = id ? Number(id) : null;
   const isEditing = Number.isInteger(accountId) && accountId !== null && accountId > 0;
   const [isSaving, setIsSaving] = useState(false);
@@ -88,6 +234,7 @@ export default function ManageAccountScreen() {
   const [isDefault, setIsDefault] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [typeError, setTypeError] = useState<string | null>(null);
+  const [createdAccount, setCreatedAccount] = useState<Account | null>(null);
 
   // Step navigation
   const [step, setStep] = useState(1);
@@ -99,7 +246,7 @@ export default function ManageAccountScreen() {
 
   // Step 2 States
   const [issuerQuery, setIssuerQuery] = useState('');
-  const [selectedIssuer, setSelectedIssuer] = useState<(typeof CARD_ISSUERS)[0] | null>(null);
+  const [selectedIssuer, setSelectedIssuer] = useState<ProviderOption | null>(null);
   const [showIssuerResults, setShowIssuerResults] = useState(false);
 
   const [last4, setLast4] = useState('');
@@ -111,6 +258,14 @@ export default function ManageAccountScreen() {
   // Modal States
   const [showDayModal, setShowDayModal] = useState(false);
   const [showMonthModal, setShowMonthModal] = useState(false);
+
+  useEffect(() => {
+    if (isEditing || !type) return;
+    const presetType = normalizeAccountType(type);
+    setSelectedType(presetType);
+    setSelectedColor(DEFAULT_ACCOUNT_COLORS[presetType]);
+    setName((currentName) => currentName || DEFAULT_ACCOUNT_NAMES[presetType]);
+  }, [isEditing, type]);
 
   useEffect(() => {
     if (!token || !isEditing || accountId === null) {
@@ -129,13 +284,20 @@ export default function ManageAccountScreen() {
         setSelectedColor(account.color || '#54A0FF');
         setName(account.name);
         setIssuerQuery(account.provider || '');
-        setSelectedIssuer(CARD_ISSUERS.find((issuer) => issuer.name === account.provider) ?? null);
+        setSelectedIssuer(
+          Object.values(ACCOUNT_PROVIDER_OPTIONS)
+            .flat()
+            .find((issuer) => issuer.name === account.provider) ?? null
+        );
         setLast4(account.identifier || '');
         setBalance(account.balance ? String(account.balance) : '');
         setCreditLimit(account.credit_limit ? String(account.credit_limit) : '');
         setDueDay(account.due_day ? String(account.due_day) : '');
         setFeeMonth(account.fee_month || '');
         setIsDefault(Boolean(account.is_default));
+        if (focus === 'details') {
+          setStep(2);
+        }
       })
       .catch((error) => {
         setSaveError(error instanceof Error ? error.message : 'Unable to load account.');
@@ -147,7 +309,48 @@ export default function ManageAccountScreen() {
     return () => {
       active = false;
     };
-  }, [accountId, isEditing, token]);
+  }, [accountId, focus, isEditing, token]);
+
+  const updateSelectedType = (nextType: AccountType) => {
+    setSelectedType(nextType);
+    setSelectedColor((currentColor) =>
+      currentColor === DEFAULT_ACCOUNT_COLORS[selectedType] ? DEFAULT_ACCOUNT_COLORS[nextType] : currentColor
+    );
+    setName((currentName) => {
+      if (!currentName || currentName === DEFAULT_ACCOUNT_NAMES[selectedType]) {
+        return DEFAULT_ACCOUNT_NAMES[nextType];
+      }
+      return currentName;
+    });
+    setIssuerQuery('');
+    setSelectedIssuer(null);
+    setShowIssuerResults(false);
+    setLast4('');
+    setCreditLimit('');
+    setDueDay('');
+    setFeeMonth('');
+    setTypeError(null);
+  };
+
+  const resetNewAccountForm = () => {
+    const nextType: AccountType = 'bank';
+    setCreatedAccount(null);
+    setSelectedType(nextType);
+    setSelectedColor(DEFAULT_ACCOUNT_COLORS[nextType]);
+    setName(DEFAULT_ACCOUNT_NAMES[nextType]);
+    setIssuerQuery('');
+    setSelectedIssuer(null);
+    setShowIssuerResults(false);
+    setLast4('');
+    setBalance('');
+    setCreditLimit('');
+    setDueDay('');
+    setFeeMonth('');
+    setIsDefault(false);
+    setSaveError(null);
+    setTypeError(null);
+    setStep(1);
+  };
 
   const handleSave = async () => {
     if (!token) return;
@@ -161,7 +364,7 @@ export default function ManageAccountScreen() {
     try {
       const payload = {
         type: normalizeAccountType(selectedType),
-        name: name,
+        name: name.trim(),
         color: selectedColor,
         provider: selectedIssuer?.name || issuerQuery.trim(),
         identifier: last4,
@@ -173,10 +376,12 @@ export default function ManageAccountScreen() {
       };
       if (isEditing && accountId !== null) {
         await updateAccount(token, accountId, payload);
+        router.back();
       } else {
-        await saveAccount(token, payload);
+        const savedAccount = await saveAccount(token, payload);
+        setCreatedAccount(savedAccount);
+        setStep(3);
       }
-      router.back();
     } catch (err: unknown) {
       if (err instanceof AccountApiError && err.fields?.type) {
         setStep(1);
@@ -188,10 +393,53 @@ export default function ManageAccountScreen() {
     }
   };
 
+  const handleSetCreatedDefault = async () => {
+    if (!token || !createdAccount || createdAccount.is_default) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const updatedAccount = await updateAccount(token, createdAccount.id, {
+        type: normalizeAccountType(createdAccount.type),
+        name: createdAccount.name,
+        color: createdAccount.color,
+        provider: createdAccount.provider,
+        identifier: createdAccount.identifier,
+        credit_limit: createdAccount.credit_limit,
+        due_day: createdAccount.due_day,
+        fee_month: createdAccount.fee_month,
+        balance: createdAccount.balance,
+        is_default: true,
+      });
+      setCreatedAccount(updatedAccount);
+      setIsDefault(true);
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Unable to set default account.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const providerOptions = useMemo(() => ACCOUNT_PROVIDER_OPTIONS[selectedType] ?? [], [selectedType]);
+  const detailCopy = ACCOUNT_DETAIL_COPY[selectedType];
+
   const filteredIssuers = useMemo(() => {
     if (!issuerQuery) return [];
-    return CARD_ISSUERS.filter((i) => i.name.toLowerCase().includes(issuerQuery.toLowerCase()));
-  }, [issuerQuery]);
+    return providerOptions.filter((i) => i.name.toLowerCase().includes(issuerQuery.toLowerCase()));
+  }, [issuerQuery, providerOptions]);
+
+  const selectProvider = (provider: ProviderOption) => {
+    setSelectedIssuer(provider);
+    setIssuerQuery(provider.name);
+    setShowIssuerResults(false);
+  };
+
+  const updateIdentifier = (value: string) => {
+    if (selectedType === 'bank' || selectedType === 'credit_card' || selectedType === 'debit_card') {
+      setLast4(value.replace(/[^0-9]/g, '').slice(0, 4));
+      return;
+    }
+    setLast4(value.slice(0, 40));
+  };
 
   const renderSelectionModal = (
     visible: boolean,
@@ -234,22 +482,14 @@ export default function ManageAccountScreen() {
       />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Mascot & Message */}
-        <View style={styles.mascotSection}>
-          <View style={styles.bubbleContainer}>
-            <ThemedText style={styles.bubbleText}>
-              {isEditing ? 'Update your account details.' : "Let's set up your new account!"}
-            </ThemedText>
-            <View style={styles.bubbleTriangle} />
-          </View>
-          <View style={styles.mascotRow}>
-            <View style={styles.mascotAvatar}>
-              <MaterialCommunityIcons name="face-woman-outline" size={24} color={theme.accent} />
-            </View>
-            <ThemedText style={styles.mascotCaption}>
-              &quot;I&apos;ll help you organize your cash flow.&quot;
-            </ThemedText>
-          </View>
+        <View style={styles.stepIntro}>
+          <ThemedText style={styles.stepEyebrow}>Account basics</ThemedText>
+          <ThemedText style={styles.stepTitle}>
+            {isEditing ? 'Update this account' : 'Add a payment source'}
+          </ThemedText>
+          <ThemedText style={styles.stepDescription}>
+            Choose the account type and name Finnri should use when matching transactions.
+          </ThemedText>
         </View>
 
         {/* Account Type Selection */}
@@ -260,7 +500,7 @@ export default function ManageAccountScreen() {
             return (
               <TouchableOpacity
                 key={option.key}
-                onPress={() => { setSelectedType(option.key); setTypeError(null); }}
+                onPress={() => updateSelectedType(option.key)}
                 style={[
                   styles.gridItem,
                   isSelected ? styles.gridItemSelected : styles.gridItemUnselected,
@@ -302,8 +542,30 @@ export default function ManageAccountScreen() {
           />
         </View>
 
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setIsDefault((current) => !current)}
+          style={styles.defaultCard}>
+          <View style={styles.defaultIcon}>
+            <MaterialCommunityIcons name="star-outline" size={22} color={theme.accent} />
+          </View>
+          <View style={styles.defaultCopy}>
+            <ThemedText style={styles.defaultTitle}>Use as default account</ThemedText>
+            <ThemedText style={styles.defaultDescription}>
+              Finnri will preselect it when a transaction matches this payment type.
+            </ThemedText>
+          </View>
+          <View
+            style={[
+              styles.defaultToggle,
+              isDefault && { backgroundColor: theme.accent, borderColor: theme.accent },
+            ]}>
+            {isDefault && <MaterialCommunityIcons name="check" size={16} color="white" />}
+          </View>
+        </TouchableOpacity>
+
         {/* Color Picker */}
-        <ThemedText style={styles.sectionTitle}>Pick a happy color!</ThemedText>
+        <ThemedText style={styles.sectionTitle}>Choose account color</ThemedText>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -343,7 +605,7 @@ export default function ManageAccountScreen() {
             style={[styles.saveButton, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
             disabled={isSaving}>
             <ThemedText style={styles.saveButtonText}>
-              {isEditing ? 'Continue' : 'Looks Good! Save'}
+              Continue
             </ThemedText>
             {isSaving ? (
               <ActivityIndicator size="small" color="white" />
@@ -363,8 +625,8 @@ export default function ManageAccountScreen() {
           <ScreenHeader
             subtitle="STEP 2 OF 2"
             onBack={() => setStep(1)}
-            rightText="Skip"
-            onRightPress={() => router.back()}
+            rightText={isSaving ? 'Saving' : 'Save basic'}
+            onRightPress={handleSave}
           />
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -372,9 +634,7 @@ export default function ManageAccountScreen() {
             {/* Mascot & Message Step 2 */}
             <View style={styles.mascotSection}>
               <View style={[styles.bubbleContainer, { backgroundColor: '#F4F1FE' }]}>
-                <ThemedText style={styles.bubbleText}>
-                  Yay! Let&apos;s set up your plastic power.
-                </ThemedText>
+                <ThemedText style={styles.bubbleText}>{detailCopy.message}</ThemedText>
                 <View style={[styles.bubbleTriangle, { backgroundColor: '#F4F1FE' }]} />
               </View>
               <View style={styles.mascotRowCenter}>
@@ -390,7 +650,34 @@ export default function ManageAccountScreen() {
 
             <ThemedText style={styles.sectionHeaderLabel}>VISUALS</ThemedText>
 
-            <ThemedText style={styles.labelSmall}>Choose your card</ThemedText>
+            <ThemedText style={styles.labelSmall}>{detailCopy.providerLabel}</ThemedText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.providerChips}>
+              {providerOptions.slice(0, 5).map((provider) => {
+                const isActive = issuerQuery === provider.name;
+                return (
+                  <TouchableOpacity
+                    key={provider.id}
+                    onPress={() => selectProvider(provider)}
+                    style={[
+                      styles.providerChip,
+                      isActive && { borderColor: theme.accent, backgroundColor: '#F4F1FE' },
+                    ]}>
+                    <MaterialCommunityIcons
+                      name={provider.icon}
+                      size={16}
+                      color={isActive ? theme.accent : '#64748B'}
+                    />
+                    <ThemedText
+                      style={[styles.providerChipText, isActive && { color: theme.accent }]}>
+                      {provider.name}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
             <View style={styles.searchWrapper}>
               <View style={styles.dropdownContainer}>
                 <MaterialCommunityIcons
@@ -404,10 +691,11 @@ export default function ManageAccountScreen() {
                   value={issuerQuery}
                   onChangeText={(text) => {
                     setIssuerQuery(text);
+                    setSelectedIssuer(null);
                     setShowIssuerResults(true);
                   }}
                   onFocus={() => setShowIssuerResults(true)}
-                  placeholder="Search issuer (e.g. HDFC, A)"
+                  placeholder={detailCopy.providerPlaceholder}
                   placeholderTextColor="#AAB7C6"
                 />
                 <MaterialCommunityIcons name="chevron-down" size={24} color="#AAB7C6" />
@@ -420,12 +708,10 @@ export default function ManageAccountScreen() {
                       key={item.id}
                       style={styles.resultItem}
                       onPress={() => {
-                        setSelectedIssuer(item);
-                        setIssuerQuery(item.name);
-                        setShowIssuerResults(false);
+                        selectProvider(item);
                       }}>
                       <MaterialCommunityIcons
-                        name={item.icon as any}
+                        name={item.icon}
                         size={20}
                         color={theme.accent}
                         style={{ marginRight: 10 }}
@@ -437,18 +723,18 @@ export default function ManageAccountScreen() {
               )}
             </View>
 
-            <ThemedText style={styles.labelSmall}>Last 4 digits</ThemedText>
+            <ThemedText style={styles.labelSmall}>{detailCopy.identifierLabel}</ThemedText>
             <View style={styles.inputContainerSmall}>
               <MaterialCommunityIcons
-                name="numeric-4-box-outline"
+                name={detailCopy.identifierIcon ?? 'numeric-4-box-outline'}
                 size={24}
                 color={theme.accent}
                 style={styles.inputIcon}
               />
               <TextInput
                 value={last4}
-                onChangeText={(val) => setLast4(val.replace(/[^0-9]/g, '').slice(0, 4))}
-                placeholder="••••"
+                onChangeText={updateIdentifier}
+                placeholder={detailCopy.identifierPlaceholder}
                 placeholderTextColor="#AAB7C6"
                 keyboardType="number-pad"
                 style={styles.textInputSmall}
@@ -459,7 +745,7 @@ export default function ManageAccountScreen() {
 
             <ThemedText style={styles.sectionHeaderLabel}>ALERTS & LIMITS</ThemedText>
 
-            <ThemedText style={styles.labelSmall}>Credit Limit</ThemedText>
+            <ThemedText style={styles.labelSmall}>Credit limit</ThemedText>
             <View style={styles.inputContainerSmall}>
               <MaterialCommunityIcons
                 name="currency-inr"
@@ -564,22 +850,96 @@ export default function ManageAccountScreen() {
         <ScreenHeader
           subtitle="STEP 2 OF 2"
           onBack={() => setStep(1)}
-          rightText="Skip"
-          onRightPress={() => router.back()}
+          rightText={isSaving ? 'Saving' : 'Save basic'}
+          onRightPress={handleSave}
         />
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}>
           <View style={styles.mascotSection}>
             <View style={styles.bubbleContainer}>
-              <ThemedText style={styles.bubbleText}>
-                Almost there! Adding some finishing touches.
-              </ThemedText>
+              <ThemedText style={styles.bubbleText}>{detailCopy.message}</ThemedText>
               <View style={styles.bubbleTriangle} />
             </View>
           </View>
 
-          <ThemedText style={styles.sectionTitle}>Initial Balance</ThemedText>
+          {detailCopy.providerLabel && (
+            <>
+              <ThemedText style={styles.sectionTitle}>{detailCopy.providerLabel}</ThemedText>
+              {providerOptions.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.providerChips}>
+                  {providerOptions.map((provider) => {
+                    const isActive = issuerQuery === provider.name;
+                    return (
+                      <TouchableOpacity
+                        key={provider.id}
+                        onPress={() => selectProvider(provider)}
+                        style={[
+                          styles.providerChip,
+                          isActive && { borderColor: theme.accent, backgroundColor: '#F4F1FE' },
+                        ]}>
+                        <MaterialCommunityIcons
+                          name={provider.icon}
+                          size={16}
+                          color={isActive ? theme.accent : '#64748B'}
+                        />
+                        <ThemedText
+                          style={[styles.providerChipText, isActive && { color: theme.accent }]}>
+                          {provider.name}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+              <View style={styles.searchWrapper}>
+                <View style={styles.dropdownContainer}>
+                  <MaterialCommunityIcons
+                    name={selectedType === 'upi' ? 'qrcode-scan' : selectedType === 'wallet' ? 'wallet-outline' : 'bank-outline'}
+                    size={24}
+                    color={theme.accent}
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.textInputSmall}
+                    value={issuerQuery}
+                    onChangeText={(text) => {
+                      setIssuerQuery(text);
+                      setSelectedIssuer(null);
+                      setShowIssuerResults(true);
+                    }}
+                    onFocus={() => setShowIssuerResults(true)}
+                    placeholder={detailCopy.providerPlaceholder}
+                    placeholderTextColor="#AAB7C6"
+                  />
+                </View>
+
+                {showIssuerResults && filteredIssuers.length > 0 && (
+                  <View style={styles.resultsList}>
+                    {filteredIssuers.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.resultItem}
+                        onPress={() => selectProvider(item)}>
+                        <MaterialCommunityIcons
+                          name={item.icon}
+                          size={20}
+                          color={theme.accent}
+                          style={{ marginRight: 10 }}
+                        />
+                        <ThemedText style={styles.resultItemText}>{item.name}</ThemedText>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
+          <ThemedText style={styles.sectionTitle}>{detailCopy.balanceLabel}</ThemedText>
           <View style={styles.inputContainer}>
             <MaterialCommunityIcons
               name="scale-balance"
@@ -597,23 +957,30 @@ export default function ManageAccountScreen() {
             />
           </View>
 
-          <ThemedText style={styles.sectionTitle}>Account Number (Optional)</ThemedText>
-          <View style={styles.inputContainer}>
-            <MaterialCommunityIcons
-              name="card-text-outline"
-              size={24}
-              color={theme.accent}
-              style={styles.inputIcon}
-            />
-            <TextInput
-              value={last4}
-              onChangeText={(value) => setLast4(value.replace(/[^0-9]/g, '').slice(-4))}
-              placeholder="1234 5678 9012"
-              placeholderTextColor="#AAB7C6"
-              keyboardType="number-pad"
-              style={styles.textInput}
-            />
-          </View>
+          {detailCopy.identifierLabel && (
+            <>
+              <ThemedText style={styles.sectionTitle}>{detailCopy.identifierLabel}</ThemedText>
+              <View style={styles.inputContainer}>
+                <MaterialCommunityIcons
+                  name={detailCopy.identifierIcon ?? 'card-text-outline'}
+                  size={24}
+                  color={theme.accent}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  value={last4}
+                  onChangeText={updateIdentifier}
+                  placeholder={detailCopy.identifierPlaceholder}
+                  placeholderTextColor="#AAB7C6"
+                  keyboardType={
+                    selectedType === 'bank' || selectedType === 'debit_card' ? 'number-pad' : 'default'
+                  }
+                  autoCapitalize="none"
+                  style={styles.textInput}
+                />
+              </View>
+            </>
+          )}
         </ScrollView>
 
         <View style={styles.footer}>
@@ -646,6 +1013,101 @@ export default function ManageAccountScreen() {
     );
   };
 
+  const renderSuccess = () => {
+    const accountType = normalizeAccountType(createdAccount?.type ?? selectedType);
+    const accountName = createdAccount?.name ?? name.trim();
+    const visual = typeOptions.find((option) => option.key === accountType) ?? typeOptions[6];
+    const missingSetupCount = createdAccount ? getMissingSetupCount(createdAccount) : 0;
+
+    return (
+      <>
+        <ScreenHeader subtitle="ACCOUNT ADDED" onBack={() => router.back()} />
+        <View style={styles.successContent}>
+          <View style={styles.successCard}>
+            <View style={[styles.successIcon, { backgroundColor: visual.bgColor }]}>
+              <MaterialCommunityIcons name={visual.icon} size={34} color={visual.color} />
+            </View>
+            <ThemedText style={styles.successTitle} numberOfLines={2}>
+              {accountName}
+            </ThemedText>
+            <ThemedText style={styles.successMessage}>
+              This account is ready for transaction tracking. You can view it now or add another
+              payment source.
+            </ThemedText>
+          </View>
+        </View>
+        <View style={styles.footer}>
+          {saveError ? (
+            <View style={styles.errorContainer}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
+              <ThemedText style={styles.errorText}>{saveError}</ThemedText>
+            </View>
+          ) : null}
+          <View style={styles.successActions}>
+            {createdAccount && (
+              <TouchableOpacity
+                onPress={() =>
+                  router.replace({
+                    pathname: '/accounts/[id]',
+                    params: { id: String(createdAccount.id) },
+                  })
+                }
+                style={[styles.fullWidthButton, { backgroundColor: theme.accent }]}>
+                <ThemedText style={styles.saveButtonText}>View account</ThemedText>
+                <MaterialCommunityIcons name="arrow-right" size={20} color="white" />
+              </TouchableOpacity>
+            )}
+            {createdAccount && missingSetupCount > 0 && (
+              <TouchableOpacity
+                onPress={() =>
+                  router.replace({
+                    pathname: '/accounts/manage',
+                    params: { id: String(createdAccount.id), focus: 'details' },
+                  })
+                }
+                style={[styles.fullWidthButton, styles.secondaryFullWidthButton]}>
+                <ThemedText style={styles.secondaryFullWidthText}>
+                  Complete {missingSetupCount} detail{missingSetupCount > 1 ? 's' : ''}
+                </ThemedText>
+                <MaterialCommunityIcons name="clipboard-check-outline" size={20} color={theme.accent} />
+              </TouchableOpacity>
+            )}
+            {createdAccount && !createdAccount.is_default && (
+              <TouchableOpacity
+                onPress={handleSetCreatedDefault}
+                disabled={isSaving}
+                style={[styles.fullWidthButton, styles.secondaryFullWidthButton]}>
+                {isSaving ? (
+                  <ActivityIndicator color={theme.accent} />
+                ) : (
+                  <>
+                    <ThemedText style={styles.secondaryFullWidthText}>Set as default</ThemedText>
+                    <MaterialCommunityIcons name="star-outline" size={20} color={theme.accent} />
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+            {createdAccount?.is_default && (
+              <View style={styles.successDefaultPill}>
+                <MaterialCommunityIcons name="star" size={16} color={theme.accent} />
+                <ThemedText style={styles.successDefaultText}>Default account</ThemedText>
+              </View>
+            )}
+            <TouchableOpacity
+              onPress={resetNewAccountForm}
+              style={[styles.fullWidthButton, styles.secondaryFullWidthButton]}>
+              <ThemedText style={styles.secondaryFullWidthText}>Add another account</ThemedText>
+              <MaterialCommunityIcons name="plus" size={20} color={theme.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.back()} style={styles.doneTextButton}>
+              <ThemedText style={[styles.cancelText, { textAlign: 'center' }]}>Done</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </>
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
       <View style={styles.container}>
@@ -656,8 +1118,10 @@ export default function ManageAccountScreen() {
           </View>
         ) : step === 1 ? (
           renderStep1()
-        ) : (
+        ) : step === 2 ? (
           renderStep2()
+        ) : (
+          renderSuccess()
         )}
       </View>
     </SafeAreaView>
@@ -678,9 +1142,76 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
   },
+  successContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  successCard: {
+    alignItems: 'center',
+    borderRadius: 32,
+    backgroundColor: 'white',
+    paddingHorizontal: 24,
+    paddingVertical: 36,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  successIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 22,
+  },
+  successTitle: {
+    fontSize: 24,
+    lineHeight: 32,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    textAlign: 'center',
+    marginBottom: 12,
+    paddingBottom: 2,
+  },
+  successMessage: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: Fonts.body,
+    color: '#64748B',
+    textAlign: 'center',
+  },
   scrollContent: {
     paddingHorizontal: 24,
     paddingBottom: 100,
+  },
+  stepIntro: {
+    marginBottom: 28,
+  },
+  stepEyebrow: {
+    fontSize: 12,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#8257E5',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+  stepTitle: {
+    fontSize: 26,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    marginBottom: 8,
+  },
+  stepDescription: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: Fonts.body,
+    color: '#64748B',
   },
   mascotSection: {
     marginBottom: 40,
@@ -708,11 +1239,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFEAFF',
     transform: [{ rotate: '45deg' }],
   },
-  mascotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
   mascotRowCenter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -727,13 +1253,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'white',
-  },
-  mascotCaption: {
-    fontSize: 14,
-    fontFamily: Fonts.body,
-    fontStyle: 'italic',
-    color: '#9E9E9E',
-    fontWeight: '500',
   },
   sectionHeaderLabel: {
     fontSize: 12,
@@ -930,6 +1449,28 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#1A1A1A',
   },
+  providerChips: {
+    gap: 10,
+    paddingRight: 24,
+    paddingBottom: 14,
+  },
+  providerChip: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: 'white',
+    paddingHorizontal: 14,
+  },
+  providerChipText: {
+    fontSize: 12,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#64748B',
+  },
   colorScroll: {
     gap: 12,
     paddingRight: 24,
@@ -953,6 +1494,59 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     borderWidth: 2,
   },
+  defaultCard: {
+    minHeight: 82,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 28,
+    backgroundColor: 'white',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    marginTop: -6,
+    marginBottom: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  defaultIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F4F1FE',
+    marginRight: 14,
+  },
+  defaultCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 12,
+  },
+  defaultTitle: {
+    fontSize: 14,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#1A1A1A',
+  },
+  defaultDescription: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: Fonts.body,
+    color: '#64748B',
+  },
+  defaultToggle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    backgroundColor: 'white',
+  },
   footer: {
     paddingVertical: 16,
     paddingHorizontal: 24,
@@ -962,6 +1556,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  successActions: {
+    gap: 12,
+  },
+  fullWidthButton: {
+    minHeight: 56,
+    borderRadius: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 18,
+  },
+  secondaryFullWidthButton: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: 'white',
+  },
+  secondaryFullWidthText: {
+    fontSize: 15,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#8257E5',
+  },
+  successDefaultPill: {
+    minHeight: 44,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F4F1FE',
+    paddingHorizontal: 16,
+  },
+  successDefaultText: {
+    fontSize: 13,
+    fontFamily: Fonts.title,
+    fontWeight: '900',
+    color: '#8257E5',
+  },
+  doneTextButton: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   errorContainer: {
     flexDirection: 'row',

@@ -53,6 +53,51 @@ const accountGroups: { key: string; label: string; types: AccountType[] }[] = [
   { key: 'others', label: 'Others', types: ['other'] },
 ];
 
+const quickAccountOptions: {
+  key: AccountType;
+  label: string;
+  description: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+}[] = [
+  {
+    key: 'credit_card',
+    label: 'Credit card',
+    description: 'Track limits and due dates',
+    icon: 'credit-card-outline',
+  },
+  {
+    key: 'bank',
+    label: 'Bank account',
+    description: 'Separate salary and savings',
+    icon: 'bank-outline',
+  },
+  {
+    key: 'upi',
+    label: 'UPI',
+    description: 'Group daily scan payments',
+    icon: 'qrcode-scan',
+  },
+  {
+    key: 'wallet',
+    label: 'Wallet',
+    description: 'Keep prepaid spends clean',
+    icon: 'wallet-outline',
+  },
+  {
+    key: 'cash',
+    label: 'Cash',
+    description: 'Record offline spending',
+    icon: 'cash',
+  },
+];
+
+type AccountBadge = {
+  label: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  textColor: string;
+  bgColor: string;
+};
+
 export default function AccountsScreen() {
   const router = useRouter();
   const themeTokens = useThemeTokens();
@@ -132,7 +177,46 @@ export default function AccountsScreen() {
   const activeFilterOption =
     filterOptions.find((option) => option.key === activeFilter) ?? filterOptions[0];
 
-  const handleAddAccount = () => {
+  const accountSummary = useMemo(() => {
+    return accounts.reduce(
+      (summary, account) => {
+        const accountType = normalizeAccountType(account.type);
+        const balance = Number(account.balance ?? 0);
+        const creditLimit = Number(account.credit_limit ?? 0);
+        const hasBalance = Number.isFinite(balance);
+        const hasCreditLimit = Number.isFinite(creditLimit);
+
+        if (accountType === 'credit_card') {
+          return {
+            ...summary,
+            creditCards: summary.creditCards + 1,
+            creditLimit: summary.creditLimit + (hasCreditLimit ? creditLimit : 0),
+            cardsMissingDueDate:
+              !account.due_day || account.due_day < 1 || account.due_day > 31
+                ? summary.cardsMissingDueDate + 1
+                : summary.cardsMissingDueDate,
+          };
+        }
+
+        return {
+          ...summary,
+          trackedBalance: summary.trackedBalance + (hasBalance ? balance : 0),
+        };
+      },
+      {
+        trackedBalance: 0,
+        creditLimit: 0,
+        creditCards: 0,
+        cardsMissingDueDate: 0,
+      }
+    );
+  }, [accounts]);
+
+  const handleAddAccount = (type?: AccountType) => {
+    if (type) {
+      router.push({ pathname: '/accounts/manage', params: { type } });
+      return;
+    }
     router.push('/accounts/manage');
   };
 
@@ -175,9 +259,51 @@ export default function AccountsScreen() {
     const accountType = normalizeAccountType(account.type);
     const visual = accountVisuals[accountType];
     const isCreditCard = accountType === 'credit_card';
-    const statusLabel =
-      (isCreditCard && getCreditDueLabel(account.due_day)) ||
-      (account.is_default ? 'Default' : null);
+    const dueLabel = isCreditCard ? getCreditDueLabel(account.due_day) : null;
+    const setupBadges: AccountBadge[] = [];
+
+    if (account.is_default) {
+      setupBadges.push({
+        label: 'Default',
+        icon: 'star',
+        textColor: colorScheme === 'light' ? '#7C3AED' : '#DDD6FE',
+        bgColor: colorScheme === 'light' ? '#F3E8FF' : '#3B2A52',
+      });
+    }
+
+    if (isCreditCard && !dueLabel) {
+      setupBadges.push({
+        label: 'Add due date',
+        icon: 'calendar-alert-outline',
+        textColor: '#EA580C',
+        bgColor: colorScheme === 'light' ? '#FFF7ED' : '#3A2614',
+      });
+    } else if (dueLabel) {
+      setupBadges.push({
+        label: dueLabel,
+        icon: 'clock-outline',
+        textColor: '#64748B',
+        bgColor: colorScheme === 'light' ? '#F1F5F9' : '#243142',
+      });
+    }
+
+    if (!isCreditCard && !account.balance) {
+      setupBadges.push({
+        label: 'No balance',
+        icon: 'scale-balance',
+        textColor: '#64748B',
+        bgColor: colorScheme === 'light' ? '#F1F5F9' : '#243142',
+      });
+    }
+
+    if (setupBadges.length === 0) {
+      setupBadges.push({
+        label: 'Ready',
+        icon: 'check-circle-outline',
+        textColor: '#15803D',
+        bgColor: colorScheme === 'light' ? '#DCFCE7' : '#17351F',
+      });
+    }
 
     return (
       <Pressable
@@ -215,6 +341,22 @@ export default function AccountsScreen() {
             darkColor="rgba(250,250,250,0.62)">
             {formatAccountIdentifier(account)}
           </TText>
+          <View className="mt-2 flex-row flex-wrap gap-2">
+            {setupBadges.slice(0, 2).map((badge) => (
+              <View
+                key={badge.label}
+                className="flex-row items-center rounded-full px-2 py-1"
+                style={{ backgroundColor: badge.bgColor }}>
+                <MaterialCommunityIcons name={badge.icon} size={12} color={badge.textColor} />
+                <TText
+                  className="ml-1 text-[10px]"
+                  numberOfLines={1}
+                  style={{ fontFamily: Fonts.title, color: badge.textColor }}>
+                  {badge.label}
+                </TText>
+              </View>
+            ))}
+          </View>
         </View>
 
         <View className="items-end">
@@ -224,22 +366,6 @@ export default function AccountsScreen() {
             style={{ fontFamily: Fonts.title, color: theme.text }}>
             {formatCurrency(getAccountDisplayAmount(account))}
           </TText>
-          {statusLabel && (
-            <TText
-              className="mt-1 text-xs"
-              numberOfLines={1}
-              style={{
-                fontFamily: Fonts.body,
-                color:
-                  statusLabel === 'Default'
-                    ? colorScheme === 'light'
-                      ? '#64748B'
-                      : '#CBD5E1'
-                    : '#64748B',
-              }}>
-              {statusLabel}
-            </TText>
-          )}
         </View>
       </Pressable>
     );
@@ -263,7 +389,7 @@ export default function AccountsScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Add account"
-              onPress={handleAddAccount}
+              onPress={() => handleAddAccount()}
               className="h-11 w-11 items-center justify-center rounded-full"
               style={{ backgroundColor: theme.accent }}>
               <MaterialCommunityIcons name="plus" size={22} color="#FFFFFF" />
@@ -288,15 +414,122 @@ export default function AccountsScreen() {
           )}
 
           {accounts.length === 0 ? (
-            <StateView
-              icon="wallet-outline"
-              title="No accounts yet"
-              message="Add a cash, bank, card, wallet, or UPI source so every transaction has the right account."
-              actionLabel="Add account"
-              onAction={handleAddAccount}
-            />
+            <View className="gap-5">
+              <StateView
+                icon="wallet-outline"
+                title="No accounts yet"
+                message="Start with the payment source you use most. Finnri will use it to keep new transactions cleaner."
+                actionLabel="Add custom account"
+                onAction={() => handleAddAccount()}
+              />
+
+              <View className="gap-3">
+                <TText
+                  className="text-xs uppercase"
+                  style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.8 }}>
+                  Quick start
+                </TText>
+                <View className="gap-3">
+                  {quickAccountOptions.map((option) => {
+                    const visual = accountVisuals[option.key];
+                    return (
+                      <Pressable
+                        key={option.key}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add ${option.label}`}
+                        onPress={() => handleAddAccount(option.key)}
+                        className="min-h-[74px] flex-row items-center rounded-[24px] border px-4 py-4"
+                        style={{ backgroundColor: surfaceColor, borderColor }}>
+                        <View
+                          className="mr-4 h-11 w-11 items-center justify-center rounded-full"
+                          style={{ backgroundColor: visual.bg }}>
+                          <MaterialCommunityIcons
+                            name={option.icon}
+                            size={22}
+                            color={visual.color}
+                          />
+                        </View>
+                        <View className="min-w-0 flex-1">
+                          <TText
+                            className="text-sm"
+                            numberOfLines={1}
+                            style={{ fontFamily: Fonts.title, color: theme.text }}>
+                            {option.label}
+                          </TText>
+                          <TText
+                            className="mt-1 text-xs"
+                            numberOfLines={1}
+                            style={{ fontFamily: Fonts.body, color: '#64748B' }}>
+                            {option.description}
+                          </TText>
+                        </View>
+                        <MaterialCommunityIcons name="chevron-right" size={22} color="#94A3B8" />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
           ) : (
             <>
+              <View className="flex-row gap-3">
+                <View
+                  className="min-h-[96px] flex-1 rounded-[24px] border px-4 py-4"
+                  style={{ backgroundColor: surfaceColor, borderColor }}>
+                  <MaterialCommunityIcons name="scale-balance" size={20} color={theme.accent} />
+                  <TText
+                    className="mt-3 text-[11px] uppercase"
+                    style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.6 }}>
+                    Manual balance
+                  </TText>
+                  <TText
+                    className="mt-1 text-lg"
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    style={{ fontFamily: Fonts.title, color: theme.text }}>
+                    {formatCurrency(accountSummary.trackedBalance)}
+                  </TText>
+                </View>
+                <View
+                  className="min-h-[96px] flex-1 rounded-[24px] border px-4 py-4"
+                  style={{ backgroundColor: surfaceColor, borderColor }}>
+                  <MaterialCommunityIcons
+                    name="credit-card-clock-outline"
+                    size={20}
+                    color="#A855F7"
+                  />
+                  <TText
+                    className="mt-3 text-[11px] uppercase"
+                    style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.6 }}>
+                    Credit limit
+                  </TText>
+                  <TText
+                    className="mt-1 text-lg"
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    style={{ fontFamily: Fonts.title, color: theme.text }}>
+                    {formatCurrency(accountSummary.creditLimit)}
+                  </TText>
+                </View>
+              </View>
+
+              {accountSummary.cardsMissingDueDate > 0 && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setActiveFilter('credit_card')}
+                  className="flex-row items-center rounded-[22px] border px-4 py-3"
+                  style={{ backgroundColor: colorScheme === 'light' ? '#FFF7ED' : '#2A2118', borderColor: '#FDBA74' }}>
+                  <MaterialCommunityIcons name="calendar-alert-outline" size={20} color="#F97316" />
+                  <TText
+                    className="ml-3 flex-1 text-sm"
+                    style={{ fontFamily: Fonts.body, color: colorScheme === 'light' ? '#9A3412' : '#FDBA74' }}>
+                    Add due dates to {accountSummary.cardsMissingDueDate} credit card
+                    {accountSummary.cardsMissingDueDate > 1 ? 's' : ''} for better reminders.
+                  </TText>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color="#F97316" />
+                </Pressable>
+              )}
+
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Filter accounts"
