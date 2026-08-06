@@ -158,6 +158,16 @@ export default function SpendingAnalysisScreen() {
 
       <View className="absolute bottom-8 left-5 right-5">
         <TouchableOpacity
+          onPress={() =>
+            router.push({
+              pathname: '/weekly-review',
+              params: {
+                start: dashboard.period.start,
+                end: dashboard.period.end,
+                label: periodLabel,
+              },
+            })
+          }
           className="flex-row items-center justify-center rounded-2xl py-4 shadow-lg"
           style={{ backgroundColor: theme.accent }}>
           <MaterialCommunityIcons name="file-chart" size={20} color="white" />
@@ -171,29 +181,37 @@ export default function SpendingAnalysisScreen() {
 function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
-  const [selectedIndex, setSelectedIndex] = useState(10);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const points = useMemo(() => {
-    const avg = dashboard.summary.daily_average;
-    return [0.7, 0.62, 0.84, 1.22, 1.28, 1.2, 0.96, 0.82, 1.02, 1.42, 1.3].map((n) =>
-      Math.max(8, Math.round(avg * n))
-    );
-  }, [dashboard.summary.daily_average]);
-  const maxPoint = Math.max(...points, 1);
-  const selectedPoint = points[selectedIndex] ?? points[points.length - 1] ?? 0;
+    const source =
+      dashboard.daily_spending && dashboard.daily_spending.length > 0
+        ? dashboard.daily_spending
+        : [{ date: dashboard.period.end, amount: dashboard.summary.total_spent, count: dashboard.summary.transaction_count }];
+    return source.map((day) => ({
+      date: day.date,
+      amount: Math.round(day.amount),
+      count: day.count,
+    }));
+  }, [dashboard.daily_spending, dashboard.period.end, dashboard.summary.total_spent, dashboard.summary.transaction_count]);
+  useEffect(() => {
+    setSelectedIndex(Math.max(points.length - 1, 0));
+  }, [points.length]);
+  const safeSelectedIndex = Math.min(selectedIndex, Math.max(points.length - 1, 0));
+  const maxPoint = Math.max(...points.map((point) => point.amount), 1);
+  const selectedPoint = points[safeSelectedIndex] ?? points[points.length - 1] ?? { amount: 0, date: dashboard.period.end, count: 0 };
   const selectedDelta =
     dashboard.summary.daily_average > 0
       ? Math.round(
-          ((selectedPoint - dashboard.summary.daily_average) / dashboard.summary.daily_average) *
+          ((selectedPoint.amount - dashboard.summary.daily_average) / dashboard.summary.daily_average) *
             100
         )
       : 0;
-  const selectedLabel =
-    selectedIndex === 0
-      ? 'Start of period'
-      : selectedIndex === points.length - 1
-        ? 'End of period'
-        : `Trend point ${selectedIndex + 1}`;
-  const todaySpend = Number(dashboard.recent_transactions[0]?.amount ?? 0);
+  const selectedDate = new Date(`${selectedPoint.date}T00:00:00`);
+  const selectedLabel = Number.isNaN(selectedDate.getTime())
+    ? selectedPoint.date
+    : selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const latestPoint = points[points.length - 1] ?? selectedPoint;
+  const todaySpend = latestPoint.amount;
   const delta =
     dashboard.summary.daily_average > 0
       ? Math.round(
@@ -221,10 +239,11 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
 
       <View className="h-40 flex-row items-end justify-between overflow-hidden">
         {points.map((point, index) => {
-          const selected = selectedIndex === index;
+          const selected = safeSelectedIndex === index;
+          const hasSpend = point.amount > 0;
           return (
             <TouchableOpacity
-              key={`${point}-${index}`}
+              key={`${point.date}-${index}`}
               activeOpacity={0.78}
               className="items-center justify-end"
               onPress={() => setSelectedIndex(index)}>
@@ -238,8 +257,8 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
               <View
                 className="w-5 rounded-t-full"
                 style={{
-                  height: Math.max(18, (point / maxPoint) * 130),
-                  opacity: selected ? 1 : 0.16 + index * 0.07,
+                  height: hasSpend ? Math.max(18, (point.amount / maxPoint) * 130) : 8,
+                  opacity: selected ? 1 : hasSpend ? 0.34 : 0.16,
                   backgroundColor: theme.accent,
                   width: selected ? 24 : 20,
                 }}
@@ -279,9 +298,12 @@ function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
               Selected Bar
             </ThemedText>
             <ThemedText className="mt-1 text-sm font-black">{selectedLabel}</ThemedText>
+            <ThemedText className="mt-1 text-[10px] text-gray-500">
+              {selectedPoint.count} transaction{selectedPoint.count === 1 ? '' : 's'}
+            </ThemedText>
           </View>
           <ThemedText className="text-base font-black" style={{ color: theme.accent }}>
-            {formatMoney(selectedPoint)}
+            {formatMoney(selectedPoint.amount)}
           </ThemedText>
         </View>
         <ThemedText className="mt-2 text-xs leading-5 text-gray-600">

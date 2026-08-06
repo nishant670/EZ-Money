@@ -28,6 +28,7 @@ export type ApiEntry = {
   created_at?: string;
   createdAt?: string;
   updated_at?: string;
+  category_suggestions?: string[];
 };
 
 export interface TransactionFilters {

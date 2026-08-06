@@ -171,6 +171,9 @@ export default function RootLayout() {
         <Stack.Screen name="change-pin" />
         <Stack.Screen name="invite/split/[token]" />
         <Stack.Screen name="notifications" />
+        <Stack.Screen name="insight-detail" />
+        <Stack.Screen name="recurring-review" />
+        <Stack.Screen name="weekly-review" />
         <Stack.Screen name="budgets" />
         <Stack.Screen name="subscriptions" />
         <Stack.Screen name="billing" />

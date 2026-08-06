@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -95,6 +95,8 @@ interface TransactionFormModalProps {
   splitGroups?: SplitGroup[];
   onManageAccounts?: () => void;
   onDraftChange?: (data: EntryForm) => void;
+  initialFocus?: 'category' | 'account';
+  categorySuggestions?: string[];
 }
 
 const emptyAccounts: Account[] = [];
@@ -183,6 +185,7 @@ const shareFromPercent = (percent: string, totalAmount: string) => {
 
 const formatFieldName = (field: string) => {
   const normalized = field === 'account_hint' ? 'account' : field;
+  if (normalized === 'accountId') return 'Account';
   return normalized.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 
@@ -227,6 +230,8 @@ export function TransactionFormModal({
   splitGroups = emptySplitGroups,
   onManageAccounts,
   onDraftChange,
+  initialFocus,
+  categorySuggestions = [],
 }: TransactionFormModalProps) {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
@@ -309,6 +314,7 @@ export function TransactionFormModal({
   const [splitShareMode, setSplitShareMode] = useState<SplitShareMode>('amount');
   const [isDiscardDialogVisible, setIsDiscardDialogVisible] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
+  const autoFocusedFieldRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (visible) onDraftChange?.(form);
@@ -323,6 +329,25 @@ export function TransactionFormModal({
   const [isModePickerVisible, setIsModePickerVisible] = useState(false);
   const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
   const [isAccountPickerVisible, setIsAccountPickerVisible] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      autoFocusedFieldRef.current = null;
+      return;
+    }
+    if (!initialFocus || autoFocusedFieldRef.current === initialFocus) {
+      return;
+    }
+    autoFocusedFieldRef.current = initialFocus;
+    const timer = setTimeout(() => {
+      if (initialFocus === 'category') {
+        setIsCategoryPickerVisible(true);
+      } else if (initialFocus === 'account') {
+        setIsAccountPickerVisible(true);
+      }
+    }, 360);
+    return () => clearTimeout(timer);
+  }, [initialFocus, visible]);
   const compatibleAccounts = useMemo(
     () => getAccountsForPaymentMode(accounts, form.mode),
     [accounts, form.mode]
@@ -357,11 +382,26 @@ export function TransactionFormModal({
       aiReview?.clarifications
   );
   const categoryNeedsReview = reviewFields.includes('category');
+  const accountNeedsReview = reviewFields.includes('account') || reviewFields.includes('accountId');
   const displayedCategory = normalizeCategoryValue(form.category);
   const selectableCategoryOptions = useMemo(
     () => mergeCategoryOptions(form.category),
     [form.category]
   );
+  const visibleCategorySuggestions = useMemo(() => {
+    const unique = new Set<string>();
+    categorySuggestions.forEach((suggestion) => {
+      const normalized = normalizeCategoryValue(suggestion);
+      if (
+        normalized &&
+        normalized.toLowerCase() !== displayedCategory.toLowerCase() &&
+        normalized.toLowerCase() !== 'uncategorized'
+      ) {
+        unique.add(normalized);
+      }
+    });
+    return Array.from(unique).slice(0, 3);
+  }, [categorySuggestions, displayedCategory]);
 
   useEffect(() => {
     if (visible) {
@@ -797,6 +837,27 @@ export function TransactionFormModal({
                     </View>
                   )}
 
+                  {isEdit && reviewFields.length > 0 && (
+                    <View className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
+                      <View className="flex-row items-center">
+                        <MaterialCommunityIcons
+                          name="playlist-check"
+                          size={18}
+                          color="#D97706"
+                        />
+                        <ThemedText className="ml-2 text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                          Review cleanup
+                        </ThemedText>
+                      </View>
+                      <ThemedText className="mt-3 text-sm font-bold text-amber-900 dark:text-amber-100">
+                        Fix: {reviewFields.map(formatFieldName).join(', ')}
+                      </ThemedText>
+                      <ThemedText className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                        The highlighted field is opened first so you can resolve this transaction quickly.
+                      </ThemedText>
+                    </View>
+                  )}
+
                   <View className="mb-4">
                     <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 italic">
                       Transaction Type
@@ -937,13 +998,29 @@ export function TransactionFormModal({
                         testID="entry-account-picker"
                         onPress={() => setIsAccountPickerVisible(true)}
                         className="mt-3 w-full rounded-[20px] p-3 border shadow-sm flex-row items-center justify-between"
-                        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                        style={{
+                          backgroundColor: accountNeedsReview
+                            ? colorScheme === 'dark'
+                              ? theme.secondary
+                              : '#FFFCF0'
+                            : theme.card,
+                          borderColor: accountNeedsReview ? '#FDE68A' : theme.border,
+                        }}>
+                        {accountNeedsReview && (
+                          <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
+                            <ThemedText className="text-[8px] font-black text-black">
+                              Check this
+                            </ThemedText>
+                          </View>
+                        )}
                         <View className="flex-row items-center gap-3 flex-1 pr-2">
-                          <View className="h-10 w-10 rounded-2xl bg-blue-50 items-center justify-center">
+                          <View
+                            className="h-10 w-10 rounded-2xl items-center justify-center"
+                            style={{ backgroundColor: accountNeedsReview ? '#FEF3C7' : '#EFF6FF' }}>
                             <MaterialCommunityIcons
                               name="wallet-outline"
                               size={21}
-                              color="#3B82F6"
+                              color={accountNeedsReview ? '#F59E0B' : '#3B82F6'}
                             />
                           </View>
                           <View className="flex-1">
@@ -1643,6 +1720,34 @@ export function TransactionFormModal({
                   <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">
                     {categoryNeedsReview ? 'Needs Attention' : 'Category'}
                   </ThemedText>
+                  {visibleCategorySuggestions.length > 0 && (
+                    <View className="mb-3">
+                      <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                        Suggested from history
+                      </ThemedText>
+                      <View className="flex-row flex-wrap gap-2">
+                        {visibleCategorySuggestions.map((suggestion) => (
+                          <Pressable
+                            key={suggestion}
+                            accessibilityRole="button"
+                            onPress={() => setForm((p) => ({ ...p, category: suggestion }))}
+                            className="flex-row items-center rounded-full px-3 py-2"
+                            style={{ backgroundColor: accentSurface }}>
+                            <MaterialCommunityIcons
+                              name="creation-outline"
+                              size={13}
+                              color={accent}
+                            />
+                            <ThemedText
+                              className="ml-1.5 text-[11px] font-black"
+                              style={{ color: accent }}>
+                              {suggestion}
+                            </ThemedText>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  )}
                   <View className="relative mb-4">
                     {categoryNeedsReview && (
                       <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
@@ -1986,6 +2091,30 @@ export function TransactionFormModal({
               Select Category
             </ThemedText>
             <ScrollView style={{ maxHeight: 430 }}>
+              {visibleCategorySuggestions.length > 0 && (
+                <View className="mb-4 rounded-3xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-900/20">
+                  <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                    Suggested from history
+                  </ThemedText>
+                  <View className="flex-row flex-wrap gap-2">
+                    {visibleCategorySuggestions.map((suggestion) => (
+                      <Pressable
+                        key={suggestion}
+                        accessibilityRole="button"
+                        onPress={() => {
+                          setForm((p) => ({ ...p, category: suggestion }));
+                          setIsCategoryPickerVisible(false);
+                        }}
+                        className="rounded-full px-3 py-2"
+                        style={{ backgroundColor: theme.card }}>
+                        <ThemedText className="text-xs font-black" style={{ color: accent }}>
+                          {suggestion}
+                        </ThemedText>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
               <View className="flex-row flex-wrap gap-4 justify-between">
                 {selectableCategoryOptions.map((c) => (
                   <Pressable
