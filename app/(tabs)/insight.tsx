@@ -45,21 +45,6 @@ const getInsightLevel = (dashboard: DashboardResponse) => {
   return 4;
 };
 
-const getHealthScore = (dashboard: DashboardResponse) => {
-  const { total_income: income, total_spent: spent } = dashboard.summary;
-  if (income <= 0 && spent <= 0) return 0;
-  if (income <= 0) return 55;
-  const savingsRate = Math.max(0, (income - spent) / income);
-  return Math.min(95, Math.max(35, Math.round(45 + savingsRate * 100)));
-};
-
-const getHealthLabel = (score: number, dashboard: DashboardResponse) => {
-  if (dashboard.summary.transaction_count === 0) return 'Waiting for data';
-  if (score >= 70) return 'Good Standing';
-  if (score >= 50) return 'Watch Closely';
-  return 'Needs Attention';
-};
-
 const getBurnRateCopy = (dashboard: DashboardResponse) => {
   const { total_income: income, total_spent: spent, daily_average: daily } = dashboard.summary;
   if (daily <= 0) return 'Add more transactions to estimate your spending rhythm.';
@@ -71,15 +56,151 @@ const getBurnRateCopy = (dashboard: DashboardResponse) => {
   return 'Spending has caught up with recorded income for this period.';
 };
 
-const getNeedsReview = (dashboard: DashboardResponse) =>
-  dashboard.recent_transactions
-    .filter((entry) => {
-      const category = String(entry.category ?? '')
-        .trim()
-        .toLowerCase();
-      return !category || category === 'uncategorized' || !entry.account_id;
+const getPeriodPulse = (dashboard: DashboardResponse, reviewCount: number) => {
+  const { total_income: income, total_spent: spent, transaction_count: count } = dashboard.summary;
+  if (count === 0) {
+    return {
+      label: 'Waiting for data',
+      reason: 'Add confirmed transactions to build this period summary.',
+      color: '#9B9692',
+      icon: 'progress-clock',
+    };
+  }
+  if (reviewCount > 0) {
+    return {
+      label: 'Needs review',
+      reason: `${reviewCount} transaction${reviewCount === 1 ? '' : 's'} need category or account cleanup.`,
+      color: '#FFB020',
+      icon: 'playlist-check',
+    };
+  }
+  if (income <= 0 && spent > 0) {
+    return {
+      label: 'No income recorded',
+      reason: 'This period has expenses but no recorded income, so surplus cannot be estimated.',
+      color: '#FFB020',
+      icon: 'cash-remove',
+    };
+  }
+  if (income > 0 && spent > income) {
+    return {
+      label: 'Watch spending',
+      reason: 'Confirmed expenses are higher than recorded income for this period.',
+      color: '#FF6680',
+      icon: 'alert-circle-outline',
+    };
+  }
+  return {
+    label: 'On track',
+    reason: 'Recorded income is higher than confirmed expenses for this period.',
+    color: '#00B878',
+    icon: 'check-decagram',
+  };
+};
+
+const needsTransactionReview = (entry: DashboardResponse['recent_transactions'][number]) => {
+  const category = String(entry.category ?? '')
+    .trim()
+    .toLowerCase();
+  return !category || category === 'uncategorized' || !entry.account_id;
+};
+
+const getNeedsReview = (dashboard: DashboardResponse) => {
+  const apiItems = dashboard.review_items ?? [];
+  if (apiItems.length > 0) return apiItems;
+  return dashboard.recent_transactions.filter(needsTransactionReview);
+};
+
+const getReviewReasons = (entry: DashboardResponse['recent_transactions'][number]) => {
+  const reasons: { label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [];
+  const category = String(entry.category ?? '').trim();
+  if (!category) {
+    reasons.push({ label: 'Missing category', icon: 'shape-outline' });
+  } else if (category.toLowerCase() === 'uncategorized') {
+    reasons.push({ label: 'Uncategorized', icon: 'shape-plus-outline' });
+  }
+  if (!entry.account_id) {
+    reasons.push({ label: 'Missing account', icon: 'credit-card-outline' });
+  }
+  return reasons.length > 0 ? reasons : [{ label: 'Needs review', icon: 'playlist-check' }];
+};
+
+const openDashboardEntryForReview = (entry: DashboardResponse['recent_transactions'][number]) => {
+  if (entry.id == null) return;
+  const reasons = getReviewReasons(entry);
+  const reviewFields = reasons
+    .map((reason) => {
+      if (reason.label === 'Missing account') return 'account';
+      if (reason.label === 'Missing category' || reason.label === 'Uncategorized') return 'category';
+      return '';
     })
-    .slice(0, 3);
+    .filter(Boolean);
+  const reviewFocus = reviewFields.includes('category') ? 'category' : reviewFields[0];
+  router.push({
+    pathname: '/entry/[id]',
+    params: {
+      id: String(entry.id),
+      name: entry.title || entry.merchant || entry.category || 'Transaction',
+      category: entry.category ?? '',
+      amount: String(Math.abs(Number(entry.amount || 0))),
+      entryType: String(entry.type ?? 'expense').toLowerCase() === 'income' ? 'income' : 'expense',
+      section: 'Needs review',
+      mode: entry.mode ?? '',
+      notes: entry.notes ?? '',
+      merchant: entry.merchant ?? '',
+      dateLabel: entry.date ?? '',
+      rawDate: entry.date ?? '',
+      tag: entry.tag ?? '',
+      edit: '1',
+      reviewFocus: reviewFocus ?? '',
+      reviewFields: reviewFields.join(','),
+      categorySuggestions: JSON.stringify(entry.category_suggestions ?? []),
+    },
+  });
+};
+
+const getTopTakeaway = (dashboard: DashboardResponse, reviewCount: number) => {
+  const warning = dashboard.insights.find((item) => item.severity === 'warning');
+  const topCategory = dashboard.top_categories[0];
+
+  if (reviewCount > 0) {
+    return {
+      eyebrow: 'Fix first',
+      title: `${reviewCount} transaction${reviewCount === 1 ? '' : 's'} need review`,
+      body: 'Resolve missing categories or accounts so the rest of your insights stay accurate.',
+      icon: 'playlist-check',
+      tone: 'warning' as const,
+    };
+  }
+
+  if (warning) {
+    return {
+      eyebrow: 'Worth attention',
+      title: warning.title,
+      body: warning.body,
+      icon: 'alarm-light-outline',
+      tone: 'warning' as const,
+    };
+  }
+
+  if (topCategory) {
+    return {
+      eyebrow: 'Main driver',
+      title: `${topCategory.category} is ${Math.round(topCategory.percentage)}% of spend`,
+      body: `${formatMoney(topCategory.amount)} recorded in this category during the selected period.`,
+      icon: resolveCategoryMetadata(topCategory.category).icon,
+      tone: 'info' as const,
+    };
+  }
+
+  return {
+    eyebrow: 'Spending pace',
+    title: `${formatMoney(dashboard.summary.daily_average)} per day`,
+    body: 'This is your average confirmed expense pace for the selected period.',
+    icon: 'speedometer',
+    tone: 'info' as const,
+  };
+};
 
 export default function InsightScreen() {
   const themeTokens = useThemeTokens();
@@ -130,6 +251,19 @@ export default function InsightScreen() {
 
   const insightLevel = useMemo(() => (dashboard ? getInsightLevel(dashboard) : 0), [dashboard]);
   const reviewItems = useMemo(() => (dashboard ? getNeedsReview(dashboard) : []), [dashboard]);
+  const previewReviewItems = useMemo(() => reviewItems.slice(0, 3), [reviewItems]);
+  const allClear = useMemo(
+    () =>
+      Boolean(
+        dashboard &&
+          dashboard.summary.transaction_count > 0 &&
+          reviewItems.length === 0 &&
+          !dashboard.budget_statuses?.some((budget) => budget.status !== 'safe') &&
+          dashboard.recurring_candidates.length === 0 &&
+          !dashboard.insights.some((insight) => insight.severity === 'warning')
+      ),
+    [dashboard, reviewItems.length]
+  );
 
   if (loading && !dashboard) {
     return (
@@ -221,7 +355,13 @@ export default function InsightScreen() {
           />
         )}
 
-        <FinancialHealthCard dashboard={dashboard} insightLevel={insightLevel} />
+        <TopTakeawayCard dashboard={dashboard} reviewCount={reviewItems.length} />
+
+        <PeriodPulseCard dashboard={dashboard} insightLevel={insightLevel} reviewCount={reviewItems.length} />
+
+        <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
+
+        {allClear && <AllClearCard dashboard={dashboard} />}
 
         {insightLevel >= 1 && <ProgressiveHint insightLevel={insightLevel} dashboard={dashboard} />}
 
@@ -241,11 +381,28 @@ export default function InsightScreen() {
           />
         )}
 
-        {insightLevel >= 2 && <SmartAlerts cards={dashboard.insights} />}
+        {insightLevel >= 2 && (
+          <SmartAlerts cards={dashboard.insights} dashboard={dashboard} rangeLabel={currentRange.label} />
+        )}
+
+        {dashboard.budget_statuses?.some((budget) => budget.status !== 'safe') && (
+          <BudgetWatchSection dashboard={dashboard} rangeLabel={currentRange.label} />
+        )}
+
+        {dashboard.recurring_candidates.length > 0 && (
+          <RecurringReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
+        )}
 
         {insightLevel >= 3 && <AccountIntelligence dashboard={dashboard} />}
 
-        {reviewItems.length > 0 && <NeedsReview entries={reviewItems} />}
+        {previewReviewItems.length > 0 && (
+          <NeedsReview
+            entries={previewReviewItems}
+            totalCount={reviewItems.length}
+            periodStart={dashboard.period.start}
+            periodEnd={dashboard.period.end}
+          />
+        )}
 
         {insightLevel < 4 && dashboard.summary.transaction_count > 0 && (
           <UnlockCard dashboard={dashboard} insightLevel={insightLevel} />
@@ -281,22 +438,103 @@ function HeaderIcon({
   );
 }
 
-function FinancialHealthCard({
+function TopTakeawayCard({
+  dashboard,
+  reviewCount,
+}: {
+  dashboard: DashboardResponse;
+  reviewCount: number;
+}) {
+  const theme = useThemeTokens();
+  const takeaway = getTopTakeaway(dashboard, reviewCount);
+  const color = takeaway.tone === 'warning' ? '#FF6680' : theme.colors.accent;
+  const topCategory = dashboard.top_categories[0];
+
+  const handleAction = () => {
+    if (reviewCount > 0) {
+      router.push({
+        pathname: '/transactions',
+        params: {
+          review: '1',
+          start_date: dashboard.period.start,
+          end_date: dashboard.period.end,
+        },
+      });
+      return;
+    }
+    if (takeaway.tone === 'warning') {
+      const warning = dashboard.insights.find((item) => item.severity === 'warning');
+      if (warning) {
+        router.push({
+          pathname: '/insight-detail',
+          params: insightDetailParams(warning, dashboard, dashboard.period.start),
+        });
+        return;
+      }
+    }
+    if (topCategory) {
+      router.push({
+        pathname: '/category-detail',
+        params: {
+          category: topCategory.category,
+          start: dashboard.period.start,
+          end: dashboard.period.end,
+          label: dashboard.period.start,
+        },
+      });
+      return;
+    }
+    router.push('/spending-analysis');
+  };
+
+  return (
+    <View
+      className="rounded-[24px] border p-5 shadow-sm"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+      <View className="flex-row items-start">
+        <View
+          className="mr-4 h-12 w-12 items-center justify-center rounded-2xl"
+          style={{ backgroundColor: `${color}1A` }}>
+          <MaterialCommunityIcons
+            name={takeaway.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+            size={23}
+            color={color}
+          />
+        </View>
+        <View className="flex-1">
+          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+            {takeaway.eyebrow}
+          </ThemedText>
+          <ThemedText className="mt-1 text-xl font-black">{takeaway.title}</ThemedText>
+          <ThemedText className="mt-2 text-xs leading-5 text-gray-500">{takeaway.body}</ThemedText>
+        </View>
+      </View>
+      <TouchableOpacity
+        onPress={handleAction}
+        className="mt-4 h-11 flex-row items-center justify-center rounded-2xl"
+        style={{ backgroundColor: theme.colors.secondary }}>
+        <ThemedText className="text-xs font-black" style={{ color }}>
+          Open next step
+        </ThemedText>
+        <MaterialCommunityIcons name="chevron-right" size={18} color={color} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function PeriodPulseCard({
   dashboard,
   insightLevel,
+  reviewCount,
 }: {
   dashboard: DashboardResponse;
   insightLevel: number;
+  reviewCount: number;
 }) {
   const theme = useThemeTokens();
   const accentSurface = theme.mode === 'dark' ? theme.colors.secondary : theme.colors.secondary;
-  const score = getHealthScore(dashboard);
-  const label = getHealthLabel(score, dashboard);
-  const change = dashboard.top_categories[0]?.change ?? 0;
-  const changeCopy =
-    change === 0
-      ? 'Building your baseline'
-      : `${Math.abs(Math.round(change))}% ${change < 0 ? 'better' : 'higher'} than last period`;
+  const pulse = getPeriodPulse(dashboard, reviewCount);
+  const surplus = dashboard.summary.total_income - dashboard.summary.total_spent;
 
   return (
     <View
@@ -305,29 +543,34 @@ function FinancialHealthCard({
       <View className="flex-row items-start justify-between">
         <View className="flex-1 pr-4">
           <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-            Financial Health
+            Period Pulse
           </ThemedText>
-          <ThemedText className="mt-1 text-2xl font-black">{label}</ThemedText>
-          <ThemedText
-            className="mt-1 text-[11px] font-bold"
-            style={{ color: change < 0 ? '#00B878' : '#FF6B6B' }}>
-            {changeCopy}
-          </ThemedText>
+          <ThemedText className="mt-1 text-2xl font-black">{pulse.label}</ThemedText>
+          <ThemedText className="mt-2 text-xs leading-5 text-gray-500">{pulse.reason}</ThemedText>
         </View>
-        <ScoreRing score={score} />
+        <View
+          className="h-[58px] w-[58px] items-center justify-center rounded-2xl"
+          style={{ backgroundColor: `${pulse.color}1A` }}>
+          <MaterialCommunityIcons
+            name={pulse.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+            size={25}
+            color={pulse.color}
+          />
+        </View>
       </View>
 
-      <View className="mt-7 flex-row gap-5">
-        <MetricWithStripe
-          label="Total Income"
-          value={formatMoney(dashboard.summary.total_income)}
-          color="#00B878"
-        />
-        <MetricWithStripe
-          label="Total Spent"
-          value={formatMoney(dashboard.summary.total_spent)}
-          color="#FF6680"
-        />
+      <View className="mt-7 gap-3">
+        <View className="flex-row gap-3">
+          <PulseMetric label="Income" value={formatMoney(dashboard.summary.total_income)} />
+          <PulseMetric label="Spent" value={formatMoney(dashboard.summary.total_spent)} />
+        </View>
+        <View className="flex-row gap-3">
+          <PulseMetric
+            label={surplus >= 0 ? 'Surplus' : 'Over income'}
+            value={formatMoney(Math.abs(surplus))}
+          />
+          <PulseMetric label="Daily avg" value={formatMoney(dashboard.summary.daily_average)} />
+        </View>
       </View>
 
       <View
@@ -342,7 +585,7 @@ function FinancialHealthCard({
           <View className="flex-1">
             <ThemedText className="text-xs leading-5">
               <ThemedText className="text-xs font-black" style={{ color: theme.colors.accent }}>
-                Burn Rate:{' '}
+                Why this status:{' '}
               </ThemedText>
               {getBurnRateCopy(dashboard)}
             </ThemedText>
@@ -366,40 +609,110 @@ function FinancialHealthCard({
   );
 }
 
-function ScoreRing({ score }: { score: number }) {
+function WeeklyReviewTeaser({
+  dashboard,
+  rangeLabel,
+}: {
+  dashboard: DashboardResponse;
+  rangeLabel: string;
+}) {
   const theme = useThemeTokens();
+  const budgetRisks = dashboard.budget_statuses?.filter((budget) => budget.status !== 'safe').length ?? 0;
+  const recurringCount = dashboard.recurring_candidates.length;
+  const warningCount = dashboard.insights.filter((insight) => insight.severity === 'warning').length;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.84}
+      onPress={() =>
+        router.push({
+          pathname: '/weekly-review',
+          params: {
+            start: dashboard.period.start,
+            end: dashboard.period.end,
+            label: rangeLabel,
+          },
+        })
+      }
+      className="rounded-[24px] border p-5 shadow-sm"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+      <View className="flex-row items-start">
+        <View
+          className="mr-4 h-12 w-12 items-center justify-center rounded-2xl"
+          style={{ backgroundColor: theme.colors.secondary }}>
+          <MaterialCommunityIcons name="file-chart-outline" size={23} color={theme.colors.accent} />
+        </View>
+        <View className="flex-1">
+          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+            Weekly Review
+          </ThemedText>
+          <ThemedText className="mt-1 text-base font-black">Review the money story</ThemedText>
+          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+            {budgetRisks} budget risk{budgetRisks === 1 ? '' : 's'} · {recurringCount} recurring · {warningCount} alert{warningCount === 1 ? '' : 's'}
+          </ThemedText>
+        </View>
+        <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.accent} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function AllClearCard({ dashboard }: { dashboard: DashboardResponse }) {
+  const theme = useThemeTokens();
+  const topCategory = dashboard.top_categories[0];
+  const surplus = dashboard.summary.total_income - dashboard.summary.total_spent;
 
   return (
     <View
-      className="h-[72px] w-[72px] items-center justify-center rounded-full"
-      style={{ backgroundColor: theme.colors.secondary }}>
-      <View
-        className="h-[58px] w-[58px] items-center justify-center rounded-full"
-        style={{ backgroundColor: theme.colors.card }}>
-        <ThemedText className="text-xs font-black" style={{ color: theme.colors.accent }}>
-          {score}%
-        </ThemedText>
+      className="rounded-[24px] border p-5 shadow-sm"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+      <View className="flex-row items-start">
+        <View
+          className="mr-4 h-12 w-12 items-center justify-center rounded-2xl"
+          style={{ backgroundColor: '#DCFCE7' }}>
+          <MaterialCommunityIcons name="check-decagram" size={24} color="#16A34A" />
+        </View>
+        <View className="flex-1">
+          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+            All clear
+          </ThemedText>
+          <ThemedText className="mt-1 text-lg font-black">No urgent actions right now</ThemedText>
+          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+            Categories and accounts look clean, budgets are safe, and there are no warning alerts for this period.
+          </ThemedText>
+        </View>
+      </View>
+      <View className="mt-4 flex-row gap-3">
+        <PulseMetric
+          label={surplus >= 0 ? 'Surplus' : 'Over income'}
+          value={formatMoney(Math.abs(surplus))}
+        />
+        <PulseMetric
+          label="Top spend"
+          value={topCategory ? topCategory.category : formatMoney(dashboard.summary.daily_average)}
+        />
       </View>
     </View>
   );
 }
 
-function MetricWithStripe({
+function PulseMetric({
   label,
   value,
-  color,
 }: {
   label: string;
   value: string;
-  color: string;
 }) {
+  const theme = useThemeTokens();
+
   return (
-    <View className="flex-1 flex-row items-center">
-      <View className="mr-3 h-12 w-2 rounded-full" style={{ backgroundColor: color }} />
-      <View>
-        <ThemedText className="text-[11px] text-gray-500">{label}</ThemedText>
-        <ThemedText className="mt-1 text-lg font-black">{value}</ThemedText>
-      </View>
+    <View
+      className="flex-1 rounded-2xl border px-4 py-3"
+      style={{ backgroundColor: theme.colors.background, borderColor: theme.colors.border }}>
+      <ThemedText className="text-[10px] font-black uppercase text-gray-500">{label}</ThemedText>
+      <ThemedText className="mt-1 text-sm font-black" numberOfLines={1}>
+        {value}
+      </ThemedText>
     </View>
   );
 }
@@ -553,21 +866,304 @@ function MerchantRow({ merchant }: { merchant: DashboardResponse['top_merchants'
   );
 }
 
-function SmartAlerts({ cards }: { cards: InsightCard[] }) {
+const insightDetailParams = (
+  card: InsightCard,
+  dashboard: DashboardResponse,
+  rangeLabel: string
+) => {
+  const params: Record<string, string> = {
+    kind: card.kind,
+    severity: card.severity,
+    title: card.title,
+    body: card.body,
+    start: dashboard.period.start,
+    end: dashboard.period.end,
+    label: rangeLabel,
+  };
+
+  if (card.kind === 'category_increase') {
+    const categoryName = card.category ?? card.title.replace(/\s+increased$/i, '').trim();
+    const category =
+      dashboard.top_categories.find((item) => item.category.toLowerCase() === categoryName.toLowerCase()) ??
+      dashboard.top_categories[0];
+    if (category) {
+      params.category = category.category;
+    }
+  }
+  if (card.category) params.category = card.category;
+  if (card.budget_id != null) params.budgetId = String(card.budget_id);
+  if (card.amount != null) params.amount = String(card.amount);
+  if (card.limit_amount != null) params.limitAmount = String(card.limit_amount);
+  if (card.remaining_amount != null) params.remainingAmount = String(card.remaining_amount);
+  if (card.status) params.status = card.status;
+  if (card.percentage != null) params.percentage = String(card.percentage);
+  if (card.change_percentage != null) params.change = String(card.change_percentage);
+  if (card.explanation) params.explanation = card.explanation;
+  if (card.action_label) params.actionLabel = card.action_label;
+
+  if (card.kind === 'top_merchant') {
+    const merchant = card.merchant
+      ? dashboard.top_merchants.find((item) => item.merchant === card.merchant)
+      : dashboard.top_merchants[0];
+    if (merchant) {
+      params.merchant = merchant.merchant;
+    }
+  }
+  if (card.merchant) params.merchant = card.merchant;
+  if (card.transaction_count != null) params.transactionCount = String(card.transaction_count);
+
+  if (card.kind === 'account_usage') {
+    const account = card.account_id != null
+      ? dashboard.account_spending.find((item) => item.account_id === card.account_id)
+      : dashboard.account_spending[0];
+    if (account) {
+      params.accountName = account.account_name;
+      if (account.account_id != null) params.accountId = String(account.account_id);
+    }
+  }
+  if (card.account_name) params.accountName = card.account_name;
+  if (card.account_id != null) params.accountId = String(card.account_id);
+
+  if (card.kind === 'recurring_candidate') {
+    const candidate = card.merchant
+      ? dashboard.recurring_candidates.find((item) => item.merchant === card.merchant)
+      : dashboard.recurring_candidates[0];
+    if (candidate) {
+      params.merchant = candidate.merchant;
+      params.category = candidate.category;
+    }
+  }
+  if (card.next_expected_date) params.nextExpectedDate = card.next_expected_date;
+  if (card.confidence != null) params.confidence = String(card.confidence);
+
+  if (card.kind === 'unusual_spending' && !params.amount) {
+    const match = card.body.match(/₹([\d,.]+)/);
+    if (match?.[1]) params.amount = match[1].replace(/,/g, '');
+  }
+
+  return params;
+};
+
+function SmartAlerts({
+  cards,
+  dashboard,
+  rangeLabel,
+}: {
+  cards: InsightCard[];
+  dashboard: DashboardResponse;
+  rangeLabel: string;
+}) {
   if (cards.length === 0) return null;
 
   return (
     <SectionHeader title="Smart Alerts">
       <View className="gap-3">
         {cards.slice(0, 3).map((card) => (
-          <AlertCard key={card.kind} card={card} />
+          <AlertCard
+            key={card.kind}
+            card={card}
+            params={insightDetailParams(card, dashboard, rangeLabel)}
+          />
         ))}
       </View>
     </SectionHeader>
   );
 }
 
-function AlertCard({ card }: { card: InsightCard }) {
+function RecurringReviewTeaser({
+  dashboard,
+  rangeLabel,
+}: {
+  dashboard: DashboardResponse;
+  rangeLabel: string;
+}) {
+  const theme = useThemeTokens();
+  const dueCount = dashboard.recurring_candidates.filter((candidate) => candidate.review_due).length;
+  const topCandidate = dashboard.recurring_candidates[0];
+
+  return (
+    <SectionHeader
+      title="Recurring Review"
+      actionLabel="Review"
+      onAction={() =>
+        router.push({
+          pathname: '/recurring-review',
+          params: {
+            start: dashboard.period.start,
+            end: dashboard.period.end,
+            label: rangeLabel,
+          },
+        })
+      }>
+      <TouchableOpacity
+        activeOpacity={0.82}
+        onPress={() =>
+          router.push({
+            pathname: '/recurring-review',
+            params: {
+              start: dashboard.period.start,
+              end: dashboard.period.end,
+              label: rangeLabel,
+              merchant: topCandidate?.merchant ?? '',
+            },
+          })
+        }
+        className="rounded-[24px] border p-5 shadow-sm"
+        style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+        <View className="flex-row items-start">
+          <View
+            className="mr-4 h-12 w-12 items-center justify-center rounded-2xl"
+            style={{ backgroundColor: theme.colors.secondary }}>
+            <MaterialCommunityIcons name="repeat-variant" size={23} color={theme.colors.accent} />
+          </View>
+          <View className="flex-1">
+            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              {dueCount > 0 ? `${dueCount} due now` : `${dashboard.recurring_candidates.length} detected`}
+            </ThemedText>
+            <ThemedText className="mt-1 text-base font-black">
+              {topCandidate?.label ?? 'Recurring patterns'}
+            </ThemedText>
+            <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+              Confirm repeated spends before Finnri tracks them as subscriptions.
+            </ThemedText>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.accent} />
+        </View>
+      </TouchableOpacity>
+    </SectionHeader>
+  );
+}
+
+function BudgetWatchSection({
+  dashboard,
+  rangeLabel,
+}: {
+  dashboard: DashboardResponse;
+  rangeLabel: string;
+}) {
+  const visible = dashboard.budget_statuses
+    .filter((budget) => budget.status !== 'safe')
+    .slice(0, 3);
+  if (visible.length === 0) return null;
+
+  return (
+    <SectionHeader title="Budget Watch">
+      <View className="gap-3">
+        {visible.map((budget) => (
+          <BudgetWatchCard
+            key={budget.budget_id}
+            budget={budget}
+            periodStart={dashboard.period.start}
+            periodEnd={dashboard.period.end}
+            rangeLabel={rangeLabel}
+          />
+        ))}
+      </View>
+    </SectionHeader>
+  );
+}
+
+function BudgetWatchCard({
+  budget,
+  periodStart,
+  periodEnd,
+  rangeLabel,
+}: {
+  budget: DashboardResponse['budget_statuses'][number];
+  periodStart: string;
+  periodEnd: string;
+  rangeLabel: string;
+}) {
+  const theme = useThemeTokens();
+  const exceeded = budget.status === 'exceeded';
+  const color = exceeded ? '#FF6680' : '#FFB020';
+  const label = budget.category || budget.name;
+  const kind = exceeded ? 'budget_exceeded' : 'budget_watch';
+  const title = exceeded ? `${label} budget exceeded` : `${label} budget nearing limit`;
+  const body = `${formatMoney(budget.spent_amount)} of ${formatMoney(budget.limit_amount)} used with ${budget.days_left} day${budget.days_left === 1 ? '' : 's'} left.`;
+
+  return (
+    <View
+      className="rounded-[24px] border p-5 shadow-sm"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+      <View className="flex-row items-start justify-between gap-4">
+        <View className="flex-1">
+          <View className="flex-row items-center gap-2">
+            <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: `${color}1A` }}>
+              <ThemedText className="text-[10px] font-black uppercase" style={{ color }}>
+                {exceeded ? 'Exceeded' : 'Watch'}
+              </ThemedText>
+            </View>
+            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              {budget.days_left} day{budget.days_left === 1 ? '' : 's'} left
+            </ThemedText>
+          </View>
+          <ThemedText className="mt-3 text-base font-black">{label}</ThemedText>
+          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+            {formatMoney(budget.spent_amount)} of {formatMoney(budget.limit_amount)} used
+          </ThemedText>
+        </View>
+        <ThemedText className="text-xl font-black" style={{ color }}>
+          {Math.round(budget.percentage)}%
+        </ThemedText>
+      </View>
+
+      <View className="mt-4 h-2 overflow-hidden rounded-full bg-gray-100">
+        <View
+          className="h-full rounded-full"
+          style={{ width: `${Math.min(100, budget.percentage)}%`, backgroundColor: color }}
+        />
+      </View>
+
+      <View className="mt-4 flex-row gap-2">
+        <PillButton
+          label="Review"
+          muted
+          onPress={() =>
+            router.push({
+              pathname: '/insight-detail',
+              params: {
+                kind,
+                severity: 'warning',
+                title,
+                body,
+                explanation:
+                  'This compares confirmed expenses in the selected period against your active monthly budget.',
+                actionLabel: budget.category ? 'Open category' : 'Review transactions',
+                start: periodStart,
+                end: periodEnd,
+                label: rangeLabel,
+                budgetId: String(budget.budget_id),
+                category: budget.category,
+                amount: String(budget.spent_amount),
+                limitAmount: String(budget.limit_amount),
+                remainingAmount: String(budget.remaining_amount),
+                percentage: String(budget.percentage),
+                status: budget.status,
+              },
+            })
+          }
+        />
+        <PillButton
+          label="Adjust"
+          onPress={() =>
+            router.push({
+              pathname: '/budgets',
+              params: {
+                source: 'insight',
+                budgetId: String(budget.budget_id),
+                category: budget.category,
+                suggestedLimit: String(Math.max(budget.limit_amount, budget.spent_amount)),
+              },
+            })
+          }
+        />
+      </View>
+    </View>
+  );
+}
+
+function AlertCard({ card, params }: { card: InsightCard; params: Record<string, string> }) {
   const theme = useThemeTokens();
   const isWarning = card.severity === 'warning';
   const color = isWarning ? '#FF6680' : card.severity === 'success' ? '#00B878' : theme.colors.accent;
@@ -578,7 +1174,9 @@ function AlertCard({ card }: { card: InsightCard }) {
       : 'creation';
 
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.82}
+      onPress={() => router.push({ pathname: '/insight-detail', params })}
       className="rounded-[22px] border p-4 shadow-sm"
       style={{
         backgroundColor: theme.colors.card,
@@ -597,21 +1195,49 @@ function AlertCard({ card }: { card: InsightCard }) {
           <ThemedText className="mt-1 text-xs leading-4 text-gray-500">{card.body}</ThemedText>
           {isWarning && (
             <View className="mt-3 flex-row gap-2">
-              <PillButton label="View Details" muted />
-              <PillButton label="Set Limit" />
+              <PillButton
+                label="View Details"
+                muted
+                onPress={() => router.push({ pathname: '/insight-detail', params })}
+              />
+              {params.category && (
+                <PillButton
+                  label="Set Limit"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/budgets',
+                      params: {
+                        source: 'insight',
+                        budgetId: params.budgetId ?? '',
+                        category: params.category,
+                        suggestedLimit: params.amount ?? '',
+                      },
+                    })
+                  }
+                />
+              )}
             </View>
           )}
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function PillButton({ label, muted }: { label: string; muted?: boolean }) {
+function PillButton({
+  label,
+  muted,
+  onPress,
+}: {
+  label: string;
+  muted?: boolean;
+  onPress?: () => void;
+}) {
   const theme = useThemeTokens();
 
   return (
     <TouchableOpacity
+      onPress={onPress}
       className="rounded-lg px-3 py-2"
       style={{ backgroundColor: muted ? (theme.mode === 'dark' ? '#333333' : '#F3F3F3') : theme.colors.accent }}>
       <ThemedText
@@ -688,40 +1314,87 @@ function MiniMetric({
   );
 }
 
-function NeedsReview({ entries }: { entries: DashboardResponse['recent_transactions'] }) {
+function NeedsReview({
+  entries,
+  totalCount,
+  periodStart,
+  periodEnd,
+}: {
+  entries: DashboardResponse['recent_transactions'];
+  totalCount: number;
+  periodStart: string;
+  periodEnd: string;
+}) {
   const theme = useThemeTokens();
 
   return (
-    <SectionHeader title="Needs Review" actionLabel={`${entries.length} Items`}>
+    <SectionHeader
+      title="Needs Review"
+      actionLabel={totalCount > entries.length ? `View all ${totalCount}` : `${totalCount} Items`}
+      onAction={() =>
+        router.push({
+          pathname: '/transactions',
+          params: {
+            review: '1',
+            start_date: periodStart,
+            end_date: periodEnd,
+          },
+        })
+      }>
       <View
         className="overflow-hidden rounded-[24px] border shadow-sm"
         style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
-        {entries.map((entry, index) => (
-          <View
-            key={entry.id ?? `${entry.date}-${index}`}
-            className={`flex-row items-center p-4 ${index < entries.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
-            <View className="mr-3 h-9 w-9 items-center justify-center rounded-full bg-gray-100">
-              <MaterialCommunityIcons name="help" size={16} color="#9B9692" />
+        {entries.map((entry, index) => {
+          const reasons = getReviewReasons(entry);
+          return (
+            <TouchableOpacity
+              key={entry.id ?? `${entry.date}-${index}`}
+              activeOpacity={0.78}
+              disabled={entry.id == null}
+              onPress={() => openDashboardEntryForReview(entry)}
+              className={`p-4 ${index < entries.length - 1 ? 'border-b border-gray-100 dark:border-gray-700' : ''}`}>
+              <View className="flex-row items-start">
+                <View className="mr-3 h-9 w-9 items-center justify-center rounded-full bg-gray-100">
+                  <MaterialCommunityIcons name="help" size={16} color="#9B9692" />
+                </View>
+                <View className="min-w-0 flex-1 pr-3">
+                  <ThemedText className="text-sm font-bold" numberOfLines={1}>
+                    {entry.title || entry.merchant || entry.category || 'Transaction'}
+                  </ThemedText>
+                  <ThemedText className="mt-0.5 text-[11px] text-gray-500">
+                    {entry.date || 'No date recorded'}
+                  </ThemedText>
+                </View>
+                <View className="items-end">
+                  <ThemedText className="text-sm font-black">
+                    {formatMoney(Number(entry.amount || 0))}
+                  </ThemedText>
+                  <ThemedText className="mt-1 text-[10px] font-bold" style={{ color: theme.colors.accent }}>
+                    Resolve
+                  </ThemedText>
+                </View>
+              </View>
+              <View className="ml-12 mt-3 flex-row flex-wrap gap-2">
+                {reasons.map((reason) => (
+                  <View
+                    key={reason.label}
+                    className="flex-row items-center rounded-full px-2.5 py-1"
+                    style={{ backgroundColor: theme.colors.secondary }}>
+                    <MaterialCommunityIcons
+                      name={reason.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                      size={12}
+                      color={theme.colors.accent}
+                    />
+                    <ThemedText className="ml-1 text-[10px] font-black" style={{ color: theme.colors.accent }}>
+                      {reason.label}
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
             </View>
-            <View className="flex-1 pr-3">
-              <ThemedText className="text-sm font-bold">
-                {entry.title || entry.merchant || entry.category || 'Transaction'}
-              </ThemedText>
-              <ThemedText className="text-[11px] text-gray-500">
-                {!entry.account_id ? 'Missing account' : 'Uncategorized'} • {entry.date}
-              </ThemedText>
-            </View>
-            <View className="items-end">
-              <ThemedText className="text-sm font-black">
-                {formatMoney(Number(entry.amount || 0))}
-              </ThemedText>
-              <ThemedText className="mt-1 text-[10px] font-bold" style={{ color: theme.colors.accent }}>
-                Resolve
-              </ThemedText>
-            </View>
-          </View>
-        ))}
-      </View>
     </SectionHeader>
   );
 }

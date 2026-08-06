@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -33,13 +33,19 @@ const formatAmount = (value: number | string) =>
     maximumFractionDigits: 2,
     minimumFractionDigits: Number.isInteger(Number(value)) ? 0 : 2,
   });
+const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
 export default function BudgetsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { token } = useAuthStore();
   const theme = useThemeTokens();
   const colors = theme.colors;
   const muted = `${colors.text}99`;
+  const source = toParam(params.source);
+  const budgetId = toParam(params.budgetId);
+  const prefillCategory = toParam(params.category);
+  const suggestedLimit = toParam(params.suggestedLimit);
 
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,10 +57,45 @@ export default function BudgetsScreen() {
   const [limitAmount, setLimitAmount] = useState('10000');
   const [threshold, setThreshold] = useState('80');
   const [active, setActive] = useState(true);
+  const [routePrefillConsumed, setRoutePrefillConsumed] = useState(false);
 
   const formTitle = editing ? 'Edit budget' : 'New monthly budget';
   const submitLabel = editing ? 'Update budget' : 'Create budget';
   const activeBudgets = useMemo(() => budgets.filter((budget) => budget.active).length, [budgets]);
+
+  const editBudget = useCallback((budget: Budget) => {
+    setEditing(budget);
+    setName(budget.name);
+    setCategory(budget.category ?? '');
+    setLimitAmount(String(budget.limit_amount));
+    setThreshold(String(budget.alert_threshold_percent));
+    setActive(budget.active);
+    setError(null);
+  }, []);
+
+  useEffect(() => {
+    if (source !== 'insight' || editing || routePrefillConsumed) return;
+    if (budgetId && budgets.length > 0) {
+      const matchedBudget = budgets.find((budget) => String(budget.id) === budgetId);
+      if (matchedBudget) {
+        editBudget(matchedBudget);
+        setRoutePrefillConsumed(true);
+        return;
+      }
+    }
+    const cleanCategory = prefillCategory?.trim();
+    const parsedLimit = parseAmount(suggestedLimit ?? '');
+    if (cleanCategory) {
+      setName(`${cleanCategory} budget`);
+      setCategory(cleanCategory);
+    }
+    if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+      setLimitAmount(String(Math.ceil(parsedLimit * 1.1)));
+    }
+    setThreshold('80');
+    setActive(true);
+    setRoutePrefillConsumed(true);
+  }, [budgetId, budgets, editBudget, editing, prefillCategory, routePrefillConsumed, source, suggestedLimit]);
 
   const resetForm = () => {
     setEditing(null);
@@ -63,6 +104,7 @@ export default function BudgetsScreen() {
     setLimitAmount('10000');
     setThreshold('80');
     setActive(true);
+    setRoutePrefillConsumed(true);
     setError(null);
   };
 
@@ -88,16 +130,6 @@ export default function BudgetsScreen() {
       void load();
     }, [load])
   );
-
-  const editBudget = (budget: Budget) => {
-    setEditing(budget);
-    setName(budget.name);
-    setCategory(budget.category ?? '');
-    setLimitAmount(String(budget.limit_amount));
-    setThreshold(String(budget.alert_threshold_percent));
-    setActive(budget.active);
-    setError(null);
-  };
 
   const saveBudget = async () => {
     if (!token || saving) return;

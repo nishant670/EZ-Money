@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -62,6 +62,9 @@ export default function TransactionDetailsScreen() {
     dateLabel?: string;
     tag?: string;
     edit?: string;
+    reviewFocus?: 'category' | 'account' | '';
+    reviewFields?: string;
+    categorySuggestions?: string;
   }>();
 
   const { token } = useAuthStore();
@@ -160,6 +163,22 @@ export default function TransactionDetailsScreen() {
   }, [fetchSplitDetails, fetchTransactionDetails, token]);
 
   const amountValue = Math.abs(Number(displayData.amount || 0));
+  const reviewFields = String(params.reviewFields ?? '')
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean);
+  const isReviewEdit = params.edit === '1' && reviewFields.length > 0;
+  const categorySuggestions = useMemo(() => {
+    if (!params.categorySuggestions) return [];
+    try {
+      const parsed = JSON.parse(params.categorySuggestions);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }, [params.categorySuggestions]);
 
   const meta = resolveCategoryMetadata(displayData.category, displayData.type);
   const icon = meta.icon;
@@ -256,6 +275,10 @@ export default function TransactionDetailsScreen() {
       await fetchSplitDetails();
       notifyTransactionsChanged();
       setIsEditModalVisible(false);
+      if (isReviewEdit) {
+        router.back();
+        return;
+      }
       if (formData.type === 'Expense') {
         const notification = await fetchNewUnreadBudgetNotification(token, budgetNotificationIds).catch(
           () => null
@@ -288,7 +311,7 @@ export default function TransactionDetailsScreen() {
     amount: amountValue.toString(),
     type: displayData.type ? (toTitleCase(displayData.type) ?? 'Expense') : 'Expense',
     mode: displayData.mode || 'Cash',
-    category: displayData.category || 'Food',
+    category: isReviewEdit ? (displayData.category ?? '') : displayData.category || 'Food',
     date: displayData.date || formatDateLabel(new Date()),
     time: displayData.time || formatDisplayTime(new Date()),
     notes: displayData.notes || '',
@@ -639,6 +662,17 @@ export default function TransactionDetailsScreen() {
         splitFriends={splitFriends}
         splitGroups={splitGroups}
         onManageAccounts={() => router.push('/accounts')}
+        initialFocus={params.reviewFocus || undefined}
+        categorySuggestions={categorySuggestions}
+        aiReview={
+          isReviewEdit
+            ? {
+                missingFields: reviewFields.map((field) =>
+                  field === 'account' ? 'accountId' : field
+                ),
+              }
+            : undefined
+        }
       />
 
       <AnimatedBottomSheet

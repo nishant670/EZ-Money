@@ -1,7 +1,7 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchAccounts, getAccountsForPaymentMode, type Account } from '@/lib/accounts';
+import { saveRecurringCandidateDecision } from '@/lib/insights';
 import {
   BillingInterval,
   Subscription,
@@ -71,6 +72,7 @@ const formatMoney = (value: number | string) =>
     maximumFractionDigits: 2,
     minimumFractionDigits: Number.isInteger(Number(value)) ? 0 : 2,
   })}`;
+const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
 function apiDateToLocalDate(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -106,6 +108,7 @@ function intervalLabel(value: BillingInterval) {
 
 export default function SubscriptionsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { token } = useAuthStore();
   const theme = useThemeTokens();
   const colors = theme.colors;
@@ -135,6 +138,15 @@ export default function SubscriptionsScreen() {
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [pendingDate, setPendingDate] = useState(apiDateToLocalDate(nextDueDate));
   const [datePickerTarget, setDatePickerTarget] = useState<'due' | 'cancel'>('due');
+  const source = toParam(params.source);
+  const prefillName = toParam(params.name);
+  const prefillMerchant = toParam(params.merchant);
+  const prefillCategory = toParam(params.category);
+  const prefillAmount = toParam(params.amount);
+  const prefillInterval = toParam(params.interval);
+  const prefillNextDueDate = toParam(params.nextDueDate);
+  const prefillNotes = toParam(params.notes);
+  const candidateKey = toParam(params.candidateKey);
 
   const dueCount = useMemo(
     () =>
@@ -170,6 +182,33 @@ export default function SubscriptionsScreen() {
     [subscriptions]
   );
   const formTitle = editing ? 'Edit subscription' : 'New subscription';
+
+  useEffect(() => {
+    if (source !== 'recurring_review' || editing) return;
+    const amountValue = sanitizeAmount(prefillAmount ?? '');
+    setName(prefillName?.trim() || prefillMerchant?.trim() || 'Recurring payment');
+    setMerchant(prefillMerchant?.trim() ?? '');
+    setCategory(prefillCategory?.trim() || 'Bills');
+    if (amountValue) setAmount(amountValue);
+    if (prefillInterval === 'weekly' || prefillInterval === 'monthly') setInterval(prefillInterval);
+    if (prefillNextDueDate?.match(/^\d{4}-\d{2}-\d{2}$/)) setNextDueDate(prefillNextDueDate);
+    setStatus('active');
+    setReminderDays(prefillInterval === 'weekly' ? 1 : 3);
+    setAutopay(false);
+    setNotes(prefillNotes ?? '');
+    setShowForm(true);
+    setError(null);
+  }, [
+    editing,
+    prefillAmount,
+    prefillCategory,
+    prefillInterval,
+    prefillMerchant,
+    prefillName,
+    prefillNextDueDate,
+    prefillNotes,
+    source,
+  ]);
 
   const resetForm = () => {
     setEditing(null);
@@ -320,6 +359,14 @@ export default function SubscriptionsScreen() {
         await updateSubscription(token, editing.id, payload);
       } else {
         await createSubscription(token, payload);
+        if (source === 'recurring_review' && candidateKey) {
+          await saveRecurringCandidateDecision(token, {
+            candidate_key: candidateKey,
+            merchant: merchant.trim(),
+            category: category.trim(),
+            decision: 'tracked',
+          });
+        }
       }
       resetForm();
       await load();

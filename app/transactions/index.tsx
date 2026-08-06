@@ -17,12 +17,23 @@ import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { groupTransactionsBySection, loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
+const needsTransactionReview = (transaction: Transaction) => {
+  const category = String(transaction.category ?? '').trim().toLowerCase();
+  return !category || category === 'uncategorized' || transaction.accountId == null;
+};
+
 export default function TransactionsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const { token } = useAuthStore();
-  const { accountId: accountIdParam } = useLocalSearchParams<{ accountId?: string }>();
+  const { accountId: accountIdParam, review, start_date: routeStartDate, end_date: routeEndDate } = useLocalSearchParams<{
+    accountId?: string;
+    review?: string;
+    start_date?: string;
+    end_date?: string;
+  }>();
   const routeAccountId = accountIdParam ? Number(accountIdParam) : null;
+  const reviewMode = review === '1';
 
   // Logic States
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -37,8 +48,8 @@ export default function TransactionsScreen() {
   const [filterType, setFilterType] = useState<'Expense' | 'Income' | 'All'>('All');
   const [minAmount, setMinAmount] = useState(0);
   const [maxAmount, setMaxAmount] = useState(10000);
-  const [startDate, setStartDate] = useState<string | null>(null);
-  const [endDate, setEndDate] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState<string | null>(routeStartDate ?? null);
+  const [endDate, setEndDate] = useState<string | null>(routeEndDate ?? null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(
@@ -48,6 +59,11 @@ export default function TransactionsScreen() {
   useEffect(() => {
     setSelectedAccountId(Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null);
   }, [routeAccountId]);
+
+  useEffect(() => {
+    setStartDate(routeStartDate ?? null);
+    setEndDate(routeEndDate ?? null);
+  }, [routeEndDate, routeStartDate]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
@@ -75,7 +91,7 @@ export default function TransactionsScreen() {
         page_size: 100,
       };
       const mapped = await loadTransactions(token, filters);
-      setTransactions(mapped);
+      setTransactions(reviewMode ? mapped.filter(needsTransactionReview) : mapped);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load transactions.');
     } finally {
@@ -92,6 +108,7 @@ export default function TransactionsScreen() {
     startDate,
     endDate,
     debouncedSearchQuery,
+    reviewMode,
   ]);
 
   useFocusEffect(
@@ -136,7 +153,7 @@ export default function TransactionsScreen() {
   ]);
 
   const hasSearchQuery = searchQuery.trim().length > 0 || debouncedSearchQuery.length > 0;
-  const hasActiveConstraints = isFilterActive || hasSearchQuery;
+  const hasActiveConstraints = isFilterActive || hasSearchQuery || reviewMode;
 
   const clearFilters = useCallback(() => {
     setSearchQuery('');
@@ -149,7 +166,10 @@ export default function TransactionsScreen() {
     setMaxAmount(10000);
     setStartDate(null);
     setEndDate(null);
-  }, []);
+    if (reviewMode || routeStartDate || routeEndDate) {
+      router.setParams({ review: undefined, start_date: undefined, end_date: undefined });
+    }
+  }, [reviewMode, routeEndDate, routeStartDate]);
 
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
 
@@ -212,7 +232,7 @@ export default function TransactionsScreen() {
         </Pressable>
 
         <ThemedText className="text-base font-bold" style={{ color: theme.text }}>
-          &nbsp; Your Money Story&nbsp;
+          &nbsp; {reviewMode ? 'Needs Review' : 'Your Money Story'}&nbsp;
         </ThemedText>
         <View className="h-10 w-10"></View>
       </View>
@@ -290,7 +310,9 @@ export default function TransactionsScreen() {
             title={hasActiveConstraints ? 'No matching transactions' : 'No transactions yet'}
             message={
               hasActiveConstraints
-                ? 'Adjust your search or filters to see more activity.'
+                ? reviewMode
+                  ? 'No transactions need category or account cleanup.'
+                  : 'Adjust your search or filters to see more activity.'
                 : 'Capture your first spend or income from the home screen.'
             }
             actionLabel={hasActiveConstraints ? 'Clear filters' : 'Capture transaction'}
