@@ -1,5 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Contacts from 'expo-contacts/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import type { ComponentProps, ReactNode } from 'react';
@@ -73,6 +75,7 @@ type SplitChoiceMode =
   | 'friend_paid_equal'
   | 'friend_paid_full';
 type AdjustSplitTab = 'equally' | 'unequally' | 'percentages' | 'shares';
+type GroupActionMode = 'settle' | 'totals' | 'balances' | 'export';
 type GroupMetadata = {
   kind: GroupKind;
   balanceAlertEnabled: boolean;
@@ -234,6 +237,195 @@ const getActivityIcon = (
   }
 };
 
+const getGroupBalanceRows = (summary: SplitGroupSummary, friends: SplitFriend[]) => {
+  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
+  return summary.memberIds
+    .map((friendId) => {
+      const balance = summary.bills.reduce((sum, bill) => {
+        const participant = bill.participants?.find((item) => item.friend_id === friendId);
+        if (!participant) return sum;
+        return (
+          sum +
+          (participant.direction === 'friend_owes_user'
+            ? participant.share_amount
+            : -participant.share_amount)
+        );
+      }, 0);
+      const friend = friendById.get(friendId);
+      if (!friend) return null;
+      return { friend, balance };
+    })
+    .filter((row): row is { friend: SplitFriend; balance: number } => Boolean(row));
+};
+
+const getGroupTotals = (
+  summary: SplitGroupSummary,
+  friends: SplitFriend[],
+  currentUserName: string
+) => {
+  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
+  return summary.bills.reduce(
+    (totals, bill) => {
+      totals.total += bill.total_amount;
+      const payerParticipant = bill.participants.find(
+        (participant) => participant.direction === 'user_owes_friend'
+      );
+      if (payerParticipant) {
+        totals.friendPaid += bill.total_amount;
+        const payerName = friendById.get(payerParticipant.friend_id)?.name ?? 'Friend';
+        totals.payers.set(payerName, (totals.payers.get(payerName) ?? 0) + bill.total_amount);
+      } else {
+        totals.youPaid += bill.total_amount;
+        totals.payers.set(currentUserName, (totals.payers.get(currentUserName) ?? 0) + bill.total_amount);
+      }
+      bill.participants.forEach((participant) => {
+        if (participant.direction === 'friend_owes_user') {
+          totals.youLent += participant.share_amount;
+        } else {
+          totals.youBorrowed += participant.share_amount;
+        }
+      });
+      return totals;
+    },
+    {
+      total: 0,
+      youPaid: 0,
+      friendPaid: 0,
+      youLent: 0,
+      youBorrowed: 0,
+      payers: new Map<string, number>(),
+    }
+  );
+};
+
+const csvCell = (value: string | number | null | undefined) => {
+  const normalized = value == null ? '' : String(value);
+  return `"${normalized.replace(/"/g, '""')}"`;
+};
+
+const csvRow = (values: (string | number | null | undefined)[]) =>
+  values.map(csvCell).join(',');
+
+const getSafeExportFileName = (name: string) =>
+  name
+    .trim()
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase() || 'split-group';
+
+const buildGroupExportCsv = (
+  summary: SplitGroupSummary,
+  friends: SplitFriend[],
+  currentUserName: string
+) => {
+  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
+  const balances = getGroupBalanceRows(summary, friends);
+  const rows: string[] = [
+    csvRow(['Finnri Split Report']),
+    csvRow(['Group', summary.group.name]),
+    csvRow(['Exported on', todayApiDate()]),
+    csvRow(['Currency', 'INR']),
+    csvRow([]),
+    csvRow(['Who owes whom']),
+    csvRow(['Who owes', 'Who gets paid', 'Amount', 'Status']),
+  ];
+
+  const openBalances = balances.filter(({ balance }) => balance !== 0);
+  if (openBalances.length === 0) {
+    rows.push(csvRow(['Everyone', 'Everyone', 0, 'Settled up']));
+  } else {
+    openBalances.forEach(({ friend, balance }) => {
+      rows.push(
+        balance > 0
+          ? csvRow([friend.name, currentUserName, Math.abs(balance).toFixed(2), 'Open'])
+          : csvRow([currentUserName, friend.name, Math.abs(balance).toFixed(2), 'Open'])
+      );
+    });
+  }
+
+  rows.push(csvRow([]));
+  rows.push(csvRow(['Expenses']));
+  rows.push([
+    'Date',
+    'Expense',
+    'Total amount',
+    'Paid by',
+    'Split with',
+    'Share details',
+    'Notes',
+  ].map(csvCell).join(','));
+
+  summary.bills.forEach((bill) => {
+    const payerParticipant = bill.participants.find(
+      (participant) => participant.direction === 'user_owes_friend'
+    );
+    const payer = payerParticipant
+      ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
+      : currentUserName;
+    const splitWith = bill.participants
+      .map((participant) => friendById.get(participant.friend_id)?.name ?? 'Friend')
+      .join(', ');
+    const shareDetails = bill.participants
+      .map((participant) => {
+        const friendName = friendById.get(participant.friend_id)?.name ?? 'Friend';
+        return participant.direction === 'friend_owes_user'
+          ? `${friendName} owes ${currentUserName} ₹${participant.share_amount.toFixed(2)}`
+          : `${currentUserName} owes ${friendName} ₹${participant.share_amount.toFixed(2)}`;
+      })
+      .join('; ');
+    rows.push(
+      csvRow([
+        bill.date,
+        bill.title,
+        bill.total_amount.toFixed(2),
+        payer,
+        splitWith,
+        shareDetails,
+        bill.notes ?? '',
+      ])
+    );
+  });
+
+  return rows.join('\n');
+};
+
+const formatFriendlySplitError = (error: unknown, fallback: string) => {
+  const rawMessage = error instanceof Error ? error.message : '';
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('network request failed') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('failed to connect') ||
+    normalized.includes('java.net') ||
+    normalized.includes('connectexception') ||
+    normalized.includes('timed out') ||
+    normalized.includes('networkerror')
+  ) {
+    return 'We could not reach Finnri right now. Check your internet connection and try again.';
+  }
+
+  if (
+    normalized.includes('failed to fetch') ||
+    normalized.includes('could not resolve') ||
+    normalized.includes('connection refused')
+  ) {
+    return 'The server is not reachable right now. Please try again in a moment.';
+  }
+
+  if (!rawMessage.trim()) return fallback;
+
+  const withoutBullets = rawMessage
+    .split('\n')
+    .map((line) => line.trim().replace(/^•\s*/, ''))
+    .filter(Boolean);
+  const userSafeLines = withoutBullets.filter(
+    (line) =>
+      !/java\.net|connectexception|\/\d{1,3}(?:\.\d{1,3}){3}:\d+|stack|trace/i.test(line)
+  );
+  return userSafeLines.length > 0 ? userSafeLines.join('\n') : fallback;
+};
+
 type SplitScreenProps = {
   embedded?: boolean;
 };
@@ -263,6 +455,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const [selectedGroupDetailId, setSelectedGroupDetailId] = useState<number | null>(null);
   const [groupSettingsId, setGroupSettingsId] = useState<number | null>(null);
+  const [groupAction, setGroupAction] = useState<{
+    groupId: number;
+    mode: GroupActionMode;
+  } | null>(null);
   const [pendingGroupDelete, setPendingGroupDelete] = useState<SplitGroupSummary | null>(null);
   const [pendingGroupLeave, setPendingGroupLeave] = useState<SplitGroupSummary | null>(null);
   const [selectedFriendDetailId, setSelectedFriendDetailId] = useState<number | null>(null);
@@ -351,7 +547,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setBills(nextBills);
       setActivity(nextActivity);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load split data.');
+      setError(formatFriendlySplitError(loadError, 'Unable to load split data.'));
     } finally {
       setLoading(false);
     }
@@ -384,9 +580,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           .filter((contact): contact is DeviceContactOption => Boolean(contact))
       );
     } catch (contactError) {
-      setError(
-        contactError instanceof Error ? contactError.message : 'Unable to load your contacts.'
-      );
+      setError(formatFriendlySplitError(contactError, 'Unable to load your contacts.'));
     } finally {
       setContactsLoading(false);
     }
@@ -505,6 +699,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const groupSettingsSummary = useMemo(
     () => groupSummaries.find((summary) => summary.group.id === groupSettingsId) ?? null,
     [groupSettingsId, groupSummaries]
+  );
+
+  const groupActionSummary = useMemo(
+    () =>
+      groupAction
+        ? (groupSummaries.find((summary) => summary.group.id === groupAction.groupId) ?? null)
+        : null,
+    [groupAction, groupSummaries]
   );
 
   const loadPendingGroupInvites = useCallback(
@@ -813,7 +1015,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       closeModal();
       await loadSplitData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save this friend.');
+      setError(formatFriendlySplitError(saveError, 'Unable to save this friend.'));
     } finally {
       setSaving(false);
     }
@@ -857,7 +1059,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       await loadSplitData();
       setSelectedGroupDetailId(isEditingGroup ? null : savedGroup.id);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save this group.');
+      setError(formatFriendlySplitError(saveError, 'Unable to save this group.'));
     } finally {
       setSaving(false);
     }
@@ -887,9 +1089,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           void archiveSplitFriend(token, friend.id)
             .then(loadSplitData)
             .catch((archiveError: unknown) => {
-              setError(
-                archiveError instanceof Error ? archiveError.message : 'Unable to archive friend.'
-              );
+              setError(formatFriendlySplitError(archiveError, 'Unable to archive friend.'));
             });
         },
       },
@@ -903,7 +1103,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     void archiveSplitFriend(token, pendingFriendDelete.id)
       .then(loadSplitData)
       .catch((archiveError: unknown) => {
-        setError(archiveError instanceof Error ? archiveError.message : 'Unable to delete friend.');
+        setError(formatFriendlySplitError(archiveError, 'Unable to delete friend.'));
       })
       .finally(() => {
         setSaving(false);
@@ -1047,7 +1247,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         setSelectedGroupDetailId(savedBill.group_id);
       }
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save this split bill.');
+      setError(formatFriendlySplitError(saveError, 'Unable to save this split bill.'));
     } finally {
       setSaving(false);
     }
@@ -1068,9 +1268,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         }
       })
       .catch((deleteError: unknown) => {
-        setError(
-          deleteError instanceof Error ? deleteError.message : 'Unable to delete this expense.'
-        );
+        setError(formatFriendlySplitError(deleteError, 'Unable to delete this expense.'));
       })
       .finally(() => setSaving(false));
   };
@@ -1095,9 +1293,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       closeModal();
       await loadSplitData();
     } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : 'Unable to record this settlement.'
-      );
+      setError(formatFriendlySplitError(saveError, 'Unable to record this settlement.'));
     } finally {
       setSaving(false);
     }
@@ -1154,9 +1350,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         url: invite.url,
       });
     } catch (inviteError) {
-      setError(
-        inviteError instanceof Error ? inviteError.message : 'Unable to share this invite link.'
-      );
+      setError(formatFriendlySplitError(inviteError, 'Unable to share this invite link.'));
     } finally {
       setSaving(false);
     }
@@ -1195,9 +1389,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setGroupSettingsId(invite.group.id);
       await loadPendingGroupInvites(invite.group.id);
     } catch (inviteError) {
-      setError(
-        inviteError instanceof Error ? inviteError.message : 'Unable to invite this friend.'
-      );
+      setError(formatFriendlySplitError(inviteError, 'Unable to invite this friend.'));
     } finally {
       setSaving(false);
     }
@@ -1223,9 +1415,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadPendingGroupInvites(groupId);
       })
       .catch((revokeError: unknown) => {
-        setError(
-          revokeError instanceof Error ? revokeError.message : 'Unable to revoke this invite.'
-        );
+        setError(formatFriendlySplitError(revokeError, 'Unable to revoke this invite.'));
       })
       .finally(() => setSaving(false));
   };
@@ -1263,7 +1453,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setSelectedGroupDetailId(groupId);
       await loadSplitData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to update group members.');
+      setError(formatFriendlySplitError(saveError, 'Unable to update group members.'));
     } finally {
       setSaving(false);
     }
@@ -1291,9 +1481,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadSplitData();
       })
       .catch((deleteError: unknown) => {
-        setError(
-          deleteError instanceof Error ? deleteError.message : 'Unable to delete this split group.'
-        );
+        setError(formatFriendlySplitError(deleteError, 'Unable to delete this split group.'));
       })
       .finally(() => setSaving(false));
   };
@@ -1310,9 +1498,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadSplitData();
       })
       .catch((leaveError: unknown) => {
-        setError(
-          leaveError instanceof Error ? leaveError.message : 'Unable to leave this split group.'
-        );
+        setError(formatFriendlySplitError(leaveError, 'Unable to leave this split group.'));
       })
       .finally(() => setSaving(false));
   };
@@ -1328,11 +1514,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadDeviceContacts();
       }
     } catch (permissionError) {
-      setError(
-        permissionError instanceof Error
-          ? permissionError.message
-          : 'Unable to request contacts permission.'
-      );
+      setError(formatFriendlySplitError(permissionError, 'Unable to request contacts permission.'));
     } finally {
       setContactsLoading(false);
     }
@@ -1361,7 +1543,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       );
       await loadSplitData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to add this contact.');
+      setError(formatFriendlySplitError(saveError, 'Unable to add this contact.'));
     } finally {
       setSaving(false);
     }
@@ -1459,6 +1641,53 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSettlementFriendId(friend.id);
     setSelectedFriendDetailId(null);
     setModal('settlement');
+  };
+
+  const openGroupAction = (summary: SplitGroupSummary, mode: GroupActionMode) => {
+    setGroupAction({ groupId: summary.group.id, mode });
+  };
+
+  const openSettlementForGroupFriend = (
+    summary: SplitGroupSummary,
+    friendId: number,
+    balance: number
+  ) => {
+    if (balance === 0) return;
+    const friend = friends.find((candidate) => candidate.id === friendId);
+    if (!friend) return;
+    resetSettlementForm();
+    setSettlementFriendId(friend.id);
+    setSettlementAmount(String(Math.abs(balance).toFixed(2)));
+    setSettlementDirection(balance > 0 ? 'friend_paid_user' : 'user_paid_friend');
+    setSettlementNotes(`Settlement for ${summary.group.name}`);
+    setGroupAction(null);
+    setModal('settlement');
+  };
+
+  const shareGroupExport = async (summary: SplitGroupSummary) => {
+    try {
+      const csv = buildGroupExportCsv(summary, friends, currentUserName);
+      const sharingAvailable = await Sharing.isAvailableAsync();
+      if (!FileSystem.documentDirectory || !sharingAvailable) {
+        await Share.share({
+          title: `${summary.group.name} Finnri split export`,
+          message: csv,
+        });
+        return;
+      }
+      const fileName = `${getSafeExportFileName(summary.group.name)}-split-export-${todayApiDate()}.csv`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        UTI: 'public.comma-separated-values-text',
+        dialogTitle: `${summary.group.name} Finnri split export`,
+      });
+    } catch (shareError) {
+      setError(formatFriendlySplitError(shareError, 'Unable to export this group summary.'));
+    }
   };
 
   const openActivityTarget = (item: SplitActivityItem) => {
@@ -1879,7 +2108,18 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onAddExpense={(groupId) => openBillForGroup(groupId)}
           onManageMembers={openMemberPicker}
           onOpenExpense={(bill) => setSelectedBillId(bill.id)}
+          onOpenAction={openGroupAction}
           onOpenSettings={(summary) => setGroupSettingsId(summary.group.id)}
+        />
+
+        <GroupActionModal
+          summary={groupActionSummary}
+          mode={groupAction?.mode ?? null}
+          friends={splitFriendCatalog}
+          currentUserName={currentUserName}
+          onClose={() => setGroupAction(null)}
+          onSettleWithFriend={openSettlementForGroupFriend}
+          onShareExport={(summary) => void shareGroupExport(summary)}
         />
 
         <BillDetailModal
@@ -3157,6 +3397,7 @@ function GroupDetailModal({
   onAddExpense,
   onManageMembers,
   onOpenExpense,
+  onOpenAction,
   onOpenSettings,
 }: {
   summary: SplitGroupSummary | null;
@@ -3166,6 +3407,7 @@ function GroupDetailModal({
   onAddExpense: (groupId: number) => void;
   onManageMembers: (summary: SplitGroupSummary) => void;
   onOpenExpense: (bill: SplitBill) => void;
+  onOpenAction: (summary: SplitGroupSummary, mode: GroupActionMode) => void;
   onOpenSettings: (summary: SplitGroupSummary) => void;
 }) {
   const [groupSearchVisible, setGroupSearchVisible] = useState(false);
@@ -3342,9 +3584,26 @@ function GroupDetailModal({
             showsHorizontalScrollIndicator={false}
             className="mt-6"
             contentContainerStyle={{ gap: 12 }}>
-            <DetailPill label="Settle up" icon="hand-coin-outline" />
-            <DetailPill label="Convert to USD" icon="diamond-stone" />
-            <DetailPill label="Charts" icon="chart-box-outline" />
+            <DetailPill
+              label="Settle up"
+              icon="hand-coin-outline"
+              onPress={() => onOpenAction(summary, 'settle')}
+            />
+            <DetailPill
+              label="Totals"
+              icon="calculator-variant-outline"
+              onPress={() => onOpenAction(summary, 'totals')}
+            />
+            <DetailPill
+              label="Balances"
+              icon="scale-balance"
+              onPress={() => onOpenAction(summary, 'balances')}
+            />
+            <DetailPill
+              label="Export"
+              icon="export-variant"
+              onPress={() => onOpenAction(summary, 'export')}
+            />
           </ScrollView>
 
           <View className="mt-6">
@@ -3468,6 +3727,283 @@ function GroupExpenseRow({
         </View>
       ) : null}
     </Pressable>
+  );
+}
+
+function GroupActionModal({
+  summary,
+  mode,
+  friends,
+  currentUserName,
+  onClose,
+  onSettleWithFriend,
+  onShareExport,
+}: {
+  summary: SplitGroupSummary | null;
+  mode: GroupActionMode | null;
+  friends: SplitFriend[];
+  currentUserName: string;
+  onClose: () => void;
+  onSettleWithFriend: (summary: SplitGroupSummary, friendId: number, balance: number) => void;
+  onShareExport: (summary: SplitGroupSummary) => void;
+}) {
+  const theme = useThemeTokens().colors;
+  if (!summary || !mode) return null;
+
+  const balances = getGroupBalanceRows(summary, friends);
+  const totals = getGroupTotals(summary, friends, currentUserName);
+  const openBalances = balances.filter((row) => row.balance !== 0);
+  const title =
+    mode === 'settle'
+      ? 'Settle up'
+      : mode === 'totals'
+        ? 'Totals'
+        : mode === 'balances'
+          ? 'Balances'
+          : 'Export';
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView
+        className="flex-1"
+        edges={['top', 'left', 'right']}
+        style={{ backgroundColor: theme.background }}>
+        <View className="min-h-16 flex-row items-center border-b px-5" style={{ borderColor: theme.border }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Close ${title}`}
+            onPress={onClose}
+            className="h-11 w-11 items-center justify-center">
+            <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
+          </Pressable>
+          <View className="ml-4 flex-1">
+            <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              {title}
+            </TText>
+            <TText className="mt-1 text-xs text-black/50 dark:text-white/50">
+              {summary.group.name}
+            </TText>
+          </View>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 24, paddingBottom: 44 }}>
+          {mode === 'settle' ? (
+            <View>
+              <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                Outstanding balances
+              </TText>
+              <TText className="mt-2 text-sm leading-5 text-black/55 dark:text-white/55">
+                Pick a balance to record the settlement direction and amount automatically.
+              </TText>
+              <View className="mt-6 gap-3">
+                {openBalances.length > 0 ? (
+                  openBalances.map((row) => (
+                    <GroupBalanceActionRow
+                      key={row.friend.id}
+                      friend={row.friend}
+                      balance={row.balance}
+                      actionLabel="Record payment"
+                      onPress={() => onSettleWithFriend(summary, row.friend.id, row.balance)}
+                    />
+                  ))
+                ) : (
+                  <InlineEmptyState
+                    icon="check-circle-outline"
+                    title="Settled up"
+                    message="There are no open balances in this group."
+                  />
+                )}
+              </View>
+            </View>
+          ) : null}
+
+          {mode === 'totals' ? (
+            <View>
+              <View className="gap-3">
+                <GroupMetricRow label="Total expenses" value={formatMoney(totals.total)} icon="receipt-text-outline" />
+                <GroupMetricRow label="You paid" value={formatMoney(totals.youPaid)} icon="wallet-outline" />
+                <GroupMetricRow label="Friends paid" value={formatMoney(totals.friendPaid)} icon="account-cash-outline" />
+                <GroupMetricRow label="You lent" value={formatMoney(totals.youLent)} icon="arrow-up-circle-outline" positive />
+                <GroupMetricRow label="You borrowed" value={formatMoney(totals.youBorrowed)} icon="arrow-down-circle-outline" negative />
+              </View>
+              <TText className="mt-8 text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                Paid by
+              </TText>
+              <View className="mt-3 gap-2">
+                {[...totals.payers.entries()].map(([name, value]) => (
+                  <View
+                    key={name}
+                    className="flex-row items-center justify-between rounded-2xl px-4 py-3"
+                    style={{ backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }}>
+                    <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                      {name}
+                    </TText>
+                    <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                      {formatMoney(value)}
+                    </TText>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {mode === 'balances' ? (
+            <View>
+              <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                Group balances
+              </TText>
+              <View className="mt-5 gap-3">
+                {balances.map((row) => (
+                  <GroupBalanceActionRow
+                    key={row.friend.id}
+                    friend={row.friend}
+                    balance={row.balance}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {mode === 'export' ? (
+            <View>
+              <View
+                className="rounded-2xl border p-5"
+                style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+                <View className="flex-row items-center gap-3">
+                  <View
+                    className="h-12 w-12 items-center justify-center rounded-xl"
+                    style={{ backgroundColor: theme.accent }}>
+                    <MaterialCommunityIcons name="table-large" size={25} color="#FFFFFF" />
+                  </View>
+                  <View className="flex-1">
+                    <TText
+                      className="text-xl"
+                      style={{ color: theme.text, fontFamily: Fonts.title }}>
+                      Finnri split export
+                    </TText>
+                    <TText className="mt-1 text-sm text-black/55 dark:text-white/55">
+                      Excel-compatible CSV report
+                    </TText>
+                  </View>
+                </View>
+                <TText className="mt-4 text-sm leading-5 text-black/60 dark:text-white/60">
+                  A simple spreadsheet with who owes whom at the top, followed by every expense,
+                  who paid, who it was split with, and each person&apos;s share.
+                </TText>
+              </View>
+              <View
+                className="mt-6 rounded-2xl border p-4"
+                style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                <ExportPreviewRow label="Format" value=".csv for Excel, Numbers, Google Sheets" />
+                <ExportPreviewRow label="Currency" value="INR numeric amounts" />
+                <ExportPreviewRow label="Top section" value="Who owes whom" />
+                <ExportPreviewRow label="Expense section" value="Paid by, split with, shares" />
+              </View>
+              <PrimaryModalButton
+                label="Share CSV export"
+                loading={false}
+                onPress={() => onShareExport(summary)}
+              />
+            </View>
+          ) : null}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function GroupMetricRow({
+  label,
+  value,
+  icon,
+  positive,
+  negative,
+}: {
+  label: string;
+  value: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  positive?: boolean;
+  negative?: boolean;
+}) {
+  const theme = useThemeTokens().colors;
+  const color = positive ? '#12966F' : negative ? '#DC2626' : theme.text;
+  return (
+    <View
+      className="min-h-16 flex-row items-center gap-4 rounded-2xl border px-4"
+      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+      <MaterialCommunityIcons name={icon} size={24} color={color} />
+      <TText className="flex-1 text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        {label}
+      </TText>
+      <TText className="text-base" style={{ color, fontFamily: Fonts.title }}>
+        {value}
+      </TText>
+    </View>
+  );
+}
+
+function ExportPreviewRow({ label, value }: { label: string; value: string }) {
+  const theme = useThemeTokens().colors;
+  return (
+    <View className="min-h-10 flex-row items-center justify-between gap-4">
+      <TText className="text-sm text-black/50 dark:text-white/50">{label}</TText>
+      <TText
+        className="flex-1 text-right text-sm"
+        style={{ color: theme.text, fontFamily: Fonts.title }}>
+        {value}
+      </TText>
+    </View>
+  );
+}
+
+function GroupBalanceActionRow({
+  friend,
+  balance,
+  actionLabel,
+  onPress,
+}: {
+  friend: SplitFriend;
+  balance: number;
+  actionLabel?: string;
+  onPress?: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+  const settled = balance === 0;
+  const color = balance > 0 ? '#12966F' : balance < 0 ? '#DC2626' : 'rgba(100,100,100,0.8)';
+  return (
+    <View
+      className="rounded-2xl border p-4"
+      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+      <View className="flex-row items-center gap-4">
+        <AvatarCircle label={friend.name} size={46} />
+        <View className="flex-1">
+          <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            {friend.name}
+          </TText>
+          <TText className="mt-1 text-sm" style={{ color }}>
+            {settled
+              ? 'settled up'
+              : balance > 0
+                ? `owes you ${formatMoney(balance)}`
+                : `you owe ${formatMoney(balance)}`}
+          </TText>
+        </View>
+        <TText className="text-base" style={{ color, fontFamily: Fonts.title }}>
+          {settled ? '₹0' : formatMoney(balance)}
+        </TText>
+      </View>
+      {actionLabel && onPress ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onPress}
+          className="mt-4 min-h-11 items-center justify-center rounded-full"
+          style={{ backgroundColor: theme.accent }}>
+          <TText className="text-sm text-white" style={{ fontFamily: Fonts.title }}>
+            {actionLabel}
+          </TText>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -3884,6 +4420,7 @@ function AddExpenseModal({
             onBack={() => onChangeFlowScreen('split_choice')}
             onDone={onApplySplit}
             onSelectPayer={onChangePayerFriend}
+            onSelectMode={onChangeSplitChoice}
             onToggleFriend={onToggleEqualFriend}
             onToggleCurrentUser={onToggleCurrentUser}
             onToggleAll={onToggleAllEqualFriends}
@@ -4132,6 +4669,7 @@ function AdjustSplitScreen({
   onBack,
   onDone,
   onSelectPayer,
+  onSelectMode,
   onToggleFriend,
   onToggleCurrentUser,
   onToggleAll,
@@ -4150,16 +4688,20 @@ function AdjustSplitScreen({
   onBack: () => void;
   onDone: () => void;
   onSelectPayer: (friendId: number | null) => void;
+  onSelectMode: (mode: SplitChoiceMode) => void;
   onToggleFriend: (friendId: number) => void;
   onToggleCurrentUser: () => void;
   onToggleAll: () => void;
   onChangeTab: (tab: AdjustSplitTab) => void;
 }) {
   const theme = useThemeTokens().colors;
+  const [payerPickerVisible, setPayerPickerVisible] = useState(false);
   const payerFriend = friends.find((friend) => friend.id === payerFriendId) ?? friends[0] ?? null;
   const payerName = selectedMode.startsWith('friend_paid')
     ? (payerFriend?.name ?? 'Friend')
     : currentUserName;
+  const isFullAmountMode =
+    selectedMode === 'you_paid_full' || selectedMode === 'friend_paid_full';
   const totalSelected = selectedFriendIds.length + (includeCurrentUser ? 1 : 0);
   const perPerson =
     Number.isFinite(amount) && amount > 0 && totalSelected > 0 ? amount / totalSelected : 0;
@@ -4185,13 +4727,8 @@ function AdjustSplitScreen({
           </TText>
           <Pressable
             accessibilityRole="button"
-            onPress={() => {
-              if (friends.length > 0) {
-                const currentIndex = friends.findIndex((friend) => friend.id === payerFriendId);
-                const nextFriend = friends[(currentIndex + 1) % friends.length];
-                onSelectPayer(selectedMode.startsWith('friend_paid') ? nextFriend.id : null);
-              }
-            }}
+            accessibilityLabel="Change who paid"
+            onPress={() => setPayerPickerVisible(true)}
             className="h-11 w-11 items-center justify-center">
             <MaterialCommunityIcons name="pencil" size={26} color={theme.text} />
           </Pressable>
@@ -4287,7 +4824,86 @@ function AdjustSplitScreen({
           />
         </Pressable>
       </View>
+
+      <AnimatedBottomSheet visible={payerPickerVisible} onClose={() => setPayerPickerVisible(false)}>
+        <View
+          className="rounded-t-[28px] border px-5 pb-8 pt-5"
+          style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+          <View className="mb-4 flex-row items-center justify-between">
+            <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              Paid by
+            </TText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setPayerPickerVisible(false)}
+              className="h-10 w-10 items-center justify-center rounded-full"
+              style={{ backgroundColor: theme.secondary }}>
+              <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+            </Pressable>
+          </View>
+          <View className="gap-2">
+            <PayerOptionRow
+              label={currentUserName}
+              subtitle={currentUserContact}
+              selected={!selectedMode.startsWith('friend_paid')}
+              onPress={() => {
+                onSelectPayer(null);
+                onSelectMode(isFullAmountMode ? 'you_paid_full' : 'you_paid_equal');
+                setPayerPickerVisible(false);
+              }}
+            />
+            {friends.map((friend) => (
+              <PayerOptionRow
+                key={friend.id}
+                label={friend.name}
+                subtitle={[friend.phone, friend.email].filter(Boolean).join(' • ')}
+                selected={selectedMode.startsWith('friend_paid') && payerFriendId === friend.id}
+                onPress={() => {
+                  onSelectPayer(friend.id);
+                  onSelectMode(isFullAmountMode ? 'friend_paid_full' : 'friend_paid_equal');
+                  setPayerPickerVisible(false);
+                }}
+              />
+            ))}
+          </View>
+        </View>
+      </AnimatedBottomSheet>
     </View>
+  );
+}
+
+function PayerOptionRow({
+  label,
+  subtitle,
+  selected,
+  onPress,
+}: {
+  label: string;
+  subtitle?: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      className="min-h-16 flex-row items-center gap-4 rounded-2xl px-3"
+      style={{ backgroundColor: selected ? theme.secondary : 'transparent' }}>
+      <AvatarCircle label={label} size={44} />
+      <View className="flex-1">
+        <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+          {label}
+        </TText>
+        {subtitle ? (
+          <TText className="mt-1 text-xs text-black/50 dark:text-white/50" numberOfLines={1}>
+            {subtitle}
+          </TText>
+        ) : null}
+      </View>
+      {selected ? <MaterialCommunityIcons name="check" size={22} color={theme.accent} /> : null}
+    </Pressable>
   );
 }
 
