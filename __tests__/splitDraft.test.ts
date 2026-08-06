@@ -83,6 +83,56 @@ describe('resolveSplitDraft', () => {
     ]);
   });
 
+  it('matches a spoken group name without creating a duplicate group', () => {
+    const groups = [
+      {
+        id: 9,
+        name: 'Bubu dudu',
+        user_id: 1,
+        archived: false,
+        members: [
+          { id: 1, user_id: 1, group_id: 9, friend_id: 21, friend: { id: 21, name: 'Wife' } },
+        ],
+      },
+    ] as SplitGroup[];
+
+    const draft = resolveSplitDraft(
+      baseParse({
+        amount: 2000,
+        mode: 'credit_card',
+        split_candidate: true,
+        split_candidate_details: { group_name: 'Bubudoo', participants: [] },
+      }),
+      [],
+      groups
+    );
+
+    expect(draft.splitGroupId).toBe(9);
+    expect(draft.splitGroupName).toBe('');
+    expect(draft.splitParticipants).toEqual([
+      { friendId: 21, friendName: '', shareAmount: '1000.00', direction: 'friend_owes_user' },
+    ]);
+  });
+
+  it('keeps the parsed group name when speech matching is ambiguous', () => {
+    const groups = [
+      { id: 9, name: 'Bubu dudu', user_id: 1, archived: false },
+      { id: 10, name: 'Bubu dudu dinner', user_id: 1, archived: false },
+    ] as SplitGroup[];
+
+    const draft = resolveSplitDraft(
+      baseParse({
+        split_candidate: true,
+        split_candidate_details: { group_name: 'Bubudoo', participants: [] },
+      }),
+      [],
+      groups
+    );
+
+    expect(draft.splitGroupId).toBeNull();
+    expect(draft.splitGroupName).toBe('Bubudoo');
+  });
+
   it('rebalances multiple parsed shares when AI assigns too much to each friend', () => {
     const friends = [
       { id: 1, name: 'Anshul', user_id: 1, archived: false },

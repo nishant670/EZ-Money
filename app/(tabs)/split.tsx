@@ -29,6 +29,8 @@ import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { fetchAccounts, getPreferredAccountForPaymentMode } from '@/lib/accounts';
+import { createEntry } from '@/lib/entries';
 import {
   archiveSplitGroup,
   archiveSplitFriend,
@@ -110,6 +112,8 @@ type DeviceContactOption = {
   email?: string;
   imageUri?: string;
 };
+
+const isPaidByCurrentUserMode = (mode: SplitChoiceMode) => mode.startsWith('you_paid');
 
 const groupKindOptions: {
   kind: GroupKind;
@@ -1217,6 +1221,56 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setError(null);
   };
 
+  const resolveSplitExpenseAccount = async (authToken: string) => {
+    const accounts = await fetchAccounts(authToken);
+    const cashAccount =
+      getPreferredAccountForPaymentMode(accounts, 'Cash') ??
+      accounts.find((account) => account.is_default) ??
+      accounts[0] ??
+      null;
+    if (!cashAccount) {
+      throw new Error('Add an account before saving this split expense.');
+    }
+    return cashAccount;
+  };
+
+  const createEntryBackedSplitBill = async (
+    authToken: string,
+    amount: number,
+    participants: ParticipantDraft[]
+  ) => {
+    const account = await resolveSplitExpenseAccount(authToken);
+    await createEntry(
+      authToken,
+      {
+        title: billTitle.trim(),
+        amount: amount.toFixed(2),
+        currency: 'INR',
+        account_id: account.id,
+        type: 'expense',
+        mode: 'Cash',
+        category: 'Split',
+        notes: billNotes.trim(),
+        merchant: '',
+        tag: 'Split',
+        date: billDate.trim(),
+        time: '',
+        source: 'manual',
+        source_text: '',
+        split: {
+          group_id: billGroupId,
+          notes: billNotes.trim(),
+          participants: participants.map((participant) => ({
+            friend_id: participant.friend_id,
+            share_amount: participant.share_amount,
+            direction: participant.direction,
+          })),
+        },
+      },
+      `split-bill-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+  };
+
   const handleCreateBill = async () => {
     if (!token || saving) return;
     const amount = parseAmount(billAmount);
@@ -1238,13 +1292,21 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         group_id: billGroupId,
         participants: finalParticipants,
       };
+      const shouldMirrorToTransaction =
+        !editingBillId && isPaidByCurrentUserMode(splitChoiceMode);
       const savedBill = editingBillId
         ? await updateSplitBill(token, editingBillId, payload)
-        : await createSplitBill(token, payload);
+        : shouldMirrorToTransaction
+          ? null
+          : await createSplitBill(token, payload);
+      if (shouldMirrorToTransaction) {
+        await createEntryBackedSplitBill(token, amount, finalParticipants);
+      }
       closeModal();
       await loadSplitData();
-      if (savedBill.group_id) {
-        setSelectedGroupDetailId(savedBill.group_id);
+      const nextGroupId = savedBill?.group_id ?? billGroupId;
+      if (nextGroupId) {
+        setSelectedGroupDetailId(nextGroupId);
       }
     } catch (saveError) {
       setError(formatFriendlySplitError(saveError, 'Unable to save this split bill.'));

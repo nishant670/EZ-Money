@@ -22,20 +22,46 @@ const normalizeLookup = (value?: string | null) =>
     .replace(/[.,/#!$%^&*;:{}=\-_`~()[\]"']/g, ' ')
     .replace(/\s+/g, ' ');
 
+const compactLookup = (value?: string | null) => normalizeLookup(value).replace(/\s/g, '');
+
+const spokenLookup = (value?: string | null) =>
+  compactLookup(value)
+    .replace(/oo/g, 'u')
+    .replace(/ou/g, 'u')
+    .replace(/(.)\1{2,}/g, '$1$1');
+
+const findUniqueByNormalizedName = <T extends { name: string }>(
+  items: T[],
+  name: string,
+  normalize: (value?: string | null) => string,
+  allowContains = true
+): T | null => {
+  const normalizedName = normalize(name);
+  if (!normalizedName) return null;
+
+  const exact = items.find((item) => normalize(item.name) === normalizedName);
+  if (exact) return exact;
+  if (!allowContains || normalizedName.length < 5) return null;
+
+  const partialMatches = items.filter((item) => {
+    const normalizedItemName = normalize(item.name);
+    return (
+      normalizedItemName.length >= 5 &&
+      (normalizedItemName.includes(normalizedName) || normalizedName.includes(normalizedItemName))
+    );
+  });
+  return partialMatches.length === 1 ? partialMatches[0] : null;
+};
+
 const findByName = <T extends { name: string }>(items: T[], name?: string | null): T | null => {
   const normalizedName = normalizeLookup(name);
   if (!normalizedName) return null;
 
-  const exact = items.find((item) => normalizeLookup(item.name) === normalizedName);
-  if (exact) return exact;
-
-  const partialMatches = items.filter((item) => {
-    const normalizedItemName = normalizeLookup(item.name);
-    return (
-      normalizedItemName.includes(normalizedName) || normalizedName.includes(normalizedItemName)
-    );
-  });
-  return partialMatches.length === 1 ? partialMatches[0] : null;
+  return (
+    findUniqueByNormalizedName(items, normalizedName, normalizeLookup) ??
+    findUniqueByNormalizedName(items, normalizedName, compactLookup) ??
+    findUniqueByNormalizedName(items, normalizedName, spokenLookup)
+  );
 };
 
 const formatShare = (value: number | null) =>
