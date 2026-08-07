@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { loadTransactions, resolveCategoryMetadata } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
@@ -130,7 +131,7 @@ export default function InsightDetailScreen() {
       const loaded = await loadTransactions(token, filters);
       setTransactions(loaded.slice(0, 8));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load source transactions.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load source transactions.'));
     } finally {
       setLoading(false);
     }

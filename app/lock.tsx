@@ -6,6 +6,7 @@ import { AuthPinLoginScreen } from '@/components/auth/AuthPinLoginScreen';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { loginUser } from '@/lib/auth';
 import { getDeviceId } from '@/lib/device';
 import { hasLocalSecurityPin, saveLocalSecurityPin, verifyLocalSecurityPin } from '@/lib/security';
@@ -71,7 +72,7 @@ export default function LockScreen() {
             );
             router.replace('/(tabs)');
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unlock failed. If you reset your account, please Switch Account.');
+            setError(getFriendlyErrorMessage(err, 'Unlock failed. If you reset your account, please Switch Account.'));
         } finally {
             setIsLoading(false);
         }

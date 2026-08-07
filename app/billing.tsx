@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import {
   createBillingCheckout,
   fetchBillingPlans,
@@ -91,7 +92,7 @@ export default function BillingScreen() {
     } catch (error) {
       Alert.alert(
         'Billing did not load',
-        error instanceof Error ? error.message : 'Please try again.'
+        getFriendlyErrorMessage(error, 'Please try again.')
       );
     } finally {
       setIsLoading(false);
@@ -125,7 +126,7 @@ export default function BillingScreen() {
       } catch (error) {
         Alert.alert(
           'Quote request failed',
-          error instanceof Error ? error.message : 'Please try again.'
+          getFriendlyErrorMessage(error, 'Please try again.')
         );
       } finally {
         setBusyPlan(null);
@@ -139,7 +140,7 @@ export default function BillingScreen() {
     } catch (error) {
       Alert.alert(
         'Checkout not ready',
-        error instanceof Error ? error.message : 'Please try again.'
+        getFriendlyErrorMessage(error, 'Please try again.')
       );
     } finally {
       setBusyPlan(null);

@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 
 import { Transaction } from '@/types/transaction';
+import { readApiError } from './api-error';
 import { formatApiDate } from './datetime';
 
 export type ApiEntry = {
@@ -320,8 +321,7 @@ export const loadTransactions = async (
     },
   });
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Unable to load entries right now.');
+    throw await readApiError(response, 'Unable to load entries right now.');
   }
   const payload = await response.json();
   const mapped = normalizeEntriesResponse(payload).map(mapEntryToTransaction);

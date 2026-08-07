@@ -2,6 +2,7 @@ import React from 'react';
 import { useRouter } from 'expo-router';
 import { AuthPinSetupScreen } from '@/components/auth/AuthPinSetupScreen';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { saveLocalSecurityPin } from '@/lib/security';
 
 export default function ChangePinScreen() {
@@ -23,7 +24,7 @@ export default function ChangePinScreen() {
             router.back();
         } catch (error) {
             console.error('Failed to update PIN:', error);
-            setError(error instanceof Error ? error.message : 'Failed to update PIN.');
+            setError(getFriendlyErrorMessage(error, 'Failed to update PIN.'));
         } finally {
             setLoading(false);
         }

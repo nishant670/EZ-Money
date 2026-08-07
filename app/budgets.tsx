@@ -19,6 +19,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import {
   Budget,
   createBudget,
@@ -119,7 +120,7 @@ export default function BudgetsScreen() {
     try {
       setBudgets(await fetchBudgets(token));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load budgets right now.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load budgets right now.'));
     } finally {
       setLoading(false);
     }
@@ -165,7 +166,7 @@ export default function BudgetsScreen() {
       resetForm();
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save this budget.');
+      setError(getFriendlyErrorMessage(saveError, 'Unable to save this budget.'));
     } finally {
       setSaving(false);
     }
@@ -184,7 +185,7 @@ export default function BudgetsScreen() {
             if (editing?.id === budget.id) resetForm();
             await load();
           } catch (deleteError) {
-            setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete this budget.');
+            setError(getFriendlyErrorMessage(deleteError, 'Unable to delete this budget.'));
           }
         },
       },

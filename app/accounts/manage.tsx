@@ -26,6 +26,7 @@ import {
   updateAccount,
   type AccountType,
 } from '@/lib/accounts';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 
 type AccountTypeOption = {
   key: AccountType;
@@ -300,7 +301,7 @@ export default function ManageAccountScreen() {
         }
       })
       .catch((error) => {
-        setSaveError(error instanceof Error ? error.message : 'Unable to load account.');
+        setSaveError(getFriendlyErrorMessage(error, 'Unable to load account.'));
         router.back();
       })
       .finally(() => {
@@ -387,7 +388,7 @@ export default function ManageAccountScreen() {
         setStep(1);
         setTypeError('Choose an account type and try again.');
       }
-      setSaveError(err instanceof Error ? err.message : 'Failed to save account.');
+      setSaveError(getFriendlyErrorMessage(err, 'Failed to save account.'));
     } finally {
       setIsSaving(false);
     }
@@ -413,7 +414,7 @@ export default function ManageAccountScreen() {
       setCreatedAccount(updatedAccount);
       setIsDefault(true);
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : 'Unable to set default account.');
+      setSaveError(getFriendlyErrorMessage(err, 'Unable to set default account.'));
     } finally {
       setIsSaving(false);
     }

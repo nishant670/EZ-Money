@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { DashboardRecurringCandidate, fetchDashboard, saveRecurringCandidateDecision } from '@/lib/insights';
 
 const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -55,7 +56,7 @@ export default function RecurringReviewScreen() {
       const dashboard = await fetchDashboard(token, start, end);
       setCandidates(dashboard.recurring_candidates);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load recurring review.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load recurring review.'));
     } finally {
       setLoading(false);
     }
@@ -104,11 +105,7 @@ export default function RecurringReviewScreen() {
       });
       hideCandidate(candidate);
     } catch (decisionError) {
-      setError(
-        decisionError instanceof Error
-          ? decisionError.message
-          : 'Unable to save recurring review decision.'
-      );
+      setError(getFriendlyErrorMessage(decisionError, 'Unable to save recurring review decision.'));
     } finally {
       setSavingKey(null);
     }

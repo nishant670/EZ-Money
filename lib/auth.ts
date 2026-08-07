@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './transactions';
+import { getFriendlyErrorMessage } from './api-error';
 
 const AUTH_NETWORK_ERROR_MESSAGE = 'Could not connect to Finnri. Check your connection and try again.';
 
@@ -12,27 +13,13 @@ const authErrorMessages: Record<string, string> = {
   weak_pin: 'Choose a PIN that is not easy to guess.',
 };
 
-const networkErrorMessages = new Set([
-  'Network request failed',
-  'Failed to fetch',
-  'Load failed',
-]);
-
 export const getFriendlyAuthErrorMessage = (
   error: unknown,
   fallback: string,
-) => {
-  if (!(error instanceof Error)) {
-    return fallback;
-  }
-
-  const message = error.message.trim();
-  if (!message) {
-    return fallback;
-  }
-
-  return networkErrorMessages.has(message) ? AUTH_NETWORK_ERROR_MESSAGE : message;
-};
+) => getFriendlyErrorMessage(error, fallback).replace(
+  'Could not connect to Finnri. Check your internet connection and make sure the app is online.',
+  AUTH_NETWORK_ERROR_MESSAGE,
+);
 
 const readAuthErrorPayload = async (response: Response, fallback: string) => {
   try {

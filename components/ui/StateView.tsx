@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 
 type StateViewProps = {
   icon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -32,6 +33,7 @@ export function StateView({
   const theme = Colors[colorScheme];
   const surfaceColor = colorScheme === 'light' ? '#FFFFFF' : theme.card;
   const mutedText = colorScheme === 'light' ? 'rgba(45,45,45,0.62)' : 'rgba(250,250,250,0.68)';
+  const displayMessage = message ? getFriendlyErrorMessage(message, message) : null;
 
   return (
     <View
@@ -51,8 +53,8 @@ export function StateView({
         )}
       </View>
       <ThemedText style={[styles.title, { color: theme.text }]}>{title}</ThemedText>
-      {message ? (
-        <ThemedText style={[styles.message, { color: mutedText }]}>{message}</ThemedText>
+      {displayMessage ? (
+        <ThemedText style={[styles.message, { color: mutedText }]}>{displayMessage}</ThemedText>
       ) : null}
       {actionLabel && onAction ? (
         <Pressable

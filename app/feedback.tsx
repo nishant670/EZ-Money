@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { FeedbackImpact, FeedbackType, submitFeedback } from '@/lib/feedback';
 
 const typeOptions: { label: string; value: FeedbackType; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
@@ -69,7 +70,7 @@ export default function FeedbackScreen() {
         { text: 'Done', onPress: () => router.back() },
       ]);
     } catch (error) {
-      Alert.alert('Could not send', error instanceof Error ? error.message : 'Unable to send feedback right now.');
+      Alert.alert('Could not send', getFriendlyErrorMessage(error, 'Unable to send feedback right now.'));
     } finally {
       setSubmitting(false);
     }

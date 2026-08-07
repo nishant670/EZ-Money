@@ -25,6 +25,7 @@ import {
   fetchAccounts,
   normalizeAccountType,
 } from '@/lib/accounts';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 
 const TView = cssInterop(ThemedView, { className: 'style' });
 const TText = cssInterop(ThemedText, { className: 'style' });
@@ -125,7 +126,7 @@ export default function AccountsScreen() {
     try {
       setAccounts(await fetchAccounts(token));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load accounts.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load accounts.'));
     } finally {
       setIsLoading(false);
     }

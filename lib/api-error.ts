@@ -20,6 +20,23 @@ export class ApiError extends Error {
   }
 }
 
+const NETWORK_ERROR_MESSAGE = 'Could not connect to Finnri. Check your internet connection and make sure the app is online.';
+
+const rawNetworkPatterns = [
+  /fetch failed/i,
+  /network request failed/i,
+  /failed to fetch/i,
+  /load failed/i,
+  /connectexception/i,
+  /failed to connect/i,
+  /connection refused/i,
+  /timed out/i,
+  /timeout/i,
+  /network is unreachable/i,
+  /internet connection appears to be offline/i,
+  /could not connect to the server/i,
+];
+
 const codeMessages: Record<string, string> = {
   invalid_json: 'The form could not be read. Please check your details and try again.',
   invalid_entry: 'Please fix the highlighted transaction details.',
@@ -44,6 +61,46 @@ const humanizeCode = (code: string) =>
   code.replaceAll('_', ' ').replace(/^\w/, (letter) => letter.toUpperCase());
 
 const ensurePunctuation = (value: string) => /[.!?]$/.test(value) ? value : `${value}.`;
+
+const tryReadPayloadMessage = (message: string) => {
+  try {
+    const payload = JSON.parse(message) as ApiErrorPayload;
+    return payload.message || (payload.error ? codeMessages[payload.error] ?? humanizeCode(payload.error) : null);
+  } catch {
+    return null;
+  }
+};
+
+export const getFriendlyErrorMessage = (
+  error: unknown,
+  fallback = 'Something went wrong. Please try again.',
+) => {
+  const rawMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : '';
+  const message = rawMessage.trim();
+  if (!message) {
+    return fallback;
+  }
+
+  if (rawNetworkPatterns.some((pattern) => pattern.test(message))) {
+    return NETWORK_ERROR_MESSAGE;
+  }
+
+  const payloadMessage = tryReadPayloadMessage(message);
+  if (payloadMessage) {
+    return payloadMessage;
+  }
+
+  if (/^https?:\/\//i.test(message) || /\/\d{1,3}(?:\.\d{1,3}){3}:\d+/.test(message)) {
+    return NETWORK_ERROR_MESSAGE;
+  }
+
+  return message;
+};
 
 export const formatApiFieldErrors = (
   fields: ApiFieldErrors,

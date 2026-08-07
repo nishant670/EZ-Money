@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import {
   acceptSplitGroupInvite,
   fetchSplitGroupInvite,
@@ -37,7 +38,7 @@ export default function SplitInviteScreen() {
     try {
       setInvite(await fetchSplitGroupInvite(authToken, inviteToken));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load this invite.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load this invite.'));
     } finally {
       setLoading(false);
     }
@@ -55,7 +56,7 @@ export default function SplitInviteScreen() {
       await acceptSplitGroupInvite(authToken, inviteToken);
       router.replace('/(tabs)/split');
     } catch (acceptError) {
-      setError(acceptError instanceof Error ? acceptError.message : 'Unable to join this group.');
+      setError(getFriendlyErrorMessage(acceptError, 'Unable to join this group.'));
     } finally {
       setAccepting(false);
     }

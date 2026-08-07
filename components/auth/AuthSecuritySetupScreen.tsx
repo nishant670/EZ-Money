@@ -8,6 +8,7 @@ import { ActivityIndicator, ScrollView, Switch, Text, TouchableOpacity, View } f
 import { AuthPinSetupScreen } from './AuthPinSetupScreen';
 import { styles } from './styles';
 import { ScreenProps } from './types';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 
 export const AuthSecuritySetupScreen = ({
   onContinue,
@@ -65,7 +66,7 @@ export const AuthSecuritySetupScreen = ({
         setIsBiometricsVerified(false);
       }
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : 'Unable to verify biometrics.');
+      setLocalError(getFriendlyErrorMessage(error, 'Unable to verify biometrics.'));
       setBiometricsEnabled(false);
       setIsBiometricsVerified(false);
     } finally {
