@@ -10,6 +10,7 @@ import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { resolveCategoryMetadata } from '@/lib/transactions';
@@ -54,9 +55,7 @@ export default function SpendingAnalysisScreen() {
     try {
       setDashboard(await fetchDashboard(token, start, end));
     } catch (loadError) {
-      setError(
-        loadError instanceof Error ? loadError.message : 'Unable to load detailed analysis.'
-      );
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load detailed analysis.'));
     } finally {
       setLoading(false);
     }

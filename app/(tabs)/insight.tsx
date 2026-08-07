@@ -16,6 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { formatApiDate, resolveCategoryMetadata } from '@/lib/transactions';
@@ -226,7 +227,7 @@ export default function InsightScreen() {
         const end = currentRange.end ? formatApiDate(currentRange.end) : undefined;
         setDashboard(await fetchDashboard(token, start, end));
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load insights.');
+        setError(getFriendlyErrorMessage(loadError, 'Unable to load insights.'));
       } finally {
         setLoading(false);
         setRefreshing(false);

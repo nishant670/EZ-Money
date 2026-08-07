@@ -78,6 +78,7 @@ import {
 import { inferNextSubscriptionDate } from '@/lib/subscription-schedule';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import {
   TransactionFormModal,
   type AiReviewMetadata,
@@ -338,9 +339,7 @@ export default function HomeScreen() {
         const mapped = await loadTransactions(token);
         setTransactions(mapped);
       } catch (error) {
-        setEntriesError(
-          error instanceof Error ? error.message : 'Unable to load entries right now.'
-        );
+        setEntriesError(getFriendlyErrorMessage(error, 'Unable to load entries right now.'));
       } finally {
         if (!silent) setIsEntriesLoading(false);
       }
@@ -830,7 +829,7 @@ export default function HomeScreen() {
         }
       }
       setErrorMessage(
-        error instanceof Error ? error.message : 'Something went wrong while parsing.'
+        getFriendlyErrorMessage(error, 'Something went wrong while parsing.')
       );
     } finally {
       setIsSubmitting(false);

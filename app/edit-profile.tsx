@@ -24,6 +24,7 @@ import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { updateProfile, authOtpSend, authOtpVerify } from '@/lib/auth';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
@@ -168,7 +169,7 @@ export default function EditProfileScreen() {
       ]);
     } catch (error: any) {
       // Handle specific errors
-      const msg = error instanceof Error ? error.message : 'Failed to update profile.';
+      const msg = getFriendlyErrorMessage(error, 'Failed to update profile.');
       if (msg.includes('Username is already taken')) {
         Alert.alert('Username Taken', 'This username is already in use. Please choose another.');
       } else if (msg.includes('verification required')) {

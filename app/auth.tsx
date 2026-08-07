@@ -2,7 +2,10 @@ import { OnboardingScreenWrapper } from '@/components/onboarding/OnboardingScree
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import * as AuthSession from 'expo-auth-session';
+import Constants from 'expo-constants';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
@@ -27,12 +30,20 @@ import {
   getFriendlyAuthErrorMessage,
   guestCheckin,
   identifyUser,
+  loginWithGoogle,
   loginUser,
   registerUser,
   resetPin,
 } from '@/lib/auth';
 import { getDeviceId } from '@/lib/device';
 import { saveLocalSecurityPin } from '@/lib/security';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const googleDiscovery = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+};
 
 export default function AuthFlow() {
   const router = useRouter();
@@ -49,6 +60,7 @@ export default function AuthFlow() {
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const [isGuestChecking, setIsGuestChecking] = useState(false);
+  const [isGoogleChecking, setIsGoogleChecking] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -82,6 +94,84 @@ export default function AuthFlow() {
       setGuestError(getFriendlyAuthErrorMessage(error, 'Unable to continue as guest.'));
     } finally {
       setIsGuestChecking(false);
+    }
+  };
+
+  const handleGoogleContinue = async () => {
+    if (Constants.appOwnership === 'expo') {
+      setIdentifyError('Google sign-in requires a Finnri development build. Expo Go cannot complete Google OAuth redirects.');
+      return;
+    }
+
+    const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_MOBILE_CLIENT_ID
+      ?? process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+      ?? process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+      ?? process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!googleClientId) {
+      setIdentifyError('Google sign-in is not configured yet.');
+      return;
+    }
+
+    setIdentifyError(null);
+    setGuestError(null);
+    setIsGoogleChecking(true);
+    const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const redirectUri = AuthSession.makeRedirectUri({
+      scheme: 'ezmoney',
+      path: 'auth/google',
+    });
+
+    try {
+      const request = await AuthSession.loadAsync(
+        {
+          clientId: googleClientId,
+          redirectUri,
+          responseType: AuthSession.ResponseType.Code,
+          scopes: ['openid', 'email', 'profile'],
+          prompt: AuthSession.Prompt.SelectAccount,
+          extraParams: { nonce },
+        },
+        googleDiscovery
+      );
+
+      const result = await request.promptAsync(googleDiscovery);
+      if (result.type !== 'success') {
+        return;
+      }
+      const authorizationCode = result.params.code;
+      if (!authorizationCode) {
+        throw new Error('Google did not return an authorization code.');
+      }
+
+      const tokenResponse = await AuthSession.exchangeCodeAsync(
+        {
+          clientId: googleClientId,
+          code: authorizationCode,
+          redirectUri,
+          extraParams: {
+            code_verifier: request.codeVerifier ?? '',
+          },
+        },
+        googleDiscovery
+      );
+      const idToken = tokenResponse.idToken;
+      if (!idToken) {
+        throw new Error('Google did not return a sign-in token.');
+      }
+      const deviceId = await getDeviceId();
+      const response = await loginWithGoogle({
+        id_token: idToken,
+        nonce,
+        guest_uuid: user?.is_guest ? user.uuid : undefined,
+        device_id: deviceId,
+        biometrics_enabled: false,
+      });
+      setAuth(response.user, response.token);
+      handleFinish();
+    } catch (error) {
+      setIdentifyError(getFriendlyAuthErrorMessage(error, 'Google sign-in failed.'));
+    } finally {
+      setIsGoogleChecking(false);
     }
   };
 
@@ -224,6 +314,7 @@ export default function AuthFlow() {
       case 1:
         return (
           <AuthScreen1
+            onGoogle={handleGoogleContinue}
             onContinue={() => {
               setGuestError(null);
               changeStep(2, 'forward');
@@ -232,6 +323,8 @@ export default function AuthFlow() {
               setGuestError(null);
               changeStep(5, 'forward');
             }}
+            errorMessage={identifyError}
+            isLoading={isGoogleChecking}
           />
         );
       case 2:

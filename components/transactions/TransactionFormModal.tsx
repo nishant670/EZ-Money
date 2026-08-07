@@ -20,6 +20,7 @@ import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import type { Account } from '@/lib/accounts';
 import {
   getAccountsForPaymentMode,
@@ -660,7 +661,7 @@ export function TransactionFormModal({
       await onSave(normalizedForm);
       onClose();
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Something went wrong.');
+      setFormError(getFriendlyErrorMessage(error, 'Something went wrong.'));
     } finally {
       setIsSaving(false);
     }

@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { getMoodIconName } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { API_BASE_URL } from '@/lib/transactions';
 
 export type QuickPrompt = {
@@ -51,7 +52,7 @@ export function QuickPrompts({
       const data = await resp.json();
       setPrompts(data);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load quick prompts.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load quick prompts.'));
     } finally {
       setIsLoading(false);
     }

@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { fetchAIUsage, type AIUsageEvent } from '@/lib/billing';
 
 const actionLabels: Record<string, string> = {
@@ -57,7 +58,7 @@ export default function AIUsageScreen() {
       setEvents(payload.events);
       setTotal(payload.total);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load AI usage right now.');
+      setError(getFriendlyErrorMessage(err, 'Unable to load AI usage right now.'));
     } finally {
       setIsLoading(false);
     }

@@ -28,6 +28,7 @@ import {
   toAccountPayload,
   updateAccount,
 } from '@/lib/accounts';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
@@ -80,7 +81,7 @@ export default function AccountDetailsScreen() {
       setAccount(matchedAccount);
       setActivity(transactions.slice(0, 5));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load account.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load account.'));
     } finally {
       setIsLoading(false);
     }
@@ -156,7 +157,7 @@ export default function AccountDetailsScreen() {
       await updateAccount(token, account.id, toAccountPayload({ ...account, is_default: true }));
       await loadDetails();
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Unable to update account.');
+      setError(getFriendlyErrorMessage(updateError, 'Unable to update account.'));
     } finally {
       setIsPending(false);
     }
@@ -179,7 +180,7 @@ export default function AccountDetailsScreen() {
           setError('Move or delete linked transactions before deleting this account.');
           return;
         }
-        setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete account.');
+        setError(getFriendlyErrorMessage(deleteError, 'Unable to delete account.'));
       })
       .finally(() => setIsPending(false));
   };

@@ -13,6 +13,7 @@ import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { groupTransactionsBySection, loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
@@ -93,7 +94,7 @@ export default function TransactionsScreen() {
       const mapped = await loadTransactions(token, filters);
       setTransactions(reviewMode ? mapped.filter(needsTransactionReview) : mapped);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load transactions.');
+      setError(getFriendlyErrorMessage(err, 'Unable to load transactions.'));
     } finally {
       setIsLoading(false);
     }

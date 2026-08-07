@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import {
   AppNotification,
   fetchNotifications,
@@ -77,7 +78,7 @@ export default function NotificationsScreen() {
         setNotifications(payload.notifications);
         setUnreadCount(payload.unread_count);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unable to load notifications right now.');
+        setError(getFriendlyErrorMessage(err, 'Unable to load notifications right now.'));
       } finally {
         if (!silent) setLoading(false);
       }

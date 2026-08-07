@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { DashboardResponse, fetchDashboard } from '@/lib/insights';
 
 const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -64,7 +65,7 @@ export default function WeeklyReviewScreen() {
     try {
       setDashboard(await fetchDashboard(token, start, end));
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load weekly review.');
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load weekly review.'));
     } finally {
       setLoading(false);
     }

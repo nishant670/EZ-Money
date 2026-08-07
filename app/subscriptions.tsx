@@ -22,6 +22,7 @@ import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchAccounts, getAccountsForPaymentMode, type Account } from '@/lib/accounts';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { saveRecurringCandidateDecision } from '@/lib/insights';
 import {
   BillingInterval,
@@ -244,9 +245,7 @@ export default function SubscriptionsScreen() {
       if (subscriptionItems.length === 0) setShowForm(true);
       setAccounts(accountItems);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error ? loadError.message : 'Unable to load subscriptions right now.'
-      );
+      setError(getFriendlyErrorMessage(loadError, 'Unable to load subscriptions right now.'));
     } finally {
       setLoading(false);
     }
@@ -372,9 +371,7 @@ export default function SubscriptionsScreen() {
       await load();
       setShowForm(false);
     } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : 'Unable to save this subscription.'
-      );
+      setError(getFriendlyErrorMessage(saveError, 'Unable to save this subscription.'));
     } finally {
       setSaving(false);
     }
@@ -386,9 +383,7 @@ export default function SubscriptionsScreen() {
       await markSubscriptionPaid(token, subscription.id, todayISO());
       await load();
     } catch (paidError) {
-      setError(
-        paidError instanceof Error ? paidError.message : 'Unable to mark this subscription paid.'
-      );
+      setError(getFriendlyErrorMessage(paidError, 'Unable to mark this subscription paid.'));
     }
   };
 
@@ -411,9 +406,7 @@ export default function SubscriptionsScreen() {
       if (editing?.id === subscription.id) resetForm();
       await load();
     } catch (cancelError) {
-      setError(
-        cancelError instanceof Error ? cancelError.message : 'Unable to cancel this subscription.'
-      );
+      setError(getFriendlyErrorMessage(cancelError, 'Unable to cancel this subscription.'));
     }
   };
 
@@ -433,11 +426,7 @@ export default function SubscriptionsScreen() {
               if (editing?.id === subscription.id) resetForm();
               await load();
             } catch (deleteError) {
-              setError(
-                deleteError instanceof Error
-                  ? deleteError.message
-                  : 'Unable to delete this subscription.'
-              );
+              setError(getFriendlyErrorMessage(deleteError, 'Unable to delete this subscription.'));
             }
           },
         },

@@ -18,6 +18,7 @@ import { StateView } from '@/components/ui/StateView';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { calculateEMI, type EMICalculation, type EMIScheduleMonth } from '@/lib/emi';
 import {
   calculateSIP,
@@ -187,7 +188,7 @@ export default function ToolsScreen() {
       setResult(nextResult);
       setShowFullSchedule(false);
     } catch (calculationError) {
-      setError(calculationError instanceof Error ? calculationError.message : 'Unable to calculate EMI.');
+      setError(getFriendlyErrorMessage(calculationError, 'Unable to calculate EMI.'));
     } finally {
       setCalculating(false);
     }

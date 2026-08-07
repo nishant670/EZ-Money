@@ -16,6 +16,7 @@ import { StateView } from '@/components/ui/StateView';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { loadTransactions, resolveCategoryMetadata } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
@@ -111,9 +112,7 @@ export default function CategoryDetailScreen() {
           )
         );
       } catch (loadError) {
-        setError(
-          loadError instanceof Error ? loadError.message : 'Unable to load category details.'
-        );
+        setError(getFriendlyErrorMessage(loadError, 'Unable to load category details.'));
       } finally {
         setLoading(false);
         setRefreshing(false);
