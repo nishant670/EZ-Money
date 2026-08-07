@@ -1,4 +1,4 @@
-import { guestCheckin } from '@/lib/auth';
+import { deleteUserAccount, guestCheckin } from '@/lib/auth';
 import { createEntry, deleteEntry, updateEntry } from '@/lib/entries';
 import { fetchDashboard } from '@/lib/insights';
 import { parseEntryDraft } from '@/lib/parse';
@@ -209,6 +209,20 @@ describe('mobile MVP flows', () => {
       expect.objectContaining({
         method: 'DELETE',
         headers: { Authorization: 'Bearer guest-token' },
+      })
+    );
+  });
+
+  it('deletes the signed-in user through the account deletion endpoint', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse({ message: 'account deleted' }));
+
+    await deleteUserAccount('user-token');
+
+    expect(fetchMock()).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/user'),
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer user-token' },
       })
     );
   });

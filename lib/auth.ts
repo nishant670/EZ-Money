@@ -242,6 +242,19 @@ export const updateProfile = async (payload: UpdateProfilePayload): Promise<{ us
   return response.json();
 };
 
+export const deleteUserAccount = async (token: string): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/v1/user`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readAuthErrorPayload(response, 'Unable to delete your account right now.'));
+  }
+};
+
 export const authOtpSend = async (identifier: string) => {
   // Mock function to simulate OTP send, since backend mocks it too
   const response = await fetch(`${API_BASE_URL}/v1/auth/otp/send`, {

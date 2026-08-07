@@ -2,7 +2,16 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import React from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  Switch,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -11,6 +20,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { deleteUserAccount, getFriendlyAuthErrorMessage } from '@/lib/auth';
 import { deleteLocalSecurityPin, hasLocalSecurityPin } from '@/lib/security';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
@@ -19,12 +29,16 @@ export default function SecurityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const router = useRouter();
-  const { user, updateUser } = useAuthStore();
+  const { user, token, updateUser, clearAuth } = useAuthStore();
   const [isCheckingLock, setIsCheckingLock] = React.useState(false);
   const [isCheckingBiometrics, setIsCheckingBiometrics] = React.useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = React.useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = React.useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = React.useState(false);
 
   const backgroundColor = colorScheme === 'light' ? '#FDFBFF' : theme.background;
   const cardColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
+  const mutedTextColor = colorScheme === 'light' ? '#6B7280' : 'rgba(255,255,255,0.58)';
 
   const showSecurityAlert = (message: string) => {
     Alert.alert('Security settings', message);
@@ -94,6 +108,32 @@ export default function SecurityScreen() {
   };
 
   const toggleStealthMode = (enabled: boolean) => updateUser({ stealth_mode: enabled });
+  const closeDeleteAccount = () => {
+    if (isDeletingAccount) return;
+    setShowDeleteAccount(false);
+    setDeleteConfirmation('');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!token || !user?.uuid || deleteConfirmation !== 'DELETE' || isDeletingAccount) return;
+
+    setIsDeletingAccount(true);
+    try {
+      await deleteUserAccount(token);
+      await deleteLocalSecurityPin(user.uuid);
+      clearAuth();
+      setShowDeleteAccount(false);
+      setDeleteConfirmation('');
+      router.replace('/auth');
+    } catch (error) {
+      Alert.alert(
+        'Could not delete account',
+        getFriendlyAuthErrorMessage(error, 'Unable to delete your account right now.')
+      );
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
@@ -306,6 +346,49 @@ export default function SecurityScreen() {
               />
             </View>
           </View>
+
+          {/* ACCOUNT DELETION Section */}
+          <View>
+            <TText
+              className="text-xs font-black tracking-widest opacity-40 mb-4 px-2"
+              style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+              ACCOUNT
+            </TText>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete Finnri account"
+              onPress={() => setShowDeleteAccount(true)}
+              className="rounded-[32px] flex-row items-center p-5 justify-between"
+              style={{
+                backgroundColor: cardColor,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.03,
+                shadowRadius: 10,
+                elevation: 2,
+              }}>
+              <View className="flex-row items-center flex-1">
+                <View
+                  className="w-12 h-12 rounded-full items-center justify-center mr-4"
+                  style={{ backgroundColor: colorScheme === 'light' ? '#FFF0EC' : '#3A2424' }}>
+                  <MaterialCommunityIcons name="delete-outline" size={22} color="#D32F2F" />
+                </View>
+                <View className="flex-1">
+                  <TText
+                    className="text-base font-black"
+                    style={{ fontFamily: Fonts.title, color: '#D32F2F' }}>
+                    Delete Finnri account
+                  </TText>
+                  <TText
+                    className="text-xs opacity-60 font-medium"
+                    style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                    Permanently remove your profile and data
+                  </TText>
+                </View>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={24} color="#D1D5DB" />
+            </Pressable>
+          </View>
         </View>
 
         {/* Footer */}
@@ -316,7 +399,115 @@ export default function SecurityScreen() {
         </TText>
       </ScrollView>
 
-      {/* Basic Tab Bar Mockup to match screenshot if needed, but router will handle navigation */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={showDeleteAccount}
+        statusBarTranslucent
+        onRequestClose={closeDeleteAccount}>
+        <View className="flex-1 items-center justify-center px-6">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel account deletion"
+            disabled={isDeletingAccount}
+            onPress={closeDeleteAccount}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              backgroundColor: 'rgba(0,0,0,0.62)',
+            }}
+          />
+          <View
+            className="w-full max-w-[384px] rounded-[32px] p-6"
+            style={{
+              backgroundColor: cardColor,
+              borderColor: colorScheme === 'light' ? '#F3D7D1' : 'rgba(255,255,255,0.12)',
+              borderWidth: 1,
+            }}>
+            <View
+              className="w-14 h-14 rounded-full items-center justify-center self-center mb-4"
+              style={{ backgroundColor: colorScheme === 'light' ? '#FFF0EC' : '#3A2424' }}>
+              <MaterialCommunityIcons name="delete-alert-outline" size={28} color="#D32F2F" />
+            </View>
+            <TText
+              className="text-xl font-black text-center"
+              style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+              Delete your account?
+            </TText>
+            <TText
+              className="text-sm text-center mt-3 leading-5"
+              style={{ fontFamily: Fonts.body, color: mutedTextColor }}>
+              This permanently removes your profile, transactions, accounts, AI credit history, and
+              billing records from Finnri.
+            </TText>
+            <TText
+              className="text-xs font-black tracking-widest mt-6 mb-2"
+              style={{ fontFamily: Fonts.body, color: '#D32F2F' }}>
+              TYPE DELETE TO CONFIRM
+            </TText>
+            <TextInput
+              accessibilityLabel="Type DELETE to confirm account deletion"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!isDeletingAccount}
+              value={deleteConfirmation}
+              onChangeText={setDeleteConfirmation}
+              placeholder="DELETE"
+              placeholderTextColor={colorScheme === 'light' ? '#C9A8A1' : 'rgba(255,255,255,0.32)'}
+              className="h-14 rounded-2xl px-4 text-base font-black"
+              style={{
+                backgroundColor: colorScheme === 'light' ? '#FFF8F6' : 'rgba(255,255,255,0.06)',
+                borderColor: deleteConfirmation && deleteConfirmation !== 'DELETE' ? '#D32F2F' : '#F3D7D1',
+                borderWidth: 1,
+                color: colorScheme === 'light' ? '#1A1A1A' : '#FFFFFF',
+                fontFamily: Fonts.body,
+              }}
+            />
+            <View className="flex-row gap-3 mt-6">
+              <Pressable
+                accessibilityRole="button"
+                disabled={isDeletingAccount}
+                onPress={closeDeleteAccount}
+                className="flex-1 rounded-2xl items-center justify-center"
+                style={{
+                  backgroundColor: colorScheme === 'light' ? '#FFFFFF' : 'rgba(255,255,255,0.08)',
+                  borderColor: colorScheme === 'light' ? '#EEE7E4' : 'rgba(255,255,255,0.12)',
+                  borderWidth: 1,
+                  minHeight: 52,
+                }}>
+                <TText
+                  className="font-black"
+                  style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                  Cancel
+                </TText>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={deleteConfirmation !== 'DELETE' || isDeletingAccount}
+                onPress={() => void handleDeleteAccount()}
+                className="flex-1 rounded-2xl items-center justify-center"
+                style={{
+                  backgroundColor: '#D32F2F',
+                  minHeight: 52,
+                  opacity: deleteConfirmation === 'DELETE' && !isDeletingAccount ? 1 : 0.45,
+                }}>
+                {isDeletingAccount ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <TText
+                    className="font-black"
+                    style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
+                    Delete
+                  </TText>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
