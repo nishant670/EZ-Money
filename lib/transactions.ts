@@ -275,10 +275,11 @@ const resolveApiBaseUrl = () => {
     return envUrl;
   }
 
+  const manifest = Constants.manifest as { hostUri?: string; debuggerHost?: string } | null;
   const hostUri =
     Constants.expoConfig?.hostUri ??
-    Constants.manifest?.hostUri ??
-    Constants.manifest?.debuggerHost ??
+    manifest?.hostUri ??
+    manifest?.debuggerHost ??
     null;
 
   if (hostUri) {

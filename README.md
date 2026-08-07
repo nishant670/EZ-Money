@@ -16,6 +16,29 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npx expo start
    ```
 
+## Google login
+
+Google OAuth does not work in Expo Go. Expo Go redirects with an `exp://...`
+URL, and Google rejects that redirect before the app can receive a token. Test
+Google login from a Finnri development build instead:
+
+```bash
+npx expo run:android
+# or
+npx expo run:ios
+```
+
+Set a mobile OAuth client ID before starting the development build:
+
+```bash
+EXPO_PUBLIC_GOOGLE_MOBILE_CLIENT_ID=your-mobile-client-id
+```
+
+`EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`,
+`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`, or the legacy
+`EXPO_PUBLIC_GOOGLE_CLIENT_ID` are also accepted. The backend must include the
+same client ID in `GOOGLE_CLIENT_IDS` so it can verify the returned ID token.
+
 In the output, you'll find options to open the app in a
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)

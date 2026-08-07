@@ -177,6 +177,30 @@ export const loginUser = async (payload: LoginPayload): Promise<AuthResponse> =>
   return response.json();
 };
 
+export type GoogleLoginPayload = {
+  id_token: string;
+  nonce?: string;
+  guest_uuid?: string;
+  device_id?: string;
+  biometrics_enabled?: boolean;
+};
+
+export const loginWithGoogle = async (payload: GoogleLoginPayload): Promise<AuthResponse> => {
+  const response = await fetch(`${API_BASE_URL}/v1/auth/google`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readAuthErrorPayload(response, 'Unable to sign in with Google right now.'));
+  }
+
+  return response.json();
+};
+
 export type ResetPinPayload = {
   claim_token: string;
   pin: string;

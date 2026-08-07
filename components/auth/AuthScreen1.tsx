@@ -8,11 +8,13 @@ import { styles } from './styles';
 import { ScreenProps } from './types';
 
 type AuthScreen1Props = ScreenProps & {
+  onGoogle?: () => void;
   errorMessage?: string | null;
   isLoading?: boolean;
 };
 
 export const AuthScreen1 = ({
+  onGoogle,
   onContinue,
   onSecondary,
   errorMessage,
@@ -64,17 +66,30 @@ export const AuthScreen1 = ({
       <View style={styles.buttonSection}>
         <TouchableOpacity
           style={[
-            styles.primaryButton,
-            { backgroundColor: theme.accent, opacity: isLoading ? 0.6 : 1 },
+            styles.googleButton,
+            { borderColor: theme.border, opacity: isLoading ? 0.6 : 1 },
           ]}
-          disabled={!!isLoading}
-          onPress={() => onContinue('guest')}
+          disabled={!!isLoading || !onGoogle}
+          onPress={onGoogle}
         >
           {isLoading ? (
-            <ActivityIndicator color="white" />
+            <ActivityIndicator color={theme.text} />
           ) : (
-            <Text style={styles.primaryButtonText}>Sign in / Create account</Text>
+            <>
+              <Text style={styles.googleMark}>G</Text>
+              <Text style={[styles.googleButtonText, { color: theme.text }]}>Continue with Google</Text>
+            </>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.primaryButton,
+            { backgroundColor: theme.accent },
+          ]}
+          onPress={() => onContinue('guest')}
+        >
+          <Text style={styles.primaryButtonText}>Use email or mobile</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
