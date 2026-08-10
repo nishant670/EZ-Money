@@ -26,6 +26,7 @@ export type ApiEntry = {
   currency?: string;
   source?: string;
   source_text?: string;
+  attachment?: string | null;
   created_at?: string;
   createdAt?: string;
   updated_at?: string;

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import * as DocumentPicker from 'expo-document-picker';
 
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
@@ -28,6 +29,7 @@ import {
   getPreferredAccountForPaymentMode,
 } from '@/lib/accounts';
 import { formatDisplayTime } from '@/lib/datetime';
+import { ATTACHMENT_PICKER_TYPES, isLocalAttachmentUri } from '@/lib/uploads';
 import { buildParticipantsForGroup } from '@/lib/split-draft';
 import type { SplitFriend, SplitGroup } from '@/lib/splits';
 import type { BillingInterval } from '@/lib/subscriptions';
@@ -312,6 +314,7 @@ export function TransactionFormModal({
   const [isMoreDetailsExpanded, setIsMoreDetailsExpanded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [splitShareMode, setSplitShareMode] = useState<SplitShareMode>('amount');
   const [isDiscardDialogVisible, setIsDiscardDialogVisible] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
@@ -561,6 +564,34 @@ export function TransactionFormModal({
     }
     setPendingSubscriptionDate(selectedDate);
     setIsSubscriptionDatePickerVisible(true);
+  };
+
+  const handlePickAttachment = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ATTACHMENT_PICKER_TYPES,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) {
+        return;
+      }
+      const asset = result.assets[0];
+      if (!asset?.uri) {
+        setAttachmentError('That file could not be read. Please pick another one.');
+        return;
+      }
+      setAttachmentError(null);
+      // Stored as a local URI here; it is uploaded when the entry is saved.
+      setForm((prev) => ({ ...prev, attachment: asset.uri }));
+    } catch {
+      setAttachmentError('That file could not be read. Please pick another one.');
+    }
+  };
+
+  const handleRemoveAttachment = () => {
+    setAttachmentError(null);
+    setForm((prev) => ({ ...prev, attachment: null }));
   };
 
   const handleConfirmEntry = async () => {
@@ -1888,6 +1919,66 @@ export function TransactionFormModal({
                             color: theme.text,
                           }}
                         />
+                      </View>
+
+                      <View>
+                        <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
+                          Receipt
+                        </ThemedText>
+                        <Pressable
+                          onPress={handlePickAttachment}
+                          accessibilityRole="button"
+                          accessibilityLabel={form.attachment ? 'Change receipt' : 'Attach a receipt'}
+                          className="w-full min-h-[64px] rounded-[20px] border px-4 py-3 flex-row items-center justify-between shadow-sm"
+                          style={{ backgroundColor: theme.card, borderColor: theme.border }}
+                        >
+                          <View className="flex-row items-center gap-3 flex-1 pr-3">
+                            <MaterialCommunityIcons
+                              name={form.attachment ? 'file-check-outline' : 'file-upload-outline'}
+                              size={22}
+                              color={form.attachment ? accent : detailInputPlaceholderColor}
+                            />
+                            <View className="flex-1">
+                              <ThemedText
+                                className="text-sm font-bold"
+                                numberOfLines={1}
+                                style={{ color: form.attachment ? theme.text : detailInputPlaceholderColor }}
+                              >
+                                {form.attachment
+                                  ? decodeURIComponent(form.attachment.split('?')[0].split('/').pop() ?? 'Receipt')
+                                  : 'Attach a photo or PDF'}
+                              </ThemedText>
+                              {form.attachment ? (
+                                <ThemedText className="text-[10px] font-bold text-gray-400 mt-0.5">
+                                  {isLocalAttachmentUri(form.attachment)
+                                    ? 'Uploads when you save'
+                                    : 'Saved to this transaction'}
+                                </ThemedText>
+                              ) : null}
+                            </View>
+                          </View>
+                          {form.attachment ? (
+                            <Pressable
+                              onPress={handleRemoveAttachment}
+                              hitSlop={12}
+                              accessibilityRole="button"
+                              accessibilityLabel="Remove receipt"
+                            >
+                              <MaterialCommunityIcons name="close-circle" size={20} color="#EF4444" />
+                            </Pressable>
+                          ) : (
+                            <MaterialCommunityIcons
+                              name="plus-circle-outline"
+                              size={20}
+                              color={detailInputPlaceholderColor}
+                            />
+                          )}
+                        </Pressable>
+                        {attachmentError ? (
+                          <ThemedText className="text-[11px] font-bold text-red-500 mt-2 ml-1">
+                            {attachmentError}
+                          </ThemedText>
+                        ) : null}
                       </View>
                     </View>
                   )}

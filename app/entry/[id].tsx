@@ -1,5 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
@@ -24,6 +26,7 @@ import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { deleteEntry, fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
+import { isPdfAttachment, resolveAttachmentForSave } from '@/lib/uploads';
 import {
   fetchNewUnreadBudgetNotification,
   fetchUnreadBudgetNotificationIds,
@@ -185,6 +188,17 @@ export default function TransactionDetailsScreen() {
   const iconColor = meta.color;
   const bgColor = meta.bgColor;
 
+  const receiptUrl = displayData.attachment || null;
+
+  const handleOpenReceipt = async () => {
+    if (!receiptUrl) return;
+    try {
+      await WebBrowser.openBrowserAsync(receiptUrl);
+    } catch {
+      Alert.alert('Receipt unavailable', 'This receipt could not be opened right now.');
+    }
+  };
+
   const handleEdit = () => {
     setIsEditModalVisible(true);
   };
@@ -220,11 +234,14 @@ export default function TransactionDetailsScreen() {
 
   const handleSaveUpdate = async (formData: EntryForm) => {
     try {
-      // Transform EntryForm back to backend payload
-      // Assuming we only update text fields here. File upload usually handled separately or multipart.
-      // For MVP, focus on data fields.
+      if (!token) throw new Error('Missing session.');
+
+      // Uploads a newly picked file and passes an existing receipt URL through
+      // untouched. Throwing here aborts the update instead of saving a local URI.
+      const attachmentUrl = await resolveAttachmentForSave(token, formData.attachment);
 
       const payload: EntryMutationPayload = {
+        attachment: attachmentUrl,
         title: formData.title,
         amount: formData.amount.trim(),
         currency: formData.currency || DEFAULT_CURRENCY,
@@ -323,7 +340,7 @@ export default function TransactionDetailsScreen() {
       accounts.find((account) => account.id === displayData.account_id)?.name ||
       '',
     merchant: displayData.merchant || '',
-    attachment: null,
+    attachment: displayData.attachment || null,
     splitEnabled: Boolean(splitBill),
     splitGroupId: splitBill?.group_id ?? null,
     splitGroupName: '',
@@ -627,6 +644,52 @@ export default function TransactionDetailsScreen() {
             </View>
           </View>
         )}
+        {/* PAPER TRAIL */}
+        {receiptUrl ? (
+          <View className="mb-8">
+            <ThemedText className="text-[10px] font-black uppercase tracking-[2px] text-gray-300 mb-4 ml-6">
+              THE PAPER TRAIL
+            </ThemedText>
+            {isPdfAttachment(receiptUrl) ? (
+              <Pressable
+                onPress={handleOpenReceipt}
+                accessibilityRole="button"
+                accessibilityLabel="Open receipt PDF"
+                className="rounded-[32px] p-6 flex-row items-center justify-between border"
+                style={{ backgroundColor: theme.card, borderColor: theme.border }}
+              >
+                <View className="flex-row items-center gap-4">
+                  <View className="h-14 w-14 rounded-full items-center justify-center bg-rose-50">
+                    <MaterialCommunityIcons name="file-pdf-box" size={28} color="#E11D48" />
+                  </View>
+                  <View>
+                    <ThemedText className="text-base font-black" style={{ color: theme.text }}>
+                      Receipt PDF
+                    </ThemedText>
+                    <ThemedText className="text-xs font-bold text-gray-400">Tap to open</ThemedText>
+                  </View>
+                </View>
+                <MaterialCommunityIcons name="open-in-new" size={22} color={theme.accent} />
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={handleOpenReceipt}
+                accessibilityRole="imagebutton"
+                accessibilityLabel="Open receipt image"
+                className="rounded-[32px] overflow-hidden border"
+                style={{ borderColor: theme.border }}
+              >
+                <Image
+                  source={{ uri: receiptUrl }}
+                  style={{ width: '100%', height: 220 }}
+                  contentFit="cover"
+                  transition={150}
+                />
+              </Pressable>
+            )}
+          </View>
+        ) : null}
+
         {/* ACTIONS */}
         <Pressable
           onPress={handleEdit}

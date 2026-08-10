@@ -4,6 +4,7 @@ import { API_BASE_URL, type ApiEntry } from './transactions';
 const entryFieldLabels: Record<string, string> = {
   account_id: 'Account',
   amount: 'Amount',
+  attachment: 'Receipt',
   category: 'Category',
   currency: 'Currency',
   date: 'Date',
@@ -28,6 +29,7 @@ export type EntryMutationPayload = {
   time?: string;
   source?: 'manual' | 'text' | 'voice';
   source_text?: string;
+  attachment?: string | null;
   split?: {
     group_id?: number | null;
     group_name?: string;

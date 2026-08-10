@@ -57,6 +57,7 @@ import {
   type Account,
 } from '@/lib/accounts';
 import { createEntry } from '@/lib/entries';
+import { resolveAttachmentForSave } from '@/lib/uploads';
 import { formatDisplayTime } from '@/lib/datetime';
 import { ParseApiError, parseEntryDraft, type ParseResponse } from '@/lib/parse';
 import {
@@ -623,6 +624,10 @@ export default function HomeScreen() {
             ? await fetchUnreadBudgetNotificationIds(token).catch(() => new Set<number>())
             : new Set<number>();
 
+        // Upload before creating the entry. A failure here aborts the save
+        // rather than persisting an unusable local device URI.
+        const attachmentUrl = await resolveAttachmentForSave(token, formData.attachment);
+
         const createdEntry = await createEntry(
           token,
           {
@@ -640,6 +645,7 @@ export default function HomeScreen() {
             merchant: formData.merchant.trim(),
             title: formData.title.trim() || 'Untitled Transaction',
             time: formData.time,
+            attachment: attachmentUrl,
             ...(splitPayload ? { split: splitPayload } : {}),
           },
           createIdempotencyKey.current
