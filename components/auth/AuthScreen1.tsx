@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
+import { GoogleGlyph } from './GoogleGlyph';
 import { styles } from './styles';
 
 type AuthScreen1Props = {
@@ -122,7 +123,9 @@ export const AuthScreen1 = ({
             <ActivityIndicator color={theme.text} />
           ) : (
             <>
-              <Text style={styles.googleMark}>G</Text>
+              <View style={styles.googleMark}>
+                <GoogleGlyph size={20} />
+              </View>
               <Text style={[styles.googleButtonText, { color: theme.text }]}>
                 Continue with Google
               </Text>

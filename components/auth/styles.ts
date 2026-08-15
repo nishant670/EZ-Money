@@ -230,10 +230,6 @@ export const styles = StyleSheet.create({
   },
   googleMark: {
     marginRight: 10,
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#4285F4',
-    fontFamily: Fonts.title,
   },
   googleButtonText: {
     fontSize: 17,
