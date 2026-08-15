@@ -8,7 +8,7 @@ import Constants from 'expo-constants';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { BackHandler, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   SlideInLeft,
   SlideInRight,
@@ -52,6 +52,11 @@ const googleDiscovery = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
 };
+
+// Read from the app config so it cannot drift from the package name Google has
+// registered against the Android OAuth client; a mismatch fails the whole flow.
+const GOOGLE_NATIVE_REDIRECT_SCHEME =
+  Constants.expoConfig?.android?.package ?? 'com.finnri.app';
 
 export default function AuthFlow() {
   const router = useRouter();
@@ -197,10 +202,14 @@ export default function AuthFlow() {
     setGuestError(null);
     setIsGoogleChecking(true);
     const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-    const redirectUri = AuthSession.makeRedirectUri({
-      scheme: 'ezmoney',
-      path: 'auth/google',
-    });
+    // Google's Android clients only accept a redirect whose scheme is the
+    // package name, with a single slash: "com.finnri.app:/oauth2redirect".
+    // makeRedirectUri emits "scheme://path", and Google rejects that double
+    // slash, so this one is spelled out rather than generated. The app's own
+    // "ezmoney" scheme stays registered for split-group invite links.
+    const redirectUri = Platform.OS === 'web'
+      ? AuthSession.makeRedirectUri({ path: 'auth/google' })
+      : `${GOOGLE_NATIVE_REDIRECT_SCHEME}:/oauth2redirect`;
 
     try {
       const request = await AuthSession.loadAsync(
