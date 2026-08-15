@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useScrollToTop } from 'expo-router';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -9,23 +9,27 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CategoryDonut } from '@/components/insights/CategoryDonut';
 import { DateRange, PeriodPicker } from '@/components/insights/PeriodPicker';
+import { InsightsSkeleton } from '@/components/insights/InsightsSkeleton';
+import { SpendTrendChart } from '@/components/insights/SpendTrendChart';
 import { ThemedText } from '@/components/themed-text';
+import { CountUpMoney } from '@/components/ui/CountUpMoney';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatMoney } from '@/lib/money';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
+import { openFilteredTransactions } from '@/lib/transaction-links';
 import { formatApiDate, resolveCategoryMetadata } from '@/lib/transactions';
-
-const formatMoney = (value: number) =>
-  `₹${Math.round(value).toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
 
 const defaultRange = (): DateRange => {
   const current = new Date();
@@ -160,6 +164,11 @@ const openDashboardEntryForReview = (entry: DashboardResponse['recent_transactio
   });
 };
 
+/**
+ * The hero card. It returns the insight it promoted so Smart Alerts can drop
+ * it — the same alert appearing twice on one screen made the analysis look
+ * padded.
+ */
 const getTopTakeaway = (dashboard: DashboardResponse, reviewCount: number) => {
   const warning = dashboard.insights.find((item) => item.severity === 'warning');
   const topCategory = dashboard.top_categories[0];
@@ -171,6 +180,7 @@ const getTopTakeaway = (dashboard: DashboardResponse, reviewCount: number) => {
       body: 'Resolve missing categories or accounts so the rest of your insights stay accurate.',
       icon: 'playlist-check',
       tone: 'warning' as const,
+      promotedKind: null,
     };
   }
 
@@ -181,6 +191,7 @@ const getTopTakeaway = (dashboard: DashboardResponse, reviewCount: number) => {
       body: warning.body,
       icon: 'alarm-light-outline',
       tone: 'warning' as const,
+      promotedKind: warning.kind,
     };
   }
 
@@ -191,6 +202,7 @@ const getTopTakeaway = (dashboard: DashboardResponse, reviewCount: number) => {
       body: `${formatMoney(topCategory.amount)} recorded in this category during the selected period.`,
       icon: resolveCategoryMetadata(topCategory.category).icon,
       tone: 'info' as const,
+      promotedKind: null,
     };
   }
 
@@ -200,10 +212,13 @@ const getTopTakeaway = (dashboard: DashboardResponse, reviewCount: number) => {
     body: 'This is your average confirmed expense pace for the selected period.',
     icon: 'speedometer',
     tone: 'info' as const,
+    promotedKind: null,
   };
 };
 
 export default function InsightScreen() {
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
   const { token } = useAuthStore();
@@ -213,6 +228,23 @@ export default function InsightScreen() {
   const [error, setError] = useState<string | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [currentRange, setCurrentRange] = useState<DateRange>(defaultRange);
+  const { period: requestedPeriod } = useLocalSearchParams<{ period?: string }>();
+
+  /**
+   * Home's month strip taps through here and promises "the same period".
+   *
+   * This screen stays mounted as a tab, so whatever range was last picked
+   * survives — land on it after choosing "Last 30 Days" and the numbers would
+   * not be the ones the strip just showed. The param resets the range to the
+   * month the strip was describing.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (requestedPeriod === 'this_month') {
+        setCurrentRange((range) => (range.preset === 'this_month' ? range : defaultRange()));
+      }
+    }, [requestedPeriod])
+  );
 
   const loadData = useCallback(
     async (isRefresh = false) => {
@@ -265,17 +297,42 @@ export default function InsightScreen() {
       ),
     [dashboard, reviewItems.length]
   );
+  // The hero card promotes one insight to the top of the screen. Smart Alerts
+  // must not then repeat it — the same alert twice on one screen reads as
+  // padding and made the whole tab look thinner than it is.
+  const smartAlertCards = useMemo(() => {
+    if (!dashboard) return [];
+    const promoted = getTopTakeaway(dashboard, reviewItems.length).promotedKind;
+    return promoted
+      ? dashboard.insights.filter((card) => card.kind !== promoted)
+      : dashboard.insights;
+  }, [dashboard, reviewItems.length]);
 
+  // The header is real on the way in, because it is real the whole time the
+  // screen exists — a period label that arrives with the data would be the
+  // chrome pretending it was also being fetched.
   if (loading && !dashboard) {
     return (
-      <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
-        <StateView
-          icon="chart-box-outline"
-          title="Loading insights"
-          message="Preparing your financial health view."
-          loading
+      <SafeAreaView
+        className="flex-1"
+        style={{ backgroundColor: theme.background }}
+        edges={['top', 'left', 'right']}>
+        <InsightsHeader
+          rangeLabel={currentRange.label}
+          refreshing={false}
+          onPickPeriod={() => setPickerVisible(true)}
         />
-      </View>
+        <InsightsSkeleton />
+        {/* The header's period is live while the skeleton is up — choosing a
+            different month is the one useful thing to do during the wait, and a
+            control that opens nothing is worse than no control. */}
+        <PeriodPicker
+          visible={pickerVisible}
+          onClose={() => setPickerVisible(false)}
+          onSelect={setCurrentRange}
+          currentRange={currentRange}
+        />
+      </SafeAreaView>
     );
   }
 
@@ -298,25 +355,14 @@ export default function InsightScreen() {
       className="flex-1"
       style={{ backgroundColor: theme.background }}
       edges={['top', 'left', 'right']}>
-      <View className="flex-row items-center justify-between px-5 py-4">
-        <View>
-          <ThemedText className="text-2xl font-black">Insights</ThemedText>
-          <TouchableOpacity
-            className="mt-1 flex-row items-center"
-            onPress={() => setPickerVisible(true)}>
-            <ThemedText className="text-xs font-bold" style={{ color: theme.accent }}>
-              {currentRange.label}
-            </ThemedText>
-            <MaterialCommunityIcons name="chevron-down" size={14} color={theme.accent} />
-          </TouchableOpacity>
-        </View>
-        <View className="flex-row items-center gap-3">
-          {loading && <ActivityIndicator color={theme.accent} />}
-          <HeaderIcon name="magnify" onPress={() => router.push('/transactions')} />
-        </View>
-      </View>
+      <InsightsHeader
+        rangeLabel={currentRange.label}
+        refreshing={loading}
+        onPickPeriod={() => setPickerVisible(true)}
+      />
 
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: 16,
@@ -334,16 +380,7 @@ export default function InsightScreen() {
             tintColor={theme.accent}
           />
         }>
-        {error && (
-          <View className="rounded-2xl border border-red-100 bg-red-50 p-3">
-            <ThemedText className="text-center text-sm text-red-600">{error}</ThemedText>
-            <TouchableOpacity className="mt-2 items-center" onPress={() => void loadData()}>
-              <ThemedText className="text-sm font-bold" style={{ color: theme.accent }}>
-                Retry
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-        )}
+        {error && <ErrorBanner message={error} onRetry={() => void loadData()} />}
 
         {dashboard.summary.transaction_count === 0 && (
           <StateView
@@ -356,57 +393,95 @@ export default function InsightScreen() {
           />
         )}
 
-        <TopTakeawayCard dashboard={dashboard} reviewCount={reviewItems.length} />
+        <Reflow>
+          <TopTakeawayCard dashboard={dashboard} reviewCount={reviewItems.length} />
+        </Reflow>
 
-        <PeriodPulseCard dashboard={dashboard} insightLevel={insightLevel} reviewCount={reviewItems.length} />
-
-        <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
-
-        {allClear && <AllClearCard dashboard={dashboard} />}
-
-        {insightLevel >= 1 && <ProgressiveHint insightLevel={insightLevel} dashboard={dashboard} />}
-
-        {insightLevel >= 2 && (
-          <SpendingAnalysisCard
+        <Reflow>
+          <PeriodPulseCard
             dashboard={dashboard}
-            onDetails={() =>
-              router.push({
-                pathname: '/spending-analysis',
-                params: {
-                  start: dashboard.period.start,
-                  end: dashboard.period.end,
-                  label: currentRange.label,
-                },
-              })
-            }
+            insightLevel={insightLevel}
+            reviewCount={reviewItems.length}
           />
+        </Reflow>
+
+        <Reflow>
+          <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
+        </Reflow>
+
+        {allClear && (
+          <Reflow>
+            <AllClearCard dashboard={dashboard} />
+          </Reflow>
+        )}
+
+        {insightLevel >= 1 && (
+          <Reflow>
+            <ProgressiveHint insightLevel={insightLevel} dashboard={dashboard} />
+          </Reflow>
+        )}
+
+        {dashboard.summary.transaction_count > 0 && (
+          <Reflow>
+            <SpendingAnalysisCard
+              dashboard={dashboard}
+              onDetails={() =>
+                router.push({
+                  pathname: '/spending-analysis',
+                  params: {
+                    start: dashboard.period.start,
+                    end: dashboard.period.end,
+                    label: currentRange.label,
+                  },
+                })
+              }
+            />
+          </Reflow>
         )}
 
         {insightLevel >= 2 && (
-          <SmartAlerts cards={dashboard.insights} dashboard={dashboard} rangeLabel={currentRange.label} />
+          <Reflow>
+            <SmartAlerts
+              cards={smartAlertCards}
+              dashboard={dashboard}
+              rangeLabel={currentRange.label}
+            />
+          </Reflow>
         )}
 
         {dashboard.budget_statuses?.some((budget) => budget.status !== 'safe') && (
-          <BudgetWatchSection dashboard={dashboard} rangeLabel={currentRange.label} />
+          <Reflow>
+            <BudgetWatchSection dashboard={dashboard} rangeLabel={currentRange.label} />
+          </Reflow>
         )}
 
         {dashboard.recurring_candidates.length > 0 && (
-          <RecurringReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
+          <Reflow>
+            <RecurringReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
+          </Reflow>
         )}
 
-        {insightLevel >= 3 && <AccountIntelligence dashboard={dashboard} />}
+        {insightLevel >= 3 && (
+          <Reflow>
+            <AccountIntelligence dashboard={dashboard} />
+          </Reflow>
+        )}
 
         {previewReviewItems.length > 0 && (
-          <NeedsReview
-            entries={previewReviewItems}
-            totalCount={reviewItems.length}
-            periodStart={dashboard.period.start}
-            periodEnd={dashboard.period.end}
-          />
+          <Reflow>
+            <NeedsReview
+              entries={previewReviewItems}
+              totalCount={reviewItems.length}
+              periodStart={dashboard.period.start}
+              periodEnd={dashboard.period.end}
+            />
+          </Reflow>
         )}
 
         {insightLevel < 4 && dashboard.summary.transaction_count > 0 && (
-          <UnlockCard dashboard={dashboard} insightLevel={insightLevel} />
+          <Reflow>
+            <UnlockCard dashboard={dashboard} insightLevel={insightLevel} />
+          </Reflow>
         )}
       </ScrollView>
 
@@ -417,6 +492,60 @@ export default function InsightScreen() {
         currentRange={currentRange}
       />
     </SafeAreaView>
+  );
+}
+
+/**
+ * One card of the Insights stack, allowed to move rather than jump.
+ *
+ * Choosing the period rewrites this whole screen: cards appear, disappear and
+ * change height, and every card below each change used to land somewhere else
+ * in a single frame. The wrapper is what carries the `layout` — the cards
+ * themselves are plain views with their own borders and padding, and pushing
+ * Reanimated into each of them would spread the same three lines nine ways.
+ */
+function Reflow({ children }: { children: ReactNode }) {
+  const motion = useMotion();
+
+  return <Animated.View layout={motion.reflow()}>{children}</Animated.View>;
+}
+
+/**
+ * The Insights chrome — title, the period it is showing, and search.
+ *
+ * Extracted only because the loading frame wears it too. A screen whose header
+ * appears a beat after its body is a screen that visibly assembles itself, and
+ * this one already knows its period before the first byte arrives.
+ */
+function InsightsHeader({
+  rangeLabel,
+  refreshing,
+  onPickPeriod,
+}: {
+  rangeLabel: string;
+  /** A reload behind content that is already on screen. Never true while the
+   *  skeleton is up — that frame is already saying the same thing. */
+  refreshing: boolean;
+  onPickPeriod: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+
+  return (
+    <View className="flex-row items-center justify-between px-5 py-4">
+      <View>
+        <ThemedText className="text-2xl font-black">Insights</ThemedText>
+        <TouchableOpacity className="mt-1 flex-row items-center" onPress={onPickPeriod}>
+          <ThemedText className="text-xs font-bold" style={{ color: theme.accent }}>
+            {rangeLabel}
+          </ThemedText>
+          <MaterialCommunityIcons name="chevron-down" size={14} color={theme.accent} />
+        </TouchableOpacity>
+      </View>
+      <View className="flex-row items-center gap-3">
+        {refreshing && <ActivityIndicator color={theme.accent} />}
+        <HeaderIcon name="magnify" onPress={() => router.push('/transactions')} />
+      </View>
+    </View>
   );
 }
 
@@ -562,15 +691,15 @@ function PeriodPulseCard({
 
       <View className="mt-7 gap-3">
         <View className="flex-row gap-3">
-          <PulseMetric label="Income" value={formatMoney(dashboard.summary.total_income)} />
-          <PulseMetric label="Spent" value={formatMoney(dashboard.summary.total_spent)} />
+          <PulseMetric label="Income" amount={dashboard.summary.total_income} />
+          <PulseMetric label="Spent" amount={dashboard.summary.total_spent} />
         </View>
         <View className="flex-row gap-3">
           <PulseMetric
             label={surplus >= 0 ? 'Surplus' : 'Over income'}
-            value={formatMoney(Math.abs(surplus))}
+            amount={Math.abs(surplus)}
           />
-          <PulseMetric label="Daily avg" value={formatMoney(dashboard.summary.daily_average)} />
+          <PulseMetric label="Daily avg" amount={dashboard.summary.daily_average} />
         </View>
       </View>
 
@@ -686,23 +815,36 @@ function AllClearCard({ dashboard }: { dashboard: DashboardResponse }) {
       <View className="mt-4 flex-row gap-3">
         <PulseMetric
           label={surplus >= 0 ? 'Surplus' : 'Over income'}
-          value={formatMoney(Math.abs(surplus))}
+          amount={Math.abs(surplus)}
         />
-        <PulseMetric
-          label="Top spend"
-          value={topCategory ? topCategory.category : formatMoney(dashboard.summary.daily_average)}
-        />
+        {/* The fallback is a figure and the real thing is a category name, so
+            this is two different metrics wearing one label rather than one
+            metric with an optional format. */}
+        {topCategory ? (
+          <PulseMetric label="Top spend" value={topCategory.category} />
+        ) : (
+          <PulseMetric label="Top spend" amount={dashboard.summary.daily_average} />
+        )}
       </View>
     </View>
   );
 }
 
+/**
+ * One figure of the period summary.
+ *
+ * `amount` counts up from zero; `value` is for the cases that are not money at
+ * all — a category name has nothing to count towards, and animating it would be
+ * decoration rather than the arrival of an answer.
+ */
 function PulseMetric({
   label,
   value,
+  amount,
 }: {
   label: string;
-  value: string;
+  value?: string;
+  amount?: number;
 }) {
   const theme = useThemeTokens();
 
@@ -711,12 +853,19 @@ function PulseMetric({
       className="flex-1 rounded-2xl border px-4 py-3"
       style={{ backgroundColor: theme.colors.background, borderColor: theme.colors.border }}>
       <ThemedText className="text-[10px] font-black uppercase text-gray-500">{label}</ThemedText>
-      <ThemedText className="mt-1 text-sm font-black" numberOfLines={1}>
-        {value}
-      </ThemedText>
+      {amount == null ? (
+        <ThemedText className={PULSE_VALUE_CLASS} numberOfLines={1}>
+          {value}
+        </ThemedText>
+      ) : (
+        <CountUpMoney amount={amount} className={PULSE_VALUE_CLASS} numberOfLines={1} />
+      )}
     </View>
   );
 }
+
+/** Shared so the counting figure and the static one cannot drift apart. */
+const PULSE_VALUE_CLASS = 'mt-1 text-sm font-black';
 
 function ProgressiveHint({
   dashboard,
@@ -758,6 +907,18 @@ function ProgressiveHint({
   );
 }
 
+/**
+ * Spending Analysis — the section this tab was missing.
+ *
+ * It used to be one card: a ring drawn from the single largest category with
+ * that category's share printed in the middle, the top two categories beside
+ * it, and two merchants underneath. Nothing on the screen showed spending over
+ * time, and the ring showed a part while looking like a whole.
+ *
+ * It is now the two charts the data always supported — a bar per day against
+ * the daily average, and a donut over the complete category breakdown — with
+ * the merchant list kept as it was.
+ */
 function SpendingAnalysisCard({
   dashboard,
   onDetails,
@@ -766,64 +927,42 @@ function SpendingAnalysisCard({
   onDetails: () => void;
 }) {
   const theme = useThemeTokens();
-  const categories = dashboard.top_categories.slice(0, 2);
   const merchants = dashboard.top_merchants.slice(0, 2);
-  const primary = categories[0];
-  const primaryMeta = resolveCategoryMetadata(primary?.category);
 
   return (
     <SectionHeader title="Spending Analysis" actionLabel="Details" onAction={onDetails}>
-      <View
-        className="rounded-[24px] p-5 shadow-sm"
-        style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border, borderWidth: 1 }}>
-        <View className="flex-row items-center">
-          <View
-            className="mr-5 h-[96px] w-[96px] items-center justify-center rounded-full"
-            style={{ backgroundColor: theme.colors.secondary }}>
-            <View
-              className="h-[72px] w-[72px] items-center justify-center rounded-full"
-              style={{ borderColor: primaryMeta.color, borderWidth: 8 }}>
-              <ThemedText className="text-center text-[9px]" style={{ color: theme.mode === 'dark' ? 'rgba(255,255,255,0.58)' : '#9CA3AF' }}>
-                {primary?.category?.split(' ')[0] ?? 'Spend'}
-              </ThemedText>
-              <ThemedText className="text-xs font-black" style={{ color: theme.colors.text }}>
-                {Math.round(primary?.percentage ?? 0)}%
-              </ThemedText>
-            </View>
-          </View>
-          <View className="flex-1 gap-3">
-            {categories.map((category) => {
-              const meta = resolveCategoryMetadata(category.category);
-              const trend = category.change >= 0 ? 'higher' : 'lower';
-              return (
-                <View key={category.category}>
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                      <View
-                        className="mr-2 h-2 w-2 rounded-full"
-                        style={{ backgroundColor: meta.color }}
-                      />
-                      <ThemedText className="text-xs">{category.category}</ThemedText>
-                    </View>
-                    <ThemedText className="text-xs font-black">
-                      {formatMoney(category.amount)}
-                    </ThemedText>
-                  </View>
-                  {Math.abs(category.change) > 0 && (
-                    <ThemedText
-                      className="mt-1 text-[10px] font-bold"
-                      style={{ color: category.change >= 0 ? '#FF6680' : '#00B878' }}>
-                      {Math.abs(Math.round(category.change))}% {trend} than last period
-                    </ThemedText>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </View>
+      <View className="gap-4">
+        <SpendTrendChart
+          dashboard={dashboard}
+          onOpenRange={(bucket) =>
+            openFilteredTransactions({
+              startDate: bucket.start,
+              endDate: bucket.end,
+              type: 'Expense',
+            })
+          }
+        />
+
+        {dashboard.summary.total_spent > 0 && (
+          <CategoryDonut
+            categories={dashboard.top_categories}
+            totalSpent={dashboard.summary.total_spent}
+            period={dashboard.period}
+            onSelectCategory={(category) =>
+              openFilteredTransactions({
+                category,
+                startDate: dashboard.period.start,
+                endDate: dashboard.period.end,
+                type: 'Expense',
+              })
+            }
+          />
+        )}
 
         {merchants.length > 0 && (
-          <View className="mt-5 pt-4" style={{ borderTopWidth: 1, borderTopColor: theme.colors.border }}>
+          <View
+            className="rounded-[24px] border p-5 shadow-sm"
+            style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
             <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
               Top Merchants
             </ThemedText>
@@ -938,7 +1077,7 @@ const insightDetailParams = (
   if (card.confidence != null) params.confidence = String(card.confidence);
 
   if (card.kind === 'unusual_spending' && !params.amount) {
-    const match = card.body.match(/₹([\d,.]+)/);
+    const match = card.body.match(new RegExp(`${CURRENCY_SYMBOL}([\\d,.]+)`));
     if (match?.[1]) params.amount = match[1].replace(/,/g, '');
   }
 

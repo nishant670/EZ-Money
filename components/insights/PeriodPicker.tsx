@@ -11,6 +11,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { haptics } from '@/lib/haptics';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -168,7 +169,10 @@ function PresetsView({
                 !isSelected && { backgroundColor: accentSurface, borderColor: theme.border },
                 isSelected && { borderColor: theme.accent, backgroundColor: accentSurface },
               ]}
-              onPress={() => onSelectPreset(p.key)}>
+              onPress={() => {
+                haptics.select();
+                onSelectPreset(p.key);
+              }}>
               <Text
                 style={[
                   styles.presetText,

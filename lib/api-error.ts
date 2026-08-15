@@ -4,21 +4,106 @@ type ApiErrorPayload = {
   error?: string;
   message?: string;
   fields?: ApiFieldErrors;
+  feature_code?: string;
+  feature_label?: string;
+  required_plan?: string;
+  required_entitlement?: string;
+  upgrade_required?: boolean;
+};
+
+/**
+ * An entitlement response is not a failure. The backend answers a gated
+ * endpoint with `402 payment_required` (or `403 feature_locked`) plus enough
+ * detail to build a paywall: which feature was asked for, what it is called,
+ * and whether paying unlocks it. Screens read this off `ApiError.entitlement`
+ * and render `<UpgradeSheet />` instead of an error.
+ *
+ * Emitted by `ensureEntitlement` in the backend's `internal/http/entitlements.go`.
+ */
+export type Entitlement = {
+  featureCode?: string;
+  featureLabel: string;
+  requiredPlan?: string;
+  upgradeRequired: boolean;
+};
+
+const entitlementCodes = new Set(['payment_required', 'feature_locked']);
+
+/** Fallback labels for the rare case the backend omits `feature_label`. */
+const entitlementFeatureLabels: Record<string, string> = {
+  ai_text_capture: 'AI text capture',
+  ai_voice_capture: 'Voice capture',
+  advanced_insights: 'Advanced insights',
+  weekly_review: 'Weekly review',
+  budgets: 'Budgets',
+  subscription_reminders: 'Subscription reminders',
+  split_ledger: 'Split ledger',
+  web_dashboard: 'Web dashboard',
+  exports: 'Exports',
+  bulk_edit: 'Bulk edit',
+  future_ai_advisor: 'AI advisor',
+};
+
+const readEntitlement = (
+  status: number,
+  payload: ApiErrorPayload | null,
+): Entitlement | null => {
+  if (status !== 402 && status !== 403) {
+    return null;
+  }
+  const code = payload?.error;
+  const featureCode = payload?.feature_code ?? payload?.required_entitlement;
+  if (!code || !entitlementCodes.has(code)) {
+    return null;
+  }
+  // Naming the feature is what separates an entitlement gate from the AI
+  // credit 402s, which are about a spent allowance rather than a locked
+  // feature and keep their own handling in `lib/parse.ts`.
+  if (!featureCode && !payload?.feature_label) {
+    return null;
+  }
+  const featureLabel =
+    payload?.feature_label ||
+    (featureCode ? entitlementFeatureLabels[featureCode] : undefined) ||
+    'This feature';
+  return {
+    featureCode,
+    featureLabel,
+    requiredPlan: payload?.required_plan,
+    // `feature_locked` omits the flag; the plan is still the way through.
+    upgradeRequired: payload?.upgrade_required ?? true,
+  };
 };
 
 export class ApiError extends Error {
   status: number;
   code?: string;
   fields?: ApiFieldErrors;
+  entitlement?: Entitlement;
 
-  constructor(message: string, status: number, code?: string, fields?: ApiFieldErrors) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    fields?: ApiFieldErrors,
+    entitlement?: Entitlement,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.fields = fields;
+    this.entitlement = entitlement;
   }
 }
+
+/**
+ * The entitlement behind an error, or null when it is a genuine failure.
+ * Anything that renders an error message should check this first — an
+ * entitlement response must never reach a red banner.
+ */
+export const entitlementFromError = (error: unknown): Entitlement | null =>
+  error instanceof ApiError ? error.entitlement ?? null : null;
 
 const NETWORK_ERROR_MESSAGE = 'Could not connect to Finnri. Check your internet connection and make sure the app is online.';
 
@@ -126,14 +211,18 @@ export const readApiError = async (
 
   const code = payload?.error;
   const fields = payload?.fields;
+  const entitlement = readEntitlement(response.status, payload);
   const fieldMessages = fields ? formatApiFieldErrors(fields, labels) : [];
   const baseMessage =
     payload?.message ||
+    // An entitlement is described by the paywall, not by an error string. This
+    // message is only a last-resort label if something renders it anyway.
+    (entitlement ? `${entitlement.featureLabel} is on the paid plan.` : null) ||
     (code ? codeMessages[code] ?? humanizeCode(code) : null) ||
     fallback;
   const message = fieldMessages.length > 0
     ? `${baseMessage}\n${fieldMessages.map((fieldMessage) => `• ${fieldMessage}`).join('\n')}`
     : baseMessage;
 
-  return new ApiError(message, response.status, code, fields);
+  return new ApiError(message, response.status, code, fields, entitlement ?? undefined);
 };

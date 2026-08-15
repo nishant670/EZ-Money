@@ -1,11 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -189,9 +190,12 @@ export default function NotificationsScreen() {
       </View>
 
       {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={colors.accent} />
-        </View>
+        <SkeletonFrame
+          label="Loading notifications"
+          testID="notifications-skeleton"
+          style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+          <SkeletonRows count={6} showAmount={false} lines={3} />
+        </SkeletonFrame>
       ) : error ? (
         <View className="flex-1 items-center justify-center px-8">
           <MaterialCommunityIcons name="alert-circle-outline" size={36} color="#D32F2F" />

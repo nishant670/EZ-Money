@@ -1,3 +1,4 @@
+import { toAmountInputValue } from './money';
 import type { ParseResponse } from './parse';
 import type { SplitFriend, SplitGroup } from './splits';
 
@@ -65,7 +66,7 @@ const findByName = <T extends { name: string }>(items: T[], name?: string | null
 };
 
 const formatShare = (value: number | null) =>
-  value != null && Number.isFinite(value) && value > 0 ? value.toFixed(2) : '';
+  value != null && value > 0 ? toAmountInputValue(value) : '';
 
 const defaultEqualShare = (amount: number | null | undefined, friendCount: number) => {
   if (amount == null || !Number.isFinite(amount) || amount <= 0 || friendCount <= 0) {

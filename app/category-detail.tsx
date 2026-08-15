@@ -12,20 +12,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { HistoryDetailSkeleton } from '@/components/transactions/TransactionListSkeleton';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { StateView } from '@/components/ui/StateView';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatMoney } from '@/lib/money';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { loadTransactions, resolveCategoryMetadata } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
-
-const formatMoney = (value: number) =>
-  `₹${Math.round(value).toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
 
 const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
@@ -187,14 +184,12 @@ export default function CategoryDetailScreen() {
 
   if (loading && transactions.length === 0) {
     return (
-      <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
-        <StateView
-          icon={meta.icon}
-          title="Loading category details"
-          message={`Finding ${category} transactions.`}
-          loading
-        />
-      </View>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: theme.background }}
+        edges={['top', 'left', 'right']}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <HistoryDetailSkeleton label="Loading category details" />
+      </SafeAreaView>
     );
   }
 
@@ -272,9 +267,11 @@ export default function CategoryDetailScreen() {
         </View>
 
         {error && (
-          <View className="mx-5 mb-5 rounded-2xl border border-red-100 bg-red-50 p-3">
-            <ThemedText className="text-center text-sm text-red-600">{error}</ThemedText>
-          </View>
+          <ErrorBanner
+            message={error}
+            onRetry={() => void load()}
+            style={{ marginHorizontal: 20, marginBottom: 20 }}
+          />
         )}
 
         {topMerchants.length > 0 && (

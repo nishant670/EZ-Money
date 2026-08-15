@@ -4,22 +4,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SpendTrendChart } from '@/components/insights/SpendTrendChart';
 import { ThemedText } from '@/components/themed-text';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import {
+  SkeletonCard,
+  SkeletonCards,
+  SkeletonFrame,
+  SkeletonStat,
+} from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatMoney } from '@/lib/money';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
+import { openFilteredTransactions } from '@/lib/transaction-links';
 import { resolveCategoryMetadata } from '@/lib/transactions';
-
-const formatMoney = (value: number) =>
-  `₹${Math.round(value).toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
 
 const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
@@ -79,13 +83,19 @@ export default function SpendingAnalysisScreen() {
 
   if (loading && !dashboard) {
     return (
-      <View className="flex-1 justify-center" style={{ backgroundColor: theme.background }}>
-        <StateView
-          icon="chart-line"
-          title="Loading detailed analysis"
-          message="Building your spending breakdown."
-          loading
-        />
+      <View className="flex-1" style={{ backgroundColor: theme.background }}>
+        <SkeletonFrame
+          label="Loading detailed analysis"
+          testID="spending-analysis-skeleton"
+          style={{ paddingHorizontal: 20, paddingTop: 24, gap: 20 }}>
+          <SkeletonCard radius={26} padding={20}>
+            <View style={{ flexDirection: 'row', gap: 20 }}>
+              <SkeletonStat index={0} />
+              <SkeletonStat index={1} />
+            </View>
+          </SkeletonCard>
+          <SkeletonCards count={3} lines={3} />
+        </SkeletonFrame>
       </View>
     );
   }
@@ -127,9 +137,11 @@ export default function SpendingAnalysisScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 110 }}>
         {error && (
-          <View className="mx-5 mb-4 rounded-2xl border border-red-100 bg-red-50 p-3">
-            <ThemedText className="text-center text-sm text-red-600">{error}</ThemedText>
-          </View>
+          <ErrorBanner
+            message={error}
+            onRetry={() => void loadData()}
+            style={{ marginHorizontal: 20, marginBottom: 16 }}
+          />
         )}
 
         <View className="mt-3 items-center">
@@ -149,7 +161,22 @@ export default function SpendingAnalysisScreen() {
           </ThemedText>
         </View>
 
-        <DailyTrendCard dashboard={dashboard} />
+        {/* Same chart as the Insights tab, not a second one. This screen used
+            to draw its own bars with no reference line and a "Start / Mid /
+            End" axis, so the same data told two stories depending on which
+            screen you were on. */}
+        <View className="mx-5 mt-8">
+          <SpendTrendChart
+            dashboard={dashboard}
+            onOpenRange={(bucket) =>
+              openFilteredTransactions({
+                startDate: bucket.start,
+                endDate: bucket.end,
+                type: 'Expense',
+              })
+            }
+          />
+        </View>
         <CategoryBreakdown dashboard={dashboard} periodLabel={periodLabel} />
         <TopMerchants dashboard={dashboard} periodLabel={periodLabel} />
         <BehavioralInsights cards={dashboard.insights} />
@@ -174,144 +201,6 @@ export default function SpendingAnalysisScreen() {
         </TouchableOpacity>
       </View>
     </SafeAreaView>
-  );
-}
-
-function DailyTrendCard({ dashboard }: { dashboard: DashboardResponse }) {
-  const themeTokens = useThemeTokens();
-  const theme = themeTokens.colors;
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const points = useMemo(() => {
-    const source =
-      dashboard.daily_spending && dashboard.daily_spending.length > 0
-        ? dashboard.daily_spending
-        : [{ date: dashboard.period.end, amount: dashboard.summary.total_spent, count: dashboard.summary.transaction_count }];
-    return source.map((day) => ({
-      date: day.date,
-      amount: Math.round(day.amount),
-      count: day.count,
-    }));
-  }, [dashboard.daily_spending, dashboard.period.end, dashboard.summary.total_spent, dashboard.summary.transaction_count]);
-  useEffect(() => {
-    setSelectedIndex(Math.max(points.length - 1, 0));
-  }, [points.length]);
-  const safeSelectedIndex = Math.min(selectedIndex, Math.max(points.length - 1, 0));
-  const maxPoint = Math.max(...points.map((point) => point.amount), 1);
-  const selectedPoint = points[safeSelectedIndex] ?? points[points.length - 1] ?? { amount: 0, date: dashboard.period.end, count: 0 };
-  const selectedDelta =
-    dashboard.summary.daily_average > 0
-      ? Math.round(
-          ((selectedPoint.amount - dashboard.summary.daily_average) / dashboard.summary.daily_average) *
-            100
-        )
-      : 0;
-  const selectedDate = new Date(`${selectedPoint.date}T00:00:00`);
-  const selectedLabel = Number.isNaN(selectedDate.getTime())
-    ? selectedPoint.date
-    : selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-  const latestPoint = points[points.length - 1] ?? selectedPoint;
-  const todaySpend = latestPoint.amount;
-  const delta =
-    dashboard.summary.daily_average > 0
-      ? Math.round(
-          ((todaySpend - dashboard.summary.daily_average) / dashboard.summary.daily_average) * 100
-        )
-      : 0;
-
-  return (
-    <View
-      className="mx-5 mt-8 rounded-[28px] border p-5 shadow-sm"
-      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-      <View className="mb-7 flex-row items-start justify-between">
-        <View>
-          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-            Daily Trend
-          </ThemedText>
-          <ThemedText className="mt-1 text-lg font-black">Daily Fluctuations</ThemedText>
-        </View>
-        <View className="rounded-lg px-3 py-2" style={{ backgroundColor: theme.secondary }}>
-          <ThemedText className="text-[10px] font-black" style={{ color: theme.accent }}>
-            Avg {formatMoney(dashboard.summary.daily_average)}/day
-          </ThemedText>
-        </View>
-      </View>
-
-      <View className="h-40 flex-row items-end justify-between overflow-hidden">
-        {points.map((point, index) => {
-          const selected = safeSelectedIndex === index;
-          const hasSpend = point.amount > 0;
-          return (
-            <TouchableOpacity
-              key={`${point.date}-${index}`}
-              activeOpacity={0.78}
-              className="items-center justify-end"
-              onPress={() => setSelectedIndex(index)}>
-              <View
-                className="mb-2 h-2 w-2 rounded-full"
-                style={{
-                  opacity: selected ? 1 : 0,
-                  backgroundColor: theme.accent,
-                }}
-              />
-              <View
-                className="w-5 rounded-t-full"
-                style={{
-                  height: hasSpend ? Math.max(18, (point.amount / maxPoint) * 130) : 8,
-                  opacity: selected ? 1 : hasSpend ? 0.34 : 0.16,
-                  backgroundColor: theme.accent,
-                  width: selected ? 24 : 20,
-                }}
-              />
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      <View className="mt-3 flex-row justify-between">
-        <ThemedText className="text-[10px] text-gray-500">Start</ThemedText>
-        <ThemedText className="text-[10px] text-gray-500">Mid</ThemedText>
-        <ThemedText className="text-[10px] text-gray-500">End</ThemedText>
-      </View>
-
-      <View className="mt-5 flex-row items-center justify-between border-t border-gray-100 pt-4 dark:border-gray-700">
-        <View className="flex-row items-center">
-          <View className="mr-2 h-3 w-3 rounded-full" style={{ backgroundColor: theme.accent }} />
-          <ThemedText className="text-xs font-bold">
-            Latest Spend: {formatMoney(todaySpend)}
-          </ThemedText>
-        </View>
-        {delta !== 0 && (
-          <ThemedText
-            className="text-[10px] font-bold"
-            style={{ color: delta > 0 ? theme.accent : '#00B878' }}>
-            {Math.abs(delta)}% {delta > 0 ? 'Higher' : 'Lower'} than Avg
-          </ThemedText>
-        )}
-      </View>
-
-      <View
-        className="mt-4 rounded-2xl border px-4 py-3"
-        style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
-        <View className="flex-row items-center justify-between">
-          <View>
-            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-              Selected Bar
-            </ThemedText>
-            <ThemedText className="mt-1 text-sm font-black">{selectedLabel}</ThemedText>
-            <ThemedText className="mt-1 text-[10px] text-gray-500">
-              {selectedPoint.count} transaction{selectedPoint.count === 1 ? '' : 's'}
-            </ThemedText>
-          </View>
-          <ThemedText className="text-base font-black" style={{ color: theme.accent }}>
-            {formatMoney(selectedPoint.amount)}
-          </ThemedText>
-        </View>
-        <ThemedText className="mt-2 text-xs leading-5 text-gray-600">
-          {selectedDelta === 0
-            ? 'This day is tracking close to your daily average.'
-            : `${Math.abs(selectedDelta)}% ${selectedDelta > 0 ? 'above' : 'below'} your daily average.`}
-        </ThemedText>
-      </View>
-    </View>
   );
 }
 

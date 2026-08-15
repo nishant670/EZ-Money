@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { SkeletonCards, SkeletonFrame } from '@/components/ui/Skeleton';
 import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -306,9 +307,9 @@ export default function BillingScreen() {
         </View>
 
         {isLoading ? (
-          <View style={{ paddingVertical: 34, alignItems: 'center' }}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
+          <SkeletonFrame label="Loading plans" testID="billing-skeleton">
+            <SkeletonCards count={3} lines={3} radius={22} />
+          </SkeletonFrame>
         ) : (
           plans.map((plan, index) => {
             const isLifetime = plan.billing_interval === 'lifetime_quote';

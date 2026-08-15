@@ -1,4 +1,5 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import * as Haptics from 'expo-haptics';
 
 import {
   TransactionFormModal,
@@ -7,6 +8,18 @@ import {
 } from '@/components/transactions/TransactionFormModal';
 import type { Account } from '@/lib/accounts';
 import { formatDateLabel } from '@/lib/transactions';
+import type { Transaction } from '@/types/transaction';
+
+const recentEntry = (overrides: Partial<Transaction>): Transaction => ({
+  id: '1',
+  name: 'Entry',
+  category: 'Food & Drinks',
+  amount: -100,
+  icon: 'silverware-fork-knife',
+  section: 'Today',
+  entryType: 'expense',
+  ...overrides,
+});
 
 const cashAccount: Account = {
   id: 1,
@@ -46,6 +59,8 @@ const renderModal = async ({
   accounts = [cashAccount],
   aiReview,
   mode = 'manual',
+  isEdit,
+  recentEntries,
   onSave = jest.fn().mockResolvedValue(undefined),
   onClose = jest.fn(),
 }: {
@@ -53,6 +68,8 @@ const renderModal = async ({
   accounts?: Account[];
   aiReview?: AiReviewMetadata;
   mode?: 'audio' | 'manual' | 'quick-prompt';
+  isEdit?: boolean;
+  recentEntries?: Transaction[];
   onSave?: jest.Mock<Promise<void>, [EntryForm]>;
   onClose?: jest.Mock;
 } = {}) => {
@@ -63,17 +80,30 @@ const renderModal = async ({
       onSave={onSave}
       onClose={onClose}
       mode={mode}
+      isEdit={isEdit}
       aiReview={aiReview}
       accounts={accounts}
+      recentEntries={recentEntries}
     />
   );
 
   return { ...result, onSave, onClose };
 };
 
+type FindByTestId = Awaited<ReturnType<typeof render>>['findByTestId'];
+
+/** Taps digits on the custom keypad, left to right. */
+const typeAmount = async (findByTestId: FindByTestId, digits: string): Promise<void> => {
+  for (const digit of digits) {
+    await fireEvent.press(await findByTestId(`amount-key-${digit}`));
+  }
+};
+
 describe('TransactionFormModal', () => {
   it('saves edited confirmation fields', async () => {
-    const { findByTestId, onSave } = await renderModal();
+    // The full form, not the amount-first capture path — that is what an edit
+    // and an AI draft both render.
+    const { findByTestId, onSave } = await renderModal({ isEdit: true });
 
     await fireEvent.changeText(await findByTestId('entry-title-input'), 'Team lunch');
     await fireEvent.changeText(await findByTestId('entry-amount-input'), '325.50');
@@ -100,7 +130,9 @@ describe('TransactionFormModal', () => {
     });
 
     expect(await findByText('AI draft')).toBeTruthy();
-    expect(await findByText('Check: Date, Account, Merchant')).toBeTruthy();
+    // The flagged fields are named by their own cards now, so the banner
+    // carries the count and the trust line and nothing else.
+    expect(await findByText('3 fields to check')).toBeTruthy();
     expect(await findByText('Which account paid for this?')).toBeTruthy();
     expect(await findByText('AI suggestions are never saved until you confirm.')).toBeTruthy();
   });
@@ -140,6 +172,7 @@ describe('TransactionFormModal', () => {
 
   it('validates required fields before saving', async () => {
     const { findByTestId, findByText, onSave } = await renderModal({
+      mode: 'audio',
       initialData: {
         ...completeInitialData,
         title: '',
@@ -215,5 +248,314 @@ describe('TransactionFormModal', () => {
     expect(await findByText('Automatic schedule')).toBeTruthy();
     expect(await findByText('Autopay')).toBeTruthy();
     expect(queryByText('Remind before')).toBeNull();
+  });
+});
+
+describe('TransactionFormModal — amount-first manual entry', () => {
+  const blankEntry: Partial<EntryForm> = {
+    title: '',
+    amount: '',
+    type: 'Expense',
+    mode: 'Cash',
+    category: 'Food & Drinks',
+    date: formatDateLabel(new Date()),
+    time: '9:00 AM',
+    notes: '',
+    tag: 'General',
+    currency: 'INR',
+    accountId: null,
+    account: '',
+    merchant: '',
+    attachment: null,
+  };
+
+  it('opens on the keypad, with no system-keyboard amount field and save held back', async () => {
+    const { findByTestId, queryByTestId } = await renderModal({ initialData: blankEntry });
+
+    expect(await findByTestId('amount-key-1')).toBeTruthy();
+    expect(await findByTestId('entry-amount-display')).toBeTruthy();
+    // The decimal-pad TextInput belongs to the full form, which is collapsed.
+    expect(queryByTestId('entry-amount-input')).toBeNull();
+    expect(queryByTestId('entry-title-input')).toBeNull();
+    expect(await findByTestId('entry-save-button')).toBeDisabled();
+  });
+
+  it('saves a keypad amount, defaulting every other field', async () => {
+    const { findByTestId, onSave } = await renderModal({ initialData: blankEntry });
+
+    await typeAmount(findByTestId, '325');
+    expect(await findByTestId('entry-save-button')).not.toBeDisabled();
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        amount: '325',
+        // Nothing was typed, so the category stands in — which is what the feed
+        // would have shown for a blank title anyway.
+        title: 'Food & Drinks',
+        category: 'Food & Drinks',
+        date: formatDateLabel(new Date()),
+        accountId: 1,
+      })
+    );
+  });
+
+  it('stops at two decimal places', async () => {
+    const { findByTestId, onSave } = await renderModal({ initialData: blankEntry });
+
+    await typeAmount(findByTestId, '4');
+    await fireEvent.press(await findByTestId('amount-key-.'));
+    await typeAmount(findByTestId, '507');
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ amount: '4.50' }));
+  });
+
+  it('fills title, merchant, category, mode and account from one recent chip', async () => {
+    const { findByTestId, onSave } = await renderModal({
+      initialData: blankEntry,
+      accounts: [cashAccount, upiAccount],
+      recentEntries: [
+        recentEntry({
+          id: '9',
+          title: 'DMart groceries',
+          merchant: 'DMart',
+          category: 'Shopping',
+          mode: 'UPI',
+          accountId: 2,
+          accountName: 'HDFC UPI',
+        }),
+      ],
+    });
+
+    await fireEvent.press(await findByTestId('quick-fill-merchant:dmart'));
+    await typeAmount(findByTestId, '90');
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        amount: '90',
+        title: 'DMart groceries',
+        merchant: 'DMart',
+        category: 'Shopping',
+        mode: 'UPI',
+        accountId: 2,
+        account: 'HDFC UPI',
+      })
+    );
+  });
+
+  it('backdates from the chip row without opening a calendar', async () => {
+    const { findByTestId, onSave } = await renderModal({ initialData: blankEntry });
+
+    await fireEvent.press(await findByTestId('entry-date-yesterday'));
+    await typeAmount(findByTestId, '60');
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ date: formatDateLabel(yesterday) })
+    );
+  });
+
+  it('swaps the keypad for the full form under More details', async () => {
+    const { findByTestId, queryByTestId } = await renderModal({ initialData: blankEntry });
+
+    await fireEvent.press(await findByTestId('entry-more-details-toggle'));
+
+    // Two keyboards cannot share the same space, so the pad stands down.
+    expect(queryByTestId('amount-key-1')).toBeNull();
+    expect(await findByTestId('entry-title-input')).toBeTruthy();
+    expect(await findByTestId('entry-amount-input')).toBeTruthy();
+    expect(await findByTestId('entry-category-picker')).toBeTruthy();
+  });
+});
+
+describe('TransactionFormModal — AI draft review', () => {
+  it('shows the phrase the draft was built from', async () => {
+    const { findByText, findByTestId } = await renderModal({
+      mode: 'audio',
+      aiReview: { sourceText: 'spent 250 on lunch at the cafe', inputSource: 'voice' },
+    });
+
+    expect(await findByText('You said')).toBeTruthy();
+    expect(await findByTestId('draft-source-text')).toHaveTextContent(
+      '“spent 250 on lunch at the cafe”'
+    );
+  });
+
+  it('puts uncertain fields above the fold and folds the rest into one line', async () => {
+    const { findByTestId, queryByTestId } = await renderModal({
+      mode: 'audio',
+      aiReview: { missingFields: ['account_hint'], confidence: { category: 0.3 } },
+    });
+
+    // What the AI guessed at gets its own card...
+    expect(await findByTestId('entry-account-picker')).toBeTruthy();
+    expect(await findByTestId('entry-category-picker')).toBeTruthy();
+    // ...and what it was sure about is one line until the user asks for it.
+    // Mode, then date, then who took the money — the flagged category is
+    // absent because it is already a card in full above.
+    expect(await findByTestId('draft-summary-line')).toHaveTextContent(
+      'Cash · 11 July 2026 · Cafe · Lunch'
+    );
+    expect(queryByTestId('entry-title-input')).toBeNull();
+
+    await fireEvent.press(await findByTestId('draft-summary-toggle'));
+
+    expect(await findByTestId('entry-title-input')).toBeTruthy();
+    expect(await findByTestId('entry-merchant-input')).toBeTruthy();
+  });
+
+  it('answers the Check this chip once the field has been opened', async () => {
+    const { findByText, findByTestId } = await renderModal({
+      mode: 'audio',
+      aiReview: { confidence: { category: 0.3 } },
+    });
+
+    expect(await findByText('1 field to check')).toBeTruthy();
+    expect(await findByText('Check this')).toBeTruthy();
+
+    await fireEvent.press(await findByTestId('entry-category-picker'));
+
+    expect(await findByText('Checked')).toBeTruthy();
+    expect(await findByText('No issues flagged')).toBeTruthy();
+  });
+
+  it('surfaces a required field the parser left blank but did not report', async () => {
+    const { findByTestId } = await renderModal({
+      mode: 'audio',
+      aiReview: { confidence: { title: 0.99 } },
+      initialData: { ...completeInitialData, title: '' },
+    });
+
+    // Save refuses without a title, so it cannot sit inside a collapsed
+    // summary however sure the parser claims to be.
+    expect(await findByTestId('entry-title-input')).toBeTruthy();
+  });
+
+  it('saves an amount corrected on the review headline', async () => {
+    const { findByTestId, onSave } = await renderModal({
+      mode: 'audio',
+      aiReview: { confidence: { amount: 0.4 } },
+    });
+
+    await fireEvent.changeText(await findByTestId('entry-amount-input'), '325.50');
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ amount: '325.50' }));
+  });
+
+  it('leaves the manual and edit sheets on the stacked form', async () => {
+    const { findByTestId, queryByTestId } = await renderModal({ isEdit: true });
+
+    expect(await findByTestId('entry-more-details-toggle')).toBeTruthy();
+    expect(queryByTestId('draft-summary-toggle')).toBeNull();
+  });
+});
+
+describe('TransactionFormModal — parse choreography', () => {
+  beforeEach(() => {
+    jest.mocked(Haptics.notificationAsync).mockClear();
+  });
+
+  it('holds the shape of the draft while the parse is still in flight', async () => {
+    const { queryByTestId } = await render(
+      <TransactionFormModal
+        visible
+        isParsing
+        mode="audio"
+        initialData={{}}
+        onSave={jest.fn()}
+        onClose={jest.fn()}
+        accounts={[cashAccount]}
+      />
+    );
+
+    // Placeholders shaped like the fields, not a spinner and not a blank sheet.
+    expect(queryByTestId('draft-skeleton')).toBeTruthy();
+    // And emphatically not the draft itself: an amount field rendered off an
+    // empty parse would invite the user to edit a value that is about to be
+    // overwritten.
+    expect(queryByTestId('entry-amount-input')).toBeNull();
+  });
+
+  it('replaces the placeholders with the parsed draft when it lands', async () => {
+    // One array identity across both renders, deliberately. A fresh `accounts`
+    // literal per render rebuilds the sheet's account resolver, which rebuilds
+    // the seeding callback, which hides the bug this test exists for: on device
+    // `accounts` is stable, the callback is not rebuilt, and a captured
+    // `initialData` stays empty — the draft landed with a blank amount.
+    const stableAccounts = [cashAccount];
+    const onSave = jest.fn();
+    const onClose = jest.fn();
+
+    const { queryByTestId, findByTestId, rerender } = await render(
+      <TransactionFormModal
+        visible
+        isParsing
+        mode="audio"
+        initialData={{}}
+        onSave={onSave}
+        onClose={onClose}
+        accounts={stableAccounts}
+      />
+    );
+
+    expect(queryByTestId('draft-skeleton')).toBeTruthy();
+
+    await act(async () => {
+      rerender(
+        <TransactionFormModal
+          visible
+          isParsing={false}
+          mode="audio"
+          initialData={completeInitialData}
+          onSave={onSave}
+          onClose={onClose}
+          aiReview={{ confidence: { amount: 0.9 } }}
+          accounts={stableAccounts}
+        />
+      );
+    });
+
+    expect(queryByTestId('draft-skeleton')).toBeNull();
+    // The re-seed is the point: `initialData` arrived *after* the sheet opened,
+    // and the seeding effect deliberately does not watch it.
+    expect((await findByTestId('entry-amount-input')).props.value).toBe('250.00');
+  });
+
+  it('answers a refused save on the hand, not only on the screen', async () => {
+    const { findByTestId, onSave } = await renderModal({
+      mode: 'audio',
+      initialData: { ...completeInitialData, title: '' },
+    });
+
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith('warning');
+  });
+
+  it('confirms a save on the hand once it has actually happened', async () => {
+    const { findByTestId, onSave } = await renderModal({ isEdit: true });
+
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith('success');
+  });
+
+  it('stays quiet on the hand when the save has not been attempted', async () => {
+    await renderModal({ isEdit: true });
+
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
   });
 });

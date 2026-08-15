@@ -1,21 +1,31 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useScrollToTop } from 'expo-router';
 import { cssInterop } from 'nativewind';
-import { useCallback, useState } from 'react';
-import { Image, Pressable, ScrollView, Switch, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { CreditStatusCard } from '@/components/billing/CreditStatusCard';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { Fonts, getMoodIconName } from '@/constants/theme';
 import { useAppSettingsStore } from '@/hooks/use-app-settings-store';
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
+import { clearGuestUpgradeSnooze } from '@/lib/guest-upgrade';
+import { getMonogram } from '@/lib/monogram';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
+/**
+ * Identity, plan, security, support — and nothing else.
+ *
+ * Budgets, Subscriptions and the calculators used to sit here as feature
+ * tiles, which put the paid features three taps inside a settings drawer next
+ * to the logout button. They live in the Money tab now; what is left is the
+ * four things a profile is actually for.
+ */
 export default function ProfileScreen() {
   const theme = useThemeTokens();
   const colors = theme.colors;
@@ -24,9 +34,15 @@ export default function ProfileScreen() {
   const { user, token, clearAuth } = useAuthStore();
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [isBillingLoading, setIsBillingLoading] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   const handleLogout = () => {
     clearAuth();
+    // The next session on this device starts as a guest again, and it deserves
+    // to be asked about backing its data up rather than inheriting a snooze the
+    // previous account left behind.
+    void clearGuestUpgradeSnooze();
     router.replace('/auth');
   };
   const isGuest = !!user?.is_guest;
@@ -50,18 +66,26 @@ export default function ProfileScreen() {
   const borderColor = isDark ? colors.border : 'rgba(0,0,0,0.05)';
   const iconStyle = theme.mood.iconStyle;
   const { smartSorting, setSmartSorting } = useAppSettingsStore();
-  const avatarSource = user?.profile_photo_uri
-    ? { uri: user.profile_photo_uri }
-    : require('@/assets/images/finnri_avatar.png');
+  const displayName = user?.username?.trim() || 'Guest User';
+  const monogram = getMonogram(displayName);
   const hasEmail = !!user?.email?.trim();
   const hasPhone = !!user?.phone?.trim();
   const isProfileIncomplete = !user?.username?.trim() || !hasEmail || !hasPhone;
-  const creditSummary = billingStatus?.credits;
-  const aiUsageHistorySubtitle = creditSummary
-    ? `${creditSummary.daily_credits_used}/${creditSummary.daily_limit} used today\n${creditSummary.daily_credits_remaining} daily left · ${creditSummary.total_credits_remaining} total`
-    : isBillingLoading
-      ? 'Checking usage\nand credits'
-      : 'Credits spent\non AI capture';
+
+  /**
+   * One fact, one line.
+   *
+   * This was a progress bar plus "12/50 used today", "38 daily left" and
+   * "214 total credits left" — four renderings of one number, two of which
+   * were the same number subtracted from different things. What a user wants
+   * off this screen is whether they can run another AI capture right now.
+   */
+  const credits = billingStatus?.credits;
+  const creditLine = isBillingLoading
+    ? 'Checking your balance'
+    : credits
+      ? `${credits.daily_credits_remaining} AI actions left today`
+      : 'Plans, credits and lifetime quote';
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
@@ -72,33 +96,38 @@ export default function ProfileScreen() {
       />
 
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}>
         <View className="px-6 gap-6">
+          {/* Identity */}
           <View className="items-center py-2">
-            <View className="relative">
+            {user?.profile_photo_uri ? (
               <View className="w-28 h-28 rounded-full border-4 border-white overflow-hidden shadow-sm">
                 <Image
-                  source={avatarSource}
+                  source={{ uri: user.profile_photo_uri }}
                   style={{ width: '100%', height: '100%' }}
                   resizeMode="cover"
                 />
               </View>
+            ) : (
               <View
-                className="absolute bottom-1 right-1 w-7 h-7 rounded-full border-2 border-white items-center justify-center"
-                style={{ backgroundColor: colors.accent }}>
-                <MaterialCommunityIcons
-                  name={getMoodIconName('robot', iconStyle, true) as any}
-                  size={14}
-                  color="white"
-                />
+                accessible
+                accessibilityLabel={`${displayName} monogram`}
+                className="w-28 h-28 rounded-full items-center justify-center border-4 border-white shadow-sm"
+                style={{ backgroundColor: colors.secondary }}>
+                <TText
+                  className="text-4xl"
+                  style={{ color: colors.accent, fontFamily: Fonts.title }}>
+                  {monogram}
+                </TText>
               </View>
-            </View>
+            )}
 
             <TText
               className="text-xl mt-4 font-bold text-center px-4"
               style={{ fontFamily: Fonts.title }}>
-              {user?.username || 'Guest User'}
+              {displayName}
             </TText>
             <View className="mt-2 mb-6 items-center gap-1">
               {hasEmail && (
@@ -137,315 +166,110 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
 
-          <View style={{ gap: theme.spacing.md }}>
-            <CreditStatusCard
-              credits={billingStatus?.credits ?? null}
-              loading={isBillingLoading}
-              compact
-              onPress={() => router.push('/billing')}
-            />
+          {/* Plan */}
+          <View>
+            <SectionLabel>PLAN & AI</SectionLabel>
+
+            <View className="rounded-[32px] overflow-hidden" style={{ backgroundColor: cardColor }}>
+              <ProfileRow
+                icon="creation"
+                iconColor="#EF6C00"
+                iconSurface="#FFF3E0"
+                title="Plans & credits"
+                subtitle={creditLine}
+                borderColor={borderColor}
+                onPress={() => router.push('/billing')}
+              />
+
+              <ProfileRow
+                icon="history"
+                iconColor="#7B1FA2"
+                iconSurface="#F3E5F5"
+                title="AI usage history"
+                subtitle="What each AI action was spent on"
+                borderColor={borderColor}
+                onPress={() => router.push('/ai-usage')}
+              />
+
+              <View className="flex-row items-center p-5">
+                <View
+                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
+                  style={{ backgroundColor: colors.secondary }}>
+                  <MaterialCommunityIcons name="creation" size={20} color={colors.accent} />
+                </View>
+                <View className="flex-1 mr-3">
+                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
+                    Smart Sorting
+                  </TText>
+                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+                    Auto-apply AI category, tag, and payment suggestions
+                  </TText>
+                </View>
+                <HapticSwitch
+                  value={smartSorting}
+                  onValueChange={setSmartSorting}
+                  trackColor={{ false: '#E0E0E0', true: colors.accent }}
+                  thumbColor="white"
+                />
+              </View>
+            </View>
+
             {isGuest ? (
-              <TText className="px-1 text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+              <TText className="mt-3 px-1 text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
                 Create an account before subscribing so your plan and credits stay with you.
               </TText>
             ) : null}
           </View>
 
-          {/* Features Grid */}
-          <View className="flex-row flex-wrap justify-between gap-y-4">
-            {/* Tools */}
-            <Pressable
-              onPress={() => router.push('/tools')}
-              className="w-[48%] p-5 rounded-[32px]"
-              style={{ backgroundColor: cardColor }}>
-              <View
-                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
-                style={{ backgroundColor: '#E1F5FE' }}>
-                <MaterialCommunityIcons
-                  name={getMoodIconName('toolbox', iconStyle) as any}
-                  size={20}
-                  color="#0288D1"
-                />
-              </View>
-              <TText
-                className="text-base font-bold leading-tight"
-                style={{ fontFamily: Fonts.title }}>
-                Tools
-              </TText>
-              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                SIP & EMI{'\n'}Calculators
-              </TText>
-            </Pressable>
+          {/* Security */}
+          <View>
+            <SectionLabel>SECURITY</SectionLabel>
 
-            {/* Keep it Safe */}
-            <Pressable
-              onPress={() => router.push('/security')}
-              className="w-[48%] p-5 rounded-[32px]"
-              style={{ backgroundColor: cardColor }}>
-              <View
-                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
-                style={{ backgroundColor: '#E8F5E9' }}>
-                <MaterialCommunityIcons
-                  name={getMoodIconName('shield-check', iconStyle) as any}
-                  size={20}
-                  color="#388E3C"
-                />
-              </View>
-              <TText
-                className="text-base font-bold leading-tight"
-                style={{ fontFamily: Fonts.title }}>
-                Keep it Safe
-              </TText>
-              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                Security & Privacy{'\n'}Control
-              </TText>
-            </Pressable>
-
-            <Pressable
-              onPress={() => router.push('/budgets')}
-              className="w-[48%] p-5 rounded-[32px]"
-              style={{ backgroundColor: cardColor }}>
-              <View
-                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
-                style={{ backgroundColor: '#E0F2F1' }}>
-                <MaterialCommunityIcons name="chart-donut" size={20} color="#00796B" />
-              </View>
-              <TText
-                className="text-base font-bold leading-tight"
-                style={{ fontFamily: Fonts.title }}>
-                Budget Watch
-              </TText>
-              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                Monthly Limits{'\n'}& In-App Alerts
-              </TText>
-            </Pressable>
-
-            <Pressable
-              onPress={() => router.push('/subscriptions')}
-              className="w-[48%] p-5 rounded-[32px]"
-              style={{ backgroundColor: cardColor }}>
-              <View
-                className="w-10 h-10 rounded-2xl items-center justify-center mb-4"
-                style={{ backgroundColor: '#EDE7F6' }}>
-                <MaterialCommunityIcons name="calendar-sync-outline" size={20} color="#5E35B1" />
-              </View>
-              <TText
-                className="text-base font-bold leading-tight"
-                style={{ fontFamily: Fonts.title }}>
-                Subscriptions
-              </TText>
-              <TText className="text-xs opacity-50 mt-1" style={{ fontFamily: Fonts.body }}>
-                Bills, Apps{'\n'}& Renewal Dates
-              </TText>
-            </Pressable>
-          </View>
-
-          {/* Smart Sorting */}
-          <View
-            className="p-6 rounded-[32px] flex-row items-center justify-between"
-            style={{ backgroundColor: cardColor }}>
-            <View className="flex-1 mr-4">
-              <View className="flex-row items-center mb-4">
-                <View
-                  className="w-10 h-10 rounded-2xl items-center justify-center mr-3"
-                  style={{ backgroundColor: colors.secondary }}>
-                  <MaterialCommunityIcons name="creation" size={20} color={colors.accent} />
-                </View>
-                <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-                  Smart Sorting
-                </TText>
-              </View>
-              <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                Auto-apply AI category, tag, and payment suggestions
-              </TText>
-            </View>
-            <Switch
-              value={smartSorting}
-              onValueChange={setSmartSorting}
-              trackColor={{ false: '#E0E0E0', true: colors.accent }}
-              thumbColor="white"
-            />
-          </View>
-
-          {/* Business Section Info */}
-          <View className="mt-4">
-            <TText
-              className="text-xs tracking-widest font-bold opacity-40 mb-4 ml-2"
-              style={{ fontFamily: Fonts.body }}>
-              FINNRI AI
-            </TText>
-
-            <View
-              className="bg-white rounded-[32px] overflow-hidden"
-              style={{ backgroundColor: cardColor }}>
-              <Pressable
-                onPress={() => router.push('/billing')}
-                className="flex-row items-center p-5 border-b"
-                style={{ borderColor }}>
-                <View
-                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
-                  style={{ backgroundColor: '#FFF3E0' }}>
-                  <MaterialCommunityIcons name="creation" size={20} color="#EF6C00" />
-                </View>
-                <View className="flex-1">
-                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-                    Plans & Credits
-                  </TText>
-                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                    Trial balance, plans{'\n'}& lifetime quote
-                  </TText>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={colors.text}
-                  style={{ opacity: 0.3 }}
-                />
-              </Pressable>
-
-              <Pressable
-                onPress={() => router.push('/ai-usage')}
-                className="flex-row items-center p-5">
-                <View
-                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
-                  style={{ backgroundColor: '#F3E5F5' }}>
-                  <MaterialCommunityIcons name="history" size={20} color="#7B1FA2" />
-                </View>
-                <View className="flex-1">
-                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-                    AI Usage History
-                  </TText>
-                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                    {aiUsageHistorySubtitle}
-                  </TText>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={colors.text}
-                  style={{ opacity: 0.3 }}
-                />
-              </Pressable>
+            <View className="rounded-[32px] overflow-hidden" style={{ backgroundColor: cardColor }}>
+              <ProfileRow
+                icon={getMoodIconName('shield-check', iconStyle) as any}
+                iconColor="#388E3C"
+                iconSurface="#E8F5E9"
+                title="Keep it Safe"
+                subtitle="PIN lock, biometrics and stealth mode"
+                onPress={() => router.push('/security')}
+              />
             </View>
           </View>
 
-          {/* Business Section Info */}
-          <View className="mt-4">
-            <TText
-              className="text-xs tracking-widest font-bold opacity-40 mb-4 ml-2"
-              style={{ fontFamily: Fonts.body }}>
-              THE FINNRI CIRCLE
-            </TText>
+          {/* Support */}
+          <View>
+            <SectionLabel>SUPPORT</SectionLabel>
 
-            <View
-              className="bg-white rounded-[32px] overflow-hidden"
-              style={{ backgroundColor: cardColor }}>
-              <Pressable
-                onPress={() => router.push('/about-finnri')}
-                className="flex-row items-center p-5 border-b"
-                style={{ borderColor }}>
-                <View
-                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
-                  style={{ backgroundColor: '#FFF3E0' }}>
-                  <MaterialCommunityIcons
-                    name={getMoodIconName('information', iconStyle) as any}
-                    size={20}
-                    color="#EF6C00"
-                  />
-                </View>
-                <View className="flex-1">
-                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-                    About Finnri
-                  </TText>
-                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                    Our Story & Values
-                  </TText>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={colors.text}
-                  style={{ opacity: 0.3 }}
-                />
-              </Pressable>
-
-              <Pressable
+            <View className="rounded-[32px] overflow-hidden" style={{ backgroundColor: cardColor }}>
+              <ProfileRow
+                icon={getMoodIconName('help-circle', iconStyle) as any}
+                iconColor="#7B1FA2"
+                iconSurface="#F3E5F5"
+                title="Help & Support"
+                subtitle="Answers, contact and what's next"
+                borderColor={borderColor}
                 onPress={() => router.push('/help-support')}
-                className="flex-row items-center p-5 border-b"
-                style={{ borderColor }}>
-                <View
-                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
-                  style={{ backgroundColor: '#F3E5F5' }}>
-                  <MaterialCommunityIcons
-                    name={getMoodIconName('help-circle', iconStyle) as any}
-                    size={20}
-                    color="#7B1FA2"
-                  />
-                </View>
-                <View className="flex-1">
-                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-                    Help & Support
-                  </TText>
-                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                    Get Answers & Talk to Us
-                  </TText>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={colors.text}
-                  style={{ opacity: 0.3 }}
-                />
-              </Pressable>
+              />
 
-              <Pressable
+              <ProfileRow
+                icon="message-draw"
+                iconColor="#00796B"
+                iconSurface="#E0F2F1"
+                title="Feedback & Ideas"
+                subtitle="Suggest features or report issues"
+                borderColor={borderColor}
                 onPress={() => router.push('/feedback')}
-                className="flex-row items-center p-5 border-b"
-                style={{ borderColor }}>
-                <View
-                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
-                  style={{ backgroundColor: '#E0F2F1' }}>
-                  <MaterialCommunityIcons name="message-draw" size={20} color="#00796B" />
-                </View>
-                <View className="flex-1">
-                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-                    Feedback & Ideas
-                  </TText>
-                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                    Suggest features{'\n'}or report issues
-                  </TText>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={colors.text}
-                  style={{ opacity: 0.3 }}
-                />
-              </Pressable>
+              />
 
-              <Pressable
-                onPress={() => router.push('/upcoming')}
-                className="flex-row items-center p-5">
-                <View
-                  className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
-                  style={{ backgroundColor: '#E1F5FE' }}>
-                  <MaterialCommunityIcons name="rocket-launch-outline" size={20} color="#0288D1" />
-                </View>
-                <View className="flex-1">
-                  <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
-                    Upcoming
-                  </TText>
-                  <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
-                    Features, changes{'\n'}& bug fixes
-                  </TText>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={colors.text}
-                  style={{ opacity: 0.3 }}
-                />
-              </Pressable>
+              <ProfileRow
+                icon={getMoodIconName('information', iconStyle) as any}
+                iconColor="#EF6C00"
+                iconSurface="#FFF3E0"
+                title="About Finnri"
+                subtitle="Our story & values"
+                onPress={() => router.push('/about-finnri')}
+              />
             </View>
           </View>
 
@@ -482,5 +306,66 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <TText
+      className="text-xs tracking-widest font-bold opacity-40 mb-4 ml-2"
+      style={{ fontFamily: Fonts.body }}>
+      {children}
+    </TText>
+  );
+}
+
+type ProfileRowProps = {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  iconColor: string;
+  iconSurface: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  /** Omit on the last row of a card — a divider under nothing is a stray line. */
+  borderColor?: string;
+};
+
+function ProfileRow({
+  icon,
+  iconColor,
+  iconSurface,
+  title,
+  subtitle,
+  onPress,
+  borderColor,
+}: ProfileRowProps) {
+  const colors = useThemeTokens().colors;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      className={`flex-row items-center p-5${borderColor ? ' border-b' : ''}`}
+      style={borderColor ? { borderColor } : undefined}>
+      <View
+        className="w-10 h-10 rounded-2xl items-center justify-center mr-4"
+        style={{ backgroundColor: iconSurface }}>
+        <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
+      </View>
+      <View className="flex-1">
+        <TText className="text-base font-bold" style={{ fontFamily: Fonts.title }}>
+          {title}
+        </TText>
+        <TText className="text-xs opacity-50" style={{ fontFamily: Fonts.body }}>
+          {subtitle}
+        </TText>
+      </View>
+      <MaterialCommunityIcons
+        name="chevron-right"
+        size={20}
+        color={colors.text}
+        style={{ opacity: 0.3 }}
+      />
+    </Pressable>
   );
 }

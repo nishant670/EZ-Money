@@ -1,12 +1,15 @@
-import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
+import { Shimmer } from '@/components/ui/Shimmer';
+import { SkeletonFrame } from '@/components/ui/Skeleton';
 import { getMoodIconName } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { haptics } from '@/lib/haptics';
 import { API_BASE_URL } from '@/lib/transactions';
 
 export type QuickPrompt = {
@@ -79,7 +82,17 @@ export function QuickPrompts({
           alignItems: 'center',
         }}>
         {isLoading ? (
-          <ActivityIndicator size="small" color={theme.colors.accent} className="mx-2" />
+          // Chips, not a spinner: the strip is a fixed-height row and a spinner
+          // in it is the one place on Home that visibly resizes when its
+          // content lands.
+          <SkeletonFrame
+            label="Loading quick prompts"
+            testID="quick-prompts-skeleton"
+            style={{ flexDirection: 'row', gap: theme.spacing.sm + 2 }}>
+            {[132, 104, 148].map((width, chip) => (
+              <Shimmer key={width} width={width} height={34} radius={17} index={chip * 2} />
+            ))}
+          </SkeletonFrame>
         ) : error ? (
           <Pressable
             onPress={() => void fetchPrompts()}
@@ -93,7 +106,10 @@ export function QuickPrompts({
           prompts.map((item) => (
             <Pressable
               key={item.id}
-              onPress={() => onSelect(item)}
+              onPress={() => {
+                haptics.select();
+                onSelect(item);
+              }}
               onLongPress={() => onLongPress(item)}
               className="flex-row items-center bg-white dark:bg-gray-800 rounded-full px-5 py-2 gap-2 shadow-sm active:opacity-70 border border-gray-50 dark:border-gray-700">
               <MaterialCommunityIcons

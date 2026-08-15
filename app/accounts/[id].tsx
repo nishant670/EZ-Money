@@ -5,8 +5,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AccountDetailSkeleton } from '@/components/accounts/AccountSkeletons';
+import { CreditUsageBar } from '@/components/accounts/CreditUsageBar';
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { StateView } from '@/components/ui/StateView';
 import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Fonts } from '@/constants/theme';
@@ -15,10 +18,13 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
   accountVisuals,
   formatAccountIdentifier,
-  formatCurrency,
-  getAccountDisplayAmount,
+  getAccountHeadline,
   getCreditDueLabel,
+  getCreditUsage,
+  getLastActivityLabel,
+  getRunningBalance,
 } from '@/lib/account-display';
+import { formatMoney } from '@/lib/money';
 import {
   Account,
   AccountApiError,
@@ -34,9 +40,61 @@ import { Transaction } from '@/types/transaction';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
+/**
+ * Back, the screen's name, and the actions menu.
+ *
+ * Shared with the loading frame, where `onActions` is omitted: the menu acts on
+ * an account that has not arrived, and a button that does nothing is worse than
+ * a gap. The gap is still 44pt wide so the title stays where it will be.
+ */
+function DetailHeader({
+  onBack,
+  onActions,
+  pending = false,
+}: {
+  onBack: () => void;
+  onActions?: () => void;
+  pending?: boolean;
+}) {
+  const theme = useThemeTokens().colors;
+
+  return (
+    <View className="flex-row items-center justify-between px-6 pb-4 pt-3">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+        onPress={onBack}
+        className="h-11 w-11 items-center justify-center rounded-full"
+        style={{ backgroundColor: theme.card }}>
+        <MaterialCommunityIcons name="chevron-left" size={28} color={theme.text} />
+      </Pressable>
+      <TText
+        className="text-sm uppercase"
+        style={{ fontFamily: Fonts.title, color: theme.text, letterSpacing: 1.2 }}>
+        Account Details
+      </TText>
+      {onActions ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Account actions"
+          onPress={onActions}
+          className="h-11 w-11 items-center justify-center rounded-full">
+          {pending ? (
+            <ActivityIndicator size="small" color={theme.accent} />
+          ) : (
+            <MaterialCommunityIcons name="dots-horizontal" size={24} color="#8EA0B8" />
+          )}
+        </Pressable>
+      ) : (
+        <View className="h-11 w-11" />
+      )}
+    </View>
+  );
+}
+
 const formatActivityAmount = (transaction: Transaction) => {
   const isIncome = transaction.entryType === 'income' || transaction.amount >= 0;
-  return `${isIncome ? '+ ' : '- '}${formatCurrency(Math.abs(transaction.amount))}`;
+  return `${isIncome ? '+ ' : '- '}${formatMoney(Math.abs(transaction.amount))}`;
 };
 
 type SetupItem = {
@@ -101,7 +159,12 @@ export default function AccountDetailsScreen() {
   const accountType = account ? normalizeAccountType(account.type) : 'other';
   const isCreditCard = accountType === 'credit_card';
   const dueLabel = account ? getCreditDueLabel(account.due_day) : null;
-  const amountLabel = isCreditCard ? 'Total Due' : 'Balance';
+  // The hero was labelled "Balance"/"Total Due" over a number that was neither:
+  // a stale manual figure, or on a card the credit limit itself.
+  const headline = account ? getAccountHeadline(account) : null;
+  const creditUsage = account ? getCreditUsage(account) : null;
+  const runningBalance = account ? getRunningBalance(account) : null;
+  const lastActivity = account ? getLastActivityLabel(account) : null;
   const setupItems = useMemo<SetupItem[]>(() => {
     if (!account) return [];
     const hasProvider = Boolean(account.provider?.trim());
@@ -123,6 +186,9 @@ export default function AccountDetailsScreen() {
       return [{ label: 'Opening cash balance added', complete: hasBalance }];
     }
 
+    // "Manual balance" described a number that sat there; "opening balance" is
+    // what it actually is now that the ledger runs a balance forward from it.
+
     const providerLabel =
       accountType === 'upi' ? 'UPI app added' : accountType === 'wallet' ? 'Wallet added' : 'Provider added';
     const identifierLabel =
@@ -135,7 +201,7 @@ export default function AccountDetailsScreen() {
     return [
       { label: providerLabel, complete: hasProvider },
       { label: identifierLabel, complete: hasIdentifier },
-      { label: 'Manual balance added', complete: hasBalance },
+      { label: 'Opening balance added', complete: hasBalance },
     ];
   }, [account, accountType, isCreditCard]);
   const incompleteSetupItems = setupItems.filter((item) => !item.complete);
@@ -266,17 +332,16 @@ export default function AccountDetailsScreen() {
     );
   };
 
+  // Back and the title are known before the account is, so they are drawn for
+  // real. Only the parts that depend on which account this turns out to be are
+  // placeholders — a header that shimmers is a header claiming to be loading.
   if (isLoading && !account) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-        <View className="flex-1 justify-center">
-          <StateView
-            icon="wallet-outline"
-            title="Loading account"
-            message="Fetching account details."
-            loading
-          />
-        </View>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: theme.background }}
+        edges={['top', 'left', 'right']}>
+        <DetailHeader onBack={() => router.back()} />
+        <AccountDetailSkeleton />
       </SafeAreaView>
     );
   }
@@ -302,54 +367,29 @@ export default function AccountDetailsScreen() {
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
       <View className="flex-1" style={{ backgroundColor: theme.background }}>
-        <View className="flex-row items-center justify-between px-6 pb-4 pt-3">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            onPress={() => router.back()}
-            className="h-11 w-11 items-center justify-center rounded-full"
-            style={{ backgroundColor: theme.card }}>
-            <MaterialCommunityIcons name="chevron-left" size={28} color={theme.text} />
-          </Pressable>
-          <TText
-            className="text-sm uppercase"
-            style={{ fontFamily: Fonts.title, color: theme.text, letterSpacing: 1.2 }}>
-            Account Details
-          </TText>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Account actions"
-            onPress={openSettings}
-            className="h-11 w-11 items-center justify-center rounded-full">
-            {isPending ? (
-              <ActivityIndicator size="small" color={theme.accent} />
-            ) : (
-              <MaterialCommunityIcons name="dots-horizontal" size={24} color="#8EA0B8" />
-            )}
-          </Pressable>
-        </View>
+        <DetailHeader onBack={() => router.back()} onActions={openSettings} pending={isPending} />
 
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 30, paddingBottom: 110 }}>
-          {error && (
-            <View className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
-              <TText className="text-center text-sm text-red-600 dark:text-red-300">{error}</TText>
-            </View>
-          )}
+          {error && <ErrorBanner message={error} style={{ marginBottom: 16 }} />}
 
+          {/* Standard card surface. The one-off lavender was the only place in
+              the app using that colour, and it made a screen full of derived
+              figures look like a promotional panel. */}
           <View
-            className="items-center rounded-[34px] px-5 py-9"
+            className="items-center rounded-[34px] border px-5 py-9"
             style={{
-              backgroundColor: colorScheme === 'light' ? '#F0E3FF' : '#2B2335',
-              shadowColor: '#A855F7',
-              shadowOpacity: colorScheme === 'light' ? 0.12 : 0,
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              shadowColor: '#000000',
+              shadowOpacity: colorScheme === 'light' ? 0.06 : 0,
               shadowRadius: 24,
               shadowOffset: { width: 0, height: 16 },
             }}>
             <View
               className="h-[68px] w-[68px] items-center justify-center rounded-full"
-              style={{ backgroundColor: theme.card }}>
+              style={{ backgroundColor: visual.bg }}>
               <MaterialCommunityIcons name={visual.icon} size={30} color={visual.color} />
             </View>
 
@@ -369,15 +409,28 @@ export default function AccountDetailsScreen() {
             <TText
               className="mt-6 text-xs uppercase"
               style={{ fontFamily: Fonts.title, color: '#8EA0B8', letterSpacing: 1.4 }}>
-              {amountLabel}
+              {headline?.label}
             </TText>
             <TText
               className="mt-2 text-[38px]"
               numberOfLines={1}
               adjustsFontSizeToFit
               style={{ fontFamily: Fonts.title, color: theme.text, lineHeight: 48 }}>
-              {formatCurrency(getAccountDisplayAmount(account))}
+              {headline?.placeholder ?? formatMoney(headline?.amount ?? 0)}
             </TText>
+
+            <TText
+              className="mt-2 text-xs"
+              numberOfLines={1}
+              style={{ fontFamily: Fonts.body, color: '#8EA0B8' }}>
+              {lastActivity ? `Last activity ${lastActivity}` : 'No transactions yet'}
+            </TText>
+
+            {creditUsage && (
+              <View className="w-full px-2">
+                <CreditUsageBar usage={creditUsage} trackColor={theme.secondary} />
+              </View>
+            )}
 
             {isCreditCard && dueLabel && (
               <View className="mt-6 flex-row items-center gap-2 rounded-full border border-red-200 bg-red-50 px-5 py-3">
@@ -388,6 +441,8 @@ export default function AccountDetailsScreen() {
               </View>
             )}
           </View>
+
+          {account.summary && <AccountFigures account={account} runningBalance={runningBalance} />}
 
           <View className="mt-7 flex-row gap-3">
             <DetailActionButton
@@ -594,6 +649,89 @@ export default function AccountDetailsScreen() {
         />
       </View>
     </SafeAreaView>
+  );
+}
+
+/**
+ * The figures behind the hero, so the headline can be checked rather than
+ * believed — and so the opening balance the user typed is still visible, now
+ * labelled as the starting point it actually is.
+ */
+function AccountFigures({
+  account,
+  runningBalance,
+}: {
+  account: Account;
+  runningBalance: number | null;
+}) {
+  const theme = useThemeTokens().colors;
+  const summary = account.summary;
+  if (!summary) return null;
+
+  const isCreditCard = normalizeAccountType(account.type) === 'credit_card';
+  const opening = account.balance ?? 0;
+
+  const rows: { label: string; value: string; muted?: boolean }[] = [
+    {
+      label: 'Spent this month',
+      value: formatMoney(summary.spent_this_month),
+    },
+  ];
+
+  if (summary.received_this_month > 0) {
+    rows.push({
+      label: isCreditCard ? 'Paid off this month' : 'Money in this month',
+      value: formatMoney(summary.received_this_month),
+    });
+  }
+
+  rows.push({
+    label: 'Transactions this month',
+    value: String(summary.entries_this_month),
+    muted: true,
+  });
+
+  if (opening !== 0) {
+    rows.push({
+      label: isCreditCard ? 'Owed before tracking' : 'Opening balance',
+      value: formatMoney(opening),
+      muted: true,
+    });
+  }
+
+  if (runningBalance !== null) {
+    rows.push({ label: 'Running balance', value: formatMoney(runningBalance) });
+  }
+
+  rows.push({
+    label: 'Spent all time',
+    value: formatMoney(summary.lifetime_spent),
+    muted: true,
+  });
+
+  return (
+    <View
+      className="mt-7 rounded-[26px] border px-5 py-5"
+      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+      {rows.map((row, index) => (
+        <View
+          key={row.label}
+          className="flex-row items-center justify-between gap-4"
+          style={{ marginTop: index === 0 ? 0 : 12 }}>
+          <TText
+            className="min-w-0 flex-1 text-sm"
+            style={{ fontFamily: Fonts.body, color: row.muted ? '#7C8EA8' : theme.text }}>
+            {row.label}
+          </TText>
+          <TText
+            className="text-sm"
+            numberOfLines={1}
+            style={{ fontFamily: Fonts.title, color: row.muted ? '#7C8EA8' : theme.text }}>
+            {row.value}
+          </TText>
+        </View>
+      ))}
+    </View>
   );
 }
 

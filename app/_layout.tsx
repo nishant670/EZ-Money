@@ -5,11 +5,13 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import React, { useEffect, useMemo, useState } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { FinnriSplashScreen } from '@/components/SplashScreen';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { installApiSessionGuard } from '@/lib/api-session';
 import { hasCompletedOnboarding } from '@/lib/onboarding';
@@ -25,6 +27,7 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { setColorScheme } = useNativeWindColorScheme();
   const themeTokens = useThemeTokens();
+  const motion = useMotion();
   const [isAppReady, setIsAppReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
   const { clearAuth, token } = useAuthStore();
@@ -136,13 +139,26 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={navigationTheme}>
+    // The gesture layer the audit found missing entirely. `react-native-gesture-handler`
+    // has been a dependency all along — react-navigation pulls it in — but nothing in
+    // the app had ever imported it, and on Android its handlers do nothing at all
+    // unless a `GestureHandlerRootView` is above them. One root here, so a row on any
+    // screen can be swiped without each screen remembering to provide one.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={navigationTheme}>
       {showCustomSplash && <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />}
       <Stack
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
-          animationDuration: 280,
+          // A native stack has one duration for both directions, so the two
+          // halves of the `sheet` token cannot both apply — and the exit is the
+          // half that binds. A push that is slightly quicker than the vocabulary
+          // asks for costs nothing; a pop held to entrance length is the lag
+          // `EXIT_RATIO` exists to prevent, on the one gesture the user makes
+          // most. 240ms is `sheet`'s exit exactly, which is also the number the
+          // audit asked for, arrived at from the tokens rather than by hand.
+          animationDuration: motion.exitDuration('sheet'),
           gestureEnabled: true,
           fullScreenGestureEnabled: true,
           contentStyle: { backgroundColor: themeTokens.colors.background },
@@ -183,8 +199,23 @@ export default function RootLayout() {
         <Stack.Screen name="help-support" />
         <Stack.Screen name="feedback" />
         <Stack.Screen name="upcoming" />
+        {/* The one screen in the app that does not slide, and C9 is the reason.
+            Its icon and amount are drawn on top of where the tapped row's were
+            and released towards where they belong, and two elements can only
+            read as one object if the screens behind them are not also sliding
+            past each other — a push turns the travel into two things moving in
+            different directions at once.
+
+            Under reduced motion there is no travel to coordinate, so the screen
+            goes back to the push every other screen uses. That is the degrade
+            the task asks for: the plain push, not a half-played transition. */}
+        <Stack.Screen
+          name="entry/[id]"
+          options={{ animation: motion.reduced ? 'slide_from_right' : 'fade' }}
+        />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-    </ThemeProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

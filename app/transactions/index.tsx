@@ -1,21 +1,49 @@
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { TransactionItem } from '@/components/home/TransactionItem';
+import { TransactionItem, type RowOrigin } from '@/components/home/TransactionItem';
 import { ThemedText } from '@/components/themed-text';
 import { AdvancedFilter } from '@/components/transactions/AdvancedFilter';
+import { TransactionListSkeleton } from '@/components/transactions/TransactionListSkeleton';
 import { Colors } from '@/constants/theme';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { encodeFrame } from '@/hooks/use-shared-element';
 import { StateView } from '@/components/ui/StateView';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useMotion } from '@/hooks/use-motion';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { useUndoableDelete } from '@/hooks/use-undoable-delete';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
-import { subscribeTransactionsChanged } from '@/lib/transaction-events';
-import { groupTransactionsBySection, loadTransactions } from '@/lib/transactions';
+import { deleteEntry } from '@/lib/entries';
+import { shareTransactionExport, type ExportFormat } from '@/lib/export';
+import { haptics } from '@/lib/haptics';
+import { formatMoney, toAmountString } from '@/lib/money';
+import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
+import {
+  groupTransactionsBySection,
+  isAmountSort,
+  loadTransactionPage,
+} from '@/lib/transactions';
+import {
+  clearFilterFields,
+  describeFilters,
+  emptyFilterState,
+  isFilterActive as hasFilterConstraints,
+  toTransactionFilters,
+  type TransactionFilterState,
+} from '@/lib/transaction-filters';
 import { Transaction } from '@/types/transaction';
 
 const needsTransactionReview = (transaction: Transaction) => {
@@ -26,15 +54,29 @@ const needsTransactionReview = (transaction: Transaction) => {
 export default function TransactionsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const motion = useMotion();
   const { token } = useAuthStore();
-  const { accountId: accountIdParam, review, start_date: routeStartDate, end_date: routeEndDate } = useLocalSearchParams<{
+  const {
+    accountId: accountIdParam,
+    review,
+    start_date: routeStartDate,
+    end_date: routeEndDate,
+    category: routeCategory,
+    type: routeType,
+  } = useLocalSearchParams<{
     accountId?: string;
     review?: string;
     start_date?: string;
     end_date?: string;
+    category?: string;
+    type?: string;
   }>();
   const routeAccountId = accountIdParam ? Number(accountIdParam) : null;
   const reviewMode = review === '1';
+  // The Insights charts plot expenses, so they arrive asking for expenses. An
+  // unrecognised value is dropped rather than guessed at.
+  const routeFilterType =
+    routeType === 'Expense' || routeType === 'Income' ? routeType : null;
 
   // Logic States
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -44,27 +86,49 @@ export default function TransactionsScreen() {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
 
-  // Filter States
+  // Filter State — one object, the same shape the sheet edits and
+  // `toTransactionFilters` turns into a query.
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filterType, setFilterType] = useState<'Expense' | 'Income' | 'All'>('All');
-  const [minAmount, setMinAmount] = useState(0);
-  const [maxAmount, setMaxAmount] = useState(10000);
-  const [startDate, setStartDate] = useState<string | null>(routeStartDate ?? null);
-  const [endDate, setEndDate] = useState<string | null>(routeEndDate ?? null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(
-    Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null
+  const [filters, setFilters] = useState<TransactionFilterState>(() => ({
+    ...emptyFilterState,
+    type: routeFilterType ?? 'All',
+    category: routeCategory ?? null,
+    accountId: Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null,
+    startDate: routeStartDate ?? null,
+    endDate: routeEndDate ?? null,
+  }));
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+  const [matchCount, setMatchCount] = useState(0);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const patchFilters = useCallback(
+    (updates: Partial<TransactionFilterState>) =>
+      setFilters((prev) => ({ ...prev, ...updates })),
+    []
   );
 
   useEffect(() => {
-    setSelectedAccountId(Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null);
-  }, [routeAccountId]);
+    patchFilters({
+      accountId: Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null,
+    });
+  }, [patchFilters, routeAccountId]);
 
   useEffect(() => {
-    setStartDate(routeStartDate ?? null);
-    setEndDate(routeEndDate ?? null);
-  }, [routeEndDate, routeStartDate]);
+    patchFilters({ startDate: routeStartDate ?? null, endDate: routeEndDate ?? null });
+  }, [patchFilters, routeEndDate, routeStartDate]);
+
+  // Arriving from a chart replaces the category and type filters rather than
+  // merging with them: the screen can already be mounted with a stale category
+  // chosen by hand, and the tap has to land on what the bar or slice showed.
+  useEffect(() => {
+    patchFilters({ category: routeCategory ?? null });
+  }, [patchFilters, routeCategory]);
+
+  useEffect(() => {
+    patchFilters({ type: routeFilterType ?? 'All' });
+  }, [patchFilters, routeFilterType]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
@@ -77,40 +141,53 @@ export default function TransactionsScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      const filters = {
+      const page = await loadTransactionPage(token, {
+        ...toTransactionFilters(filters),
         q: debouncedSearchQuery || undefined,
-        type: filterType === 'All' ? undefined : filterType,
-        category: selectedCategory ?? undefined,
-        mode: selectedMethod ?? undefined,
-        account_id: selectedAccountId ?? undefined,
-        // Only send amount filter if it differs from default range
-        min_amount: minAmount > 0 ? minAmount : undefined,
-        max_amount: maxAmount < 10000 ? maxAmount : undefined,
-        start_date: startDate ?? undefined,
-        end_date: endDate ?? undefined,
         page: 1,
         page_size: 100,
-      };
-      const mapped = await loadTransactions(token, filters);
-      setTransactions(reviewMode ? mapped.filter(needsTransactionReview) : mapped);
+      });
+      setTransactions(
+        reviewMode ? page.transactions.filter(needsTransactionReview) : page.transactions
+      );
+      setCategoryCounts(page.categoryCounts);
+      setMatchCount(page.total);
     } catch (err) {
       setError(getFriendlyErrorMessage(err, 'Unable to load transactions.'));
     } finally {
       setIsLoading(false);
     }
-  }, [
-    token,
-    filterType,
-    selectedCategory,
-    selectedMethod,
-    selectedAccountId,
-    minAmount,
-    maxAmount,
-    startDate,
-    endDate,
-    debouncedSearchQuery,
-    reviewMode,
-  ]);
+  }, [token, filters, debouncedSearchQuery, reviewMode]);
+
+  /**
+   * Export what the list is currently showing.
+   *
+   * The same filter state the list was built from goes to the server, so the
+   * file answers the question on screen rather than "everything you have ever
+   * logged" — an export that quietly widened its own scope would be worse than
+   * no export, because nothing about the resulting file says it did.
+   */
+  const runExport = useCallback(
+    async (format: ExportFormat) => {
+      if (!token || exportingFormat) return;
+      setExportingFormat(format);
+      setExportError(null);
+      try {
+        await shareTransactionExport(token, format, {
+          ...toTransactionFilters(filters),
+          q: debouncedSearchQuery || undefined,
+        });
+        haptics.saved();
+        setIsExportOpen(false);
+      } catch (err) {
+        haptics.rejected();
+        setExportError(getFriendlyErrorMessage(err, 'Unable to export these transactions.'));
+      } finally {
+        setExportingFormat(null);
+      }
+    },
+    [debouncedSearchQuery, exportingFormat, filters, token]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -131,27 +208,62 @@ export default function TransactionsScreen() {
     [load]
   );
 
-  const isFilterActive = useMemo(() => {
-    return (
-      filterType !== 'All' ||
-      selectedCategory !== null ||
-      selectedMethod !== null ||
-      selectedAccountId !== null ||
-      minAmount > 0 ||
-      maxAmount < 10000 ||
-      startDate !== null ||
-      endDate !== null
-    );
-  }, [
-    filterType,
-    selectedCategory,
-    selectedMethod,
-    selectedAccountId,
-    minAmount,
-    maxAmount,
-    startDate,
-    endDate,
-  ]);
+  const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+
+  /**
+   * The delete is held, not sent — see `useUndoableDelete` for why a reversal
+   * would not be one against a hard-deleting endpoint. This screen only supplies
+   * what happens when the window closes.
+   */
+  const { pending: pendingDelete, request: requestDelete, undo: undoDelete, commit: commitDelete } =
+    useUndoableDelete<Transaction>((target) => {
+      setOpenSwipeId(null);
+      if (!token) return;
+      void deleteEntry(token, target.id)
+        .then(() => {
+          setTransactions((prev) => prev.filter((entry) => entry.id !== target.id));
+          setMatchCount((prev) => Math.max(0, prev - 1));
+          notifyTransactionsChanged();
+        })
+        .catch((err) => {
+          // Nothing to put back on the server — the row was hidden, never
+          // deleted, which is the point of holding the call. The next load
+          // returns it; this only has to say the delete did not happen.
+          setError(getFriendlyErrorMessage(err, 'Unable to delete that transaction.'));
+        });
+    });
+
+  const isFilterActive = useMemo(() => hasFilterConstraints(filters), [filters]);
+
+  const accountNameFor = useCallback(
+    (id: number) => accounts.find((account) => account.id === id)?.name,
+    [accounts]
+  );
+
+  /**
+   * Every applied filter, as a removable chip.
+   *
+   * This replaces the banner that only ever described what a chart handed over.
+   * The old one was honest about its own scope but left a filter chosen by hand
+   * invisible the moment the sheet closed — the state was real and nothing on
+   * screen said so.
+   */
+  const appliedChips = useMemo(
+    () => (reviewMode ? [] : describeFilters(filters, accountNameFor)),
+    [accountNameFor, filters, reviewMode]
+  );
+
+  const clearRouteParams = useCallback(() => {
+    if (reviewMode || routeStartDate || routeEndDate || routeCategory || routeFilterType) {
+      router.setParams({
+        review: undefined,
+        start_date: undefined,
+        end_date: undefined,
+        category: undefined,
+        type: undefined,
+      });
+    }
+  }, [reviewMode, routeCategory, routeEndDate, routeFilterType, routeStartDate]);
 
   const hasSearchQuery = searchQuery.trim().length > 0 || debouncedSearchQuery.length > 0;
   const hasActiveConstraints = isFilterActive || hasSearchQuery || reviewMode;
@@ -159,30 +271,87 @@ export default function TransactionsScreen() {
   const clearFilters = useCallback(() => {
     setSearchQuery('');
     setDebouncedSearchQuery('');
-    setFilterType('All');
-    setSelectedCategory(null);
-    setSelectedMethod(null);
-    setSelectedAccountId(null);
-    setMinAmount(0);
-    setMaxAmount(10000);
-    setStartDate(null);
-    setEndDate(null);
-    if (reviewMode || routeStartDate || routeEndDate) {
-      router.setParams({ review: undefined, start_date: undefined, end_date: undefined });
-    }
-  }, [reviewMode, routeEndDate, routeStartDate]);
+    setFilters((prev) => ({ ...emptyFilterState, sort: prev.sort }));
+    clearRouteParams();
+  }, [clearRouteParams]);
 
-  const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
+  /**
+   * Sorting by amount ranks the whole filtered set, and the day sections cannot
+   * survive that: `groupTransactionsBySection` re-sorts inside each day and
+   * orders the days by date, so "highest" would show the biggest expense of
+   * *today* first and the biggest of the month somewhere further down. When the
+   * sort is money rather than time, the list goes flat and each row carries its
+   * own date instead.
+   */
+  const isRankedByAmount = isAmountSort(filters.sort);
+  const sections = useMemo(
+    () => (isRankedByAmount ? [] : groupTransactionsBySection(transactions)),
+    [isRankedByAmount, transactions]
+  );
 
-  const calculateDailyTotal = (items: Transaction[]) => {
-    return items.reduce((sum, item) => sum + item.amount, 0);
-  };
+  // Navigating away commits too — the hook covers unmount and backgrounding,
+  // but pushing the detail screen leaves this one mounted and merely blurred.
+  useFocusEffect(useCallback(() => () => commitDelete(), [commitDelete]));
 
-  const renderTransactionCard = useCallback((item: Transaction) => {
+  /**
+   * Where each day's rows start in the list as a whole.
+   *
+   * The stagger has to count down the screen, not restart at every date
+   * heading: `Motion.stagger.list` caps at the eighth row precisely so a long
+   * list stops cascading, and a per-section index hands row 8 of section 3 the
+   * same delay as row 8 of section 1 — the cascade comes back, once per day.
+   */
+  const sectionOffsets = useMemo(() => {
+    let seen = 0;
+    return sections.map((section) => {
+      const offset = seen;
+      seen += section.data.length;
+      return offset;
+    });
+  }, [sections]);
+
+  // A row on its way out is already spent as far as the screen is concerned, so
+  // the day's total drops with it rather than waiting for the API call the
+  // window is holding back. Undo puts both back together.
+  const calculateDailyTotal = (items: Transaction[]) =>
+    items.reduce(
+      (sum, item) => (item.id === pendingDelete?.id ? sum : sum + item.amount),
+      0
+    );
+
+  const openDetail = useCallback((item: Transaction, edit?: boolean, origin?: RowOrigin) => {
+    router.push({
+      pathname: '/entry/[id]',
+      params: {
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        amount: toAmountString(Math.abs(item.amount)),
+        entryType: item.entryType ?? 'expense',
+        section: item.section,
+        mode: item.mode ?? '',
+        notes: item.notes ?? '',
+        merchant: item.merchant ?? '',
+        dateLabel: item.dateLabel ?? '',
+        rawDate: item.rawDate ?? '',
+        tag: item.tag ?? '',
+        // Edit is the detail screen's job — it owns the form, the receipt upload
+        // and the split editor. Building a second one here to save a push would
+        // be two edit screens to keep in step.
+        ...(edit ? { edit: '1' } : {}),
+        // C9: where the row's icon and amount were when it was tapped. Absent
+        // when Edit was used — that push lands on a sheet, and an icon flying
+        // to a place the sheet is about to cover is motion with nothing to say.
+        ...(origin?.icon && !edit ? { originIcon: encodeFrame(origin.icon) } : {}),
+        ...(origin?.amount && !edit ? { originAmount: encodeFrame(origin.amount) } : {}),
+      },
+    });
+  }, []);
+
+  const renderTransactionCard = useCallback(
+    (item: Transaction, index: number) => {
     const isIncome = item.entryType === 'income' || item.amount >= 0;
-    const displayAmount = Math.abs(item.amount).toFixed(2);
-    // Date formatting for subtitle or similar if needed,
-    // but the design shows specific layout. Reusing TransactionItem for consistency.
+    const magnitude = Math.abs(item.amount);
 
     return (
       <TransactionItem
@@ -191,33 +360,28 @@ export default function TransactionsScreen() {
         title={item.name}
         category={item.category}
         subtitle={item.accountName ?? item.mode ?? ''}
-        amount={`${displayAmount}`}
-        date={''}
+        amount={magnitude}
+        // A flat, amount-ranked list has no section heading to date it, so the
+        // row has to carry its own.
+        date={isRankedByAmount ? (item.section ?? item.dateLabel ?? '') : ''}
         color={item.color}
         bgColor={item.bgColor}
         isIncome={isIncome}
-        onPress={() =>
-          router.push({
-            pathname: '/entry/[id]',
-            params: {
-              id: item.id,
-              name: item.name,
-              category: item.category,
-              amount: displayAmount,
-              entryType: item.entryType ?? 'expense',
-              section: item.section,
-              mode: item.mode ?? '',
-              notes: item.notes ?? '',
-              merchant: item.merchant ?? '',
-              dateLabel: item.dateLabel ?? '',
-              rawDate: item.rawDate ?? '',
-              tag: item.tag ?? '',
-            },
-          })
-        }
+        entranceIndex={index}
+        onEdit={() => {
+          setOpenSwipeId(null);
+          openDetail(item, true);
+        }}
+        onDelete={() => requestDelete(item)}
+        swipeOpen={openSwipeId === item.id}
+        onSwipeOpenChange={(open) => setOpenSwipeId(open ? item.id : null)}
+        collapsed={pendingDelete?.id === item.id}
+        onPress={(origin) => openDetail(item, false, origin)}
       />
     );
-  }, []);
+    },
+    [isRankedByAmount, openDetail, openSwipeId, pendingDelete, requestDelete]
+  );
 
   return (
     <SafeAreaView
@@ -235,7 +399,17 @@ export default function TransactionsScreen() {
         <ThemedText className="text-base font-bold" style={{ color: theme.text }}>
           &nbsp; {reviewMode ? 'Needs Review' : 'Your Money Story'}&nbsp;
         </ThemedText>
-        <View className="h-10 w-10"></View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Export transactions"
+          onPress={() => {
+            haptics.select();
+            setExportError(null);
+            setIsExportOpen(true);
+          }}
+          className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-gray-800">
+          <MaterialCommunityIcons name="tray-arrow-up" size={21} color={theme.text} />
+        </Pressable>
       </View>
 
       {/* Header and Search */}
@@ -273,30 +447,66 @@ export default function TransactionsScreen() {
             </View>
           </TouchableOpacity>
         </View>
+
+        {/* Every applied filter, however it was set — by the sheet, by a preset,
+            or by a tap on an Insights chart — with its own ×. Filter state that
+            is real but invisible reads as a broken list. */}
+        {appliedChips.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            className="mt-3"
+            contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
+            {appliedChips.map((chip) => (
+              <TouchableOpacity
+                key={chip.key}
+                testID={`applied-filter-${chip.key}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove filter ${chip.label}`}
+                onPress={() => {
+                  haptics.select();
+                  setFilters((prev) => clearFilterFields(prev, chip.clears));
+                  clearRouteParams();
+                }}
+                className="flex-row items-center gap-1.5 rounded-full border px-3 py-2"
+                style={{ backgroundColor: theme.secondary, borderColor: theme.accent }}>
+                <ThemedText className="text-xs font-black" style={{ color: theme.accent }}>
+                  {chip.label}
+                </ThemedText>
+                <Ionicons name="close" size={13} color={theme.accent} />
+              </TouchableOpacity>
+            ))}
+            {appliedChips.length > 1 && (
+              <TouchableOpacity
+                testID="applied-filter-clear-all"
+                accessibilityRole="button"
+                onPress={() => {
+                  haptics.select();
+                  clearFilters();
+                }}
+                className="flex-row items-center rounded-full px-3 py-2">
+                <ThemedText className="text-xs font-bold" style={{ color: '#9CA3AF' }}>
+                  Clear all
+                </ThemedText>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        )}
       </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}>
         {error && transactions.length > 0 && (
-          <View className="mx-6 mb-4 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
-            <ThemedText className="text-center text-sm font-semibold text-red-600 dark:text-red-300">
-              {error}
-            </ThemedText>
-            <TouchableOpacity className="mt-2 items-center" onPress={() => void load()}>
-              <ThemedText className="text-sm font-bold" style={{ color: theme.accent }}>
-                Retry
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
+          <ErrorBanner
+            message={error}
+            onRetry={() => void load()}
+            style={{ marginHorizontal: 24, marginBottom: 16 }}
+          />
         )}
 
         {isLoading && transactions.length === 0 ? (
-          <StateView
-            icon="history"
-            title="Loading transactions"
-            message="Fetching your latest activity."
-            loading
-          />
+          <TransactionListSkeleton />
         ) : error && transactions.length === 0 ? (
           <StateView
             icon="wifi-off"
@@ -305,7 +515,7 @@ export default function TransactionsScreen() {
             actionLabel="Try again"
             onAction={() => void load()}
           />
-        ) : sections.length === 0 ? (
+        ) : transactions.length === 0 ? (
           <StateView
             icon={hasActiveConstraints ? 'filter-off-outline' : 'receipt-text-plus-outline'}
             title={hasActiveConstraints ? 'No matching transactions' : 'No transactions yet'}
@@ -320,28 +530,52 @@ export default function TransactionsScreen() {
             onAction={hasActiveConstraints ? clearFilters : () => router.push('/(tabs)')}
           />
         ) : (
-          <>
-            {/* Dynamic Sections */}
-            {sections.map((section) => {
+          // Applying a filter leaves the previous rows on screen until the new
+          // ones arrive — the full-screen loader only covers the empty case.
+          // Without this the list spends a beat showing results that contradict
+          // the chip above it, which reads as the filter being broken.
+          <View style={{ opacity: isLoading ? 0.4 : 1 }}>
+            {isRankedByAmount && (
+              <View className="mb-3 px-6">
+                <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                  {filters.sort === 'highest' ? 'Highest first' : 'Lowest first'}
+                </ThemedText>
+              </View>
+            )}
+
+            {isRankedByAmount ? (
+              <View className="px-6">
+                {transactions.map((item, index) => renderTransactionCard(item, index))}
+              </View>
+            ) : (
+            /* Dynamic Sections */
+            sections.map((section, sectionIndex) => {
               const total = calculateDailyTotal(section.data);
               const totalColor = total >= 0 ? '#27AE60' : '#808080';
 
               return (
-                <View key={section.title} className="mb-6">
+                // A day whose only row was filtered out takes its heading with
+                // it, and everything below has to move up rather than jump.
+                <Animated.View key={section.title} layout={motion.reflow()} className="mb-6">
                   <View className="flex-row justify-between items-center px-6 mb-3">
                     <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400">
                       {section.title.toUpperCase()}
                     </ThemedText>
                     <View className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg">
                       <ThemedText className="text-xs font-bold" style={{ color: totalColor }}>
-                        {total >= 0 ? '+' : ''}₹{Math.abs(total).toFixed(2)}
+                        {formatMoney(total, { sign: 'always' })}
                       </ThemedText>
                     </View>
                   </View>
-                  <View className="px-6">{section.data.map(renderTransactionCard)}</View>
-                </View>
+                  <View className="px-6">
+                    {section.data.map((item, index) =>
+                      renderTransactionCard(item, sectionOffsets[sectionIndex] + index)
+                    )}
+                  </View>
+                </Animated.View>
               );
-            })}
+            })
+            )}
 
             {/* Footer */}
             <View className="items-center py-8 gap-3 opacity-50">
@@ -352,9 +586,11 @@ export default function TransactionsScreen() {
                 End of your story for now!
               </ThemedText>
             </View>
-          </>
+          </View>
         )}
       </ScrollView>
+
+      <UndoDeleteToast pending={pendingDelete} onUndo={undoDelete} />
 
       {/* Advanced Filters Bottom Sheet */}
       <AnimatedBottomSheet
@@ -363,29 +599,201 @@ export default function TransactionsScreen() {
         sheetStyle={{ height: '92%', width: '100%' }}>
         <AdvancedFilter
           onClose={() => setIsFilterOpen(false)}
-          count={transactions.length}
-          onApply={(newFilters: any) => {
-            setFilterType(newFilters.type);
-            setSelectedCategory(newFilters.category);
-            setSelectedMethod(newFilters.mode);
-            setSelectedAccountId(newFilters.account_id);
-            setMinAmount(newFilters.min_amount);
-            setMaxAmount(newFilters.max_amount);
-            setStartDate(newFilters.start_date);
-            setEndDate(newFilters.end_date);
+          // Rows matching the applied filters across the whole set, not the
+          // page — the badge on a filter button that says 100 when there are
+          // 154 is the kind of number that quietly teaches distrust.
+          count={matchCount}
+          onApply={(next) => {
+            setFilters(next);
+            clearRouteParams();
             setIsFilterOpen(false);
           }}
-          currentFilters={{
-            type: filterType,
-            dateRange: { from: startDate, to: endDate },
-            amountRange: { min: minAmount, max: maxAmount },
-            category: selectedCategory,
-            accountId: selectedAccountId,
-            paymentMethod: selectedMethod,
-          }}
+          currentFilters={filters}
+          categoryCounts={categoryCounts}
           accounts={accounts}
         />
       </AnimatedBottomSheet>
+
+      <AnimatedBottomSheet
+        visible={isExportOpen}
+        onClose={() => setIsExportOpen(false)}
+        sheetStyle={{ backgroundColor: theme.card, borderTopLeftRadius: 28, borderTopRightRadius: 28 }}>
+        <View className="p-6" style={{ gap: 12 }}>
+          <ThemedText className="text-lg font-black" style={{ color: theme.text }}>
+            Export
+          </ThemedText>
+          {/* The count is the scope, stated before the choice rather than
+              discovered in the file. */}
+          <ThemedText className="text-xs leading-5" style={{ color: `${theme.text}99` }}>
+            {matchCount === 1
+              ? '1 transaction matches what you are looking at.'
+              : `${matchCount} transactions match what you are looking at.`}
+            {isFilterActive || debouncedSearchQuery ? ' Your filters are included.' : ''}
+          </ThemedText>
+
+          <ExportOption
+            icon="file-delimited-outline"
+            title="Spreadsheet (CSV)"
+            subtitle="Every column, for Excel or Sheets"
+            busy={exportingFormat === 'csv'}
+            disabled={exportingFormat !== null}
+            onPress={() => void runExport('csv')}
+            theme={theme}
+          />
+          <ExportOption
+            icon="file-document-outline"
+            title="Statement (PDF)"
+            subtitle="Totals and the transaction table, ready to print"
+            busy={exportingFormat === 'pdf'}
+            disabled={exportingFormat !== null}
+            onPress={() => void runExport('pdf')}
+            theme={theme}
+          />
+
+          {exportError && (
+            <ThemedText className="text-xs font-bold" style={{ color: '#D32F2F' }}>
+              {exportError}
+            </ThemedText>
+          )}
+        </View>
+      </AnimatedBottomSheet>
     </SafeAreaView>
+  );
+}
+
+function ExportOption({
+  icon,
+  title,
+  subtitle,
+  busy,
+  disabled,
+  onPress,
+  theme,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  title: string;
+  subtitle: string;
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  theme: ReturnType<typeof useThemeTokens>['colors'];
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled, busy }}
+      disabled={disabled}
+      onPress={onPress}
+      className="min-h-16 flex-row items-center gap-3 rounded-2xl border p-4"
+      style={{
+        backgroundColor: theme.background,
+        borderColor: theme.border,
+        opacity: disabled && !busy ? 0.5 : 1,
+      }}>
+      <View
+        className="h-10 w-10 items-center justify-center rounded-xl"
+        style={{ backgroundColor: theme.secondary }}>
+        {busy ? (
+          <ActivityIndicator color={theme.accent} />
+        ) : (
+          <MaterialCommunityIcons name={icon} size={21} color={theme.accent} />
+        )}
+      </View>
+      <View className="flex-1">
+        <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
+          {title}
+        </ThemedText>
+        <ThemedText className="mt-0.5 text-xs" style={{ color: `${theme.text}99` }}>
+          {subtitle}
+        </ThemedText>
+      </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={`${theme.text}66`} />
+    </Pressable>
+  );
+}
+
+/**
+ * The only way back from a delete, so it has to be reachable.
+ *
+ * Home's save toast is `pointerEvents="none"` because it is only ever telling
+ * you something. This one is the undo — it has to take a tap, it has to clear
+ * the tab bar rather than sit under it, and it names the transaction, because
+ * "Transaction deleted" beside a list that has just closed over the gap is not
+ * enough to know *which* one you are about to bring back.
+ *
+ * It carries no countdown. A bar draining towards a destructive commit turns a
+ * five-second grace period into five seconds of pressure, and the row is
+ * already gone from the list either way.
+ */
+function UndoDeleteToast({
+  pending,
+  onUndo,
+}: {
+  pending: Transaction | null;
+  onUndo: () => void;
+}) {
+  const themeTokens = useThemeTokens();
+  const motion = useMotion();
+  const reveal = useSharedValue(0);
+  // Held so the toast can finish leaving with the name still on it — reading
+  // the prop directly would blank the label the moment Undo was pressed.
+  const [shown, setShown] = useState<Transaction | null>(null);
+
+  useEffect(() => {
+    if (pending) setShown(pending);
+  }, [pending]);
+
+  useEffect(() => {
+    if (pending) {
+      reveal.value = withTiming(1, motion.enter('base'));
+      return undefined;
+    }
+    reveal.value = withTiming(0, motion.exit('base'));
+    // Unmounted once it has finished leaving, rather than left at zero opacity:
+    // a hidden `accessibilityLiveRegion` is still a live region, and a screen
+    // reader would keep the name of a transaction that is no longer anywhere.
+    const clear = setTimeout(() => setShown(null), motion.exitDuration('base'));
+    return () => clearTimeout(clear);
+  }, [motion, pending, reveal]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: interpolate(reveal.value, [0, 1], [10, 0]) }],
+  }));
+
+  if (!shown) return null;
+
+  return (
+    <Animated.View
+      accessibilityLiveRegion="polite"
+      pointerEvents={pending ? 'auto' : 'none'}
+      className="absolute left-5 right-5 flex-row items-center justify-between rounded-2xl px-4 py-3 shadow-md"
+      style={[{ bottom: 28, backgroundColor: themeTokens.colors.text }, style]}>
+      <View className="flex-1 flex-row items-center gap-2 pr-3">
+        <MaterialCommunityIcons
+          name="trash-can-outline"
+          size={16}
+          color={themeTokens.colors.background}
+        />
+        <ThemedText
+          numberOfLines={1}
+          className="flex-1 text-xs font-bold"
+          style={{ color: themeTokens.colors.background }}>
+          Deleted {shown.name}
+        </ThemedText>
+      </View>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Undo delete"
+        onPress={onUndo}
+        hitSlop={12}>
+        <ThemedText
+          className="text-xs font-black uppercase"
+          style={{ color: themeTokens.colors.accent }}>
+          Undo
+        </ThemedText>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }

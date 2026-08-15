@@ -15,6 +15,8 @@ import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
+import { Shimmer } from '@/components/ui/Shimmer';
+import { SkeletonFrame } from '@/components/ui/Skeleton';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
@@ -27,6 +29,7 @@ import {
   type AccountType,
 } from '@/lib/accounts';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { haptics } from '@/lib/haptics';
 
 type AccountTypeOption = {
   key: AccountType;
@@ -136,6 +139,7 @@ const ACCOUNT_DETAIL_COPY: Record<
     providerLabel?: string;
     providerPlaceholder?: string;
     balanceLabel: string;
+    balanceHint: string;
     identifierLabel?: string;
     identifierPlaceholder?: string;
     identifierIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -143,13 +147,15 @@ const ACCOUNT_DETAIL_COPY: Record<
 > = {
   cash: {
     message: 'Set a starting cash amount now, or save it blank and update it later.',
-    balanceLabel: 'Cash in hand',
+    balanceLabel: 'Opening balance',
+    balanceHint: 'Cash in hand before your first logged transaction.',
   },
   upi: {
     message: 'Add the UPI app or handle you use most so scan payments stay grouped.',
     providerLabel: 'UPI app',
     providerPlaceholder: 'Search app or enter custom UPI source',
-    balanceLabel: 'Tracked balance',
+    balanceLabel: 'Opening balance',
+    balanceHint: 'What this held before your first logged transaction.',
     identifierLabel: 'UPI handle or nickname (Optional)',
     identifierPlaceholder: 'name@bank or personal UPI',
     identifierIcon: 'at',
@@ -158,7 +164,8 @@ const ACCOUNT_DETAIL_COPY: Record<
     message: 'Add the bank and last 4 digits so transfers are easier to identify.',
     providerLabel: 'Bank',
     providerPlaceholder: 'Search bank or enter custom bank',
-    balanceLabel: 'Initial balance',
+    balanceLabel: 'Opening balance',
+    balanceHint: 'What this held before your first logged transaction.',
     identifierLabel: 'Last 4 digits (Optional)',
     identifierPlaceholder: '1234',
     identifierIcon: 'numeric-4-box-outline',
@@ -167,7 +174,8 @@ const ACCOUNT_DETAIL_COPY: Record<
     message: 'Add reminders and limits so this card is easier to track.',
     providerLabel: 'Card issuer',
     providerPlaceholder: 'Search issuer (e.g. HDFC, Amex)',
-    balanceLabel: 'Current outstanding',
+    balanceLabel: 'Opening outstanding',
+    balanceHint: 'What you already owed before your first logged transaction.',
     identifierLabel: 'Last 4 digits',
     identifierPlaceholder: '••••',
     identifierIcon: 'numeric-4-box-outline',
@@ -176,7 +184,8 @@ const ACCOUNT_DETAIL_COPY: Record<
     message: 'Add the bank and last 4 digits so card spends can be categorized faster.',
     providerLabel: 'Bank',
     providerPlaceholder: 'Search bank or enter custom bank',
-    balanceLabel: 'Linked balance',
+    balanceLabel: 'Opening balance',
+    balanceHint: 'What this held before your first logged transaction.',
     identifierLabel: 'Last 4 digits (Optional)',
     identifierPlaceholder: '1234',
     identifierIcon: 'numeric-4-box-outline',
@@ -185,14 +194,16 @@ const ACCOUNT_DETAIL_COPY: Record<
     message: 'Add the wallet provider and balance to keep prepaid spends separate.',
     providerLabel: 'Wallet',
     providerPlaceholder: 'Search wallet or enter custom wallet',
-    balanceLabel: 'Wallet balance',
+    balanceLabel: 'Opening balance',
+    balanceHint: 'What this held before your first logged transaction.',
     identifierLabel: 'Wallet nickname (Optional)',
     identifierPlaceholder: 'Personal wallet',
     identifierIcon: 'wallet-outline',
   },
   other: {
     message: 'Add a balance or short identifier if this source needs extra context.',
-    balanceLabel: 'Initial balance',
+    balanceLabel: 'Opening balance',
+    balanceHint: 'What this held before your first logged transaction.',
     identifierLabel: 'Identifier (Optional)',
     identifierPlaceholder: 'Reference or nickname',
     identifierIcon: 'card-text-outline',
@@ -356,6 +367,7 @@ export default function ManageAccountScreen() {
   const handleSave = async () => {
     if (!token) return;
     if (!name) {
+      haptics.rejected();
       setSaveError('Please enter a name for the account.');
       return;
     }
@@ -377,13 +389,16 @@ export default function ManageAccountScreen() {
       };
       if (isEditing && accountId !== null) {
         await updateAccount(token, accountId, payload);
+        haptics.saved();
         router.back();
       } else {
         const savedAccount = await saveAccount(token, payload);
+        haptics.saved();
         setCreatedAccount(savedAccount);
         setStep(3);
       }
     } catch (err: unknown) {
+      haptics.rejected();
       if (err instanceof AccountApiError && err.fields?.type) {
         setStep(1);
         setTypeError('Choose an account type and try again.');
@@ -940,7 +955,12 @@ export default function ManageAccountScreen() {
             </>
           )}
 
+          {/* One name for one field. This used to be "Cash in hand", "Tracked
+              balance", "Initial balance", "Linked balance" and "Wallet balance"
+              across five account types — five words for the number Finnri now
+              runs a real balance forward from. */}
           <ThemedText style={styles.sectionTitle}>{detailCopy.balanceLabel}</ThemedText>
+          <ThemedText style={styles.fieldHint}>{detailCopy.balanceHint}</ThemedText>
           <View style={styles.inputContainer}>
             <MaterialCommunityIcons
               name="scale-balance"
@@ -1113,10 +1133,18 @@ export default function ManageAccountScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
       <View style={styles.container}>
         {isLoadingAccount ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={theme.accent} />
-            <ThemedText>Loading account...</ThemedText>
-          </View>
+          <SkeletonFrame
+            label="Loading account"
+            testID="account-form-skeleton"
+            style={{ paddingHorizontal: 24, paddingTop: 24, gap: 20 }}>
+            <Shimmer width="56%" height={26} radius={10} index={0} />
+            {[0, 1, 2, 3].map((field) => (
+              <View key={field} style={{ gap: 10 }}>
+                <Shimmer width="34%" height={10} index={field * 2 + 1} />
+                <Shimmer height={54} radius={18} index={field * 2 + 2} />
+              </View>
+            ))}
+          </SkeletonFrame>
         ) : step === 1 ? (
           renderStep1()
         ) : step === 2 ? (
@@ -1270,6 +1298,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginBottom: 16,
     color: '#2D3436',
+  },
+  fieldHint: {
+    fontSize: 12,
+    fontFamily: Fonts.body,
+    marginTop: -10,
+    marginBottom: 12,
+    color: '#7C8EA8',
   },
   labelSmall: {
     fontSize: 14,

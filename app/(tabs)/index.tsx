@@ -7,27 +7,37 @@ import {
   useAudioRecorder,
 } from 'expo-audio';
 import { File } from 'expo-file-system';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useScrollToTop } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Animated,
+  Animated as RNAnimated,
   Easing,
   Pressable,
-  ScrollView,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from 'react-native-reanimated';
 
+import { CollapsibleCapture } from '@/components/home/CollapsibleCapture';
 import { HomeHeader } from '@/components/home/HomeHeader';
+import { MonthStrip } from '@/components/home/MonthStrip';
 import { QuickPrompts } from '@/components/home/QuickPrompts';
 import { TransactionItem } from '@/components/home/TransactionItem';
 import { VoiceInputCard } from '@/components/home/VoiceInputCard';
 import { CreditStatusCard } from '@/components/billing/CreditStatusCard';
+import { GuestUpgradePrompt } from '@/components/home/GuestUpgradePrompt';
 import { ThemedText } from '@/components/themed-text';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
 import { Card, Screen, SectionHeader } from '@/components/ui/theme-primitives';
 import { useAppSettingsStore } from '@/hooks/use-app-settings-store';
+import { useMotion } from '@/hooks/use-motion';
+import { encodeFrame } from '@/hooks/use-shared-element';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
   fetchNewUnreadBudgetNotification,
@@ -47,7 +57,14 @@ import {
 } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
-import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
+import { DEFAULT_CURRENCY } from '@/constants/Currency';
+import { Motion } from '@/constants/theme';
+import { DEFAULT_CATEGORY } from '@/lib/categories';
+import {
+  isGuestUpgradePromptSnoozed,
+  shouldShowGuestUpgradePrompt,
+  snoozeGuestUpgradePrompt,
+} from '@/lib/guest-upgrade';
 import {
   fetchAccounts as loadAccounts,
   getAccountTypeForPaymentMode,
@@ -57,8 +74,10 @@ import {
   type Account,
 } from '@/lib/accounts';
 import { createEntry } from '@/lib/entries';
+import { haptics } from '@/lib/haptics';
 import { resolveAttachmentForSave } from '@/lib/uploads';
-import { formatDisplayTime } from '@/lib/datetime';
+import { formatTime, toApiTime } from '@/lib/datetime';
+import { toAmountInputValue, toAmountString } from '@/lib/money';
 import { ParseApiError, parseEntryDraft, type ParseResponse } from '@/lib/parse';
 import {
   fetchSplitFriends,
@@ -67,6 +86,7 @@ import {
   type SplitGroup,
 } from '@/lib/splits';
 import { resolveSplitDraft } from '@/lib/split-draft';
+import { fetchDashboard, type DashboardResponse } from '@/lib/insights';
 import {
   confirmSubscriptionOccurrence,
   createSubscription,
@@ -88,11 +108,53 @@ import {
 
 import '../../global.css';
 
-const formatCompactCurrency = (amount: number) => {
-  if (amount >= 100000) return `${(amount / 100000).toFixed(1)}L`;
-  if (amount >= 1000) return `${(amount / 1000).toFixed(1)}k`;
-  return amount.toFixed(0);
+/**
+ * The FAB floats above the scroll view, so anything that scrolls under it has
+ * to stop short of its footprint. Its geometry is written here once and nowhere
+ * else: the button reads these, and so do the list's bottom padding and the
+ * save toast that has to clear it. Change FAB_SIZE and all three follow.
+ */
+const FAB_SIZE = 64;
+const FAB_BOTTOM_OFFSET = 40;
+const FAB_RIGHT_OFFSET = 24;
+/** The button's full footprint, plus a gap of air so the last row breathes. */
+const LIST_BOTTOM_PADDING = FAB_SIZE + FAB_BOTTOM_OFFSET + 24;
+/** Just above the FAB, so the toast never lands on top of it. */
+const SAVE_TOAST_BOTTOM_OFFSET = FAB_BOTTOM_OFFSET + FAB_SIZE + 8;
+
+/** Roughly how long ScrollView's animated scrollTo takes to settle. */
+const CAPTURE_EXPAND_MS = 260;
+
+/**
+ * How long a freshly saved row stays marked as new. Covers its entrance plus
+ * the accent tint fading out, with enough slack that a slow frame cannot cut
+ * the highlight off mid-fade.
+ */
+const NEW_ROW_HIGHLIGHT_MS = 1200;
+
+/**
+ * `RecordingPresets.HIGH_QUALITY` does not enable metering, so `getStatus()`
+ * returned no `metering` at all and the recording rings had nothing to react
+ * to — they were decorative because the level was never asked for. Spread into
+ * a module-level constant rather than built inline: a fresh options object on
+ * every render would rebuild the recorder underneath an in-progress recording.
+ */
+const RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  isMeteringEnabled: true,
 };
+
+/**
+ * How long the save toast holds once it has arrived. A reading time, not a
+ * motion duration — there is no `Motion` token for it because it is not a
+ * curve, and shortening it under reduced motion would make the confirmation
+ * harder to read rather than calmer.
+ */
+const SAVE_TOAST_DWELL_MS = 2200;
+
+/** Legacy `Animated` needs the curve as a plain function; see AnimatedBottomSheet. */
+const TOAST_IN_EASING = Easing.bezier(...Motion.ease.standard);
+const TOAST_OUT_EASING = Easing.bezier(...Motion.ease.exit);
 
 const billingIntervals: BillingInterval[] = [
   'daily',
@@ -129,9 +191,11 @@ export default function HomeScreen() {
       amount: '',
       type: 'Expense',
       mode: 'Cash',
-      category: 'Food',
+      // S2 left this behind: 'Food' is a legacy alias, and the amount-first
+      // sheet shows the seeded category on a chip and saves it as the title.
+      category: DEFAULT_CATEGORY,
       date: formatDateLabel(new Date()),
-      time: formatDisplayTime(new Date()),
+      time: formatTime(new Date()) ?? '',
       notes: '',
       tag: 'General',
       currency: DEFAULT_CURRENCY,
@@ -176,7 +240,7 @@ export default function HomeScreen() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [form, setForm] = useState<EntryForm>(defaultForm);
   const [inputText, setInputText] = useState('');
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorder = useAudioRecorder(RECORDING_OPTIONS);
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -185,17 +249,45 @@ export default function HomeScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
+  const [monthDashboard, setMonthDashboard] = useState<DashboardResponse | null>(null);
+  const [isMonthLoading, setIsMonthLoading] = useState(true);
+  // Measured, not assumed: the pinned block's two halves tell the feed how far
+  // to pad itself, and the capture card's height changes with its state.
+  const [pinnedTopHeight, setPinnedTopHeight] = useState(0);
+  const [captureExpandedHeight, setCaptureExpandedHeight] = useState(0);
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  // Re-tapping the Home tab returns the feed to the top. The reanimated ref
+  // holds the same ScrollView instance react-navigation's helper looks for.
+  useScrollToTop(scrollRef as unknown as React.RefObject<Animated.ScrollView>);
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<AiReviewMetadata | null>(null);
+  /**
+   * The sheet is open on an empty draft while the parse is in flight. Two to
+   * four seconds against the screen the user was already looking at is a wait;
+   * the same seconds inside the sheet the answer will appear in is progress.
+   */
+  const [isParsing, setIsParsing] = useState(false);
+  /**
+   * The row that was just written, so the feed can say which one is new. Cleared
+   * on a timer rather than left set, or the highlight would come back every time
+   * the list re-rendered for an unrelated reason.
+   */
+  const [newTransactionId, setNewTransactionId] = useState<string | null>(null);
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [isBillingLoading, setIsBillingLoading] = useState(false);
   const [creditAction, setCreditAction] = useState<CreditActionState | null>(null);
   const [aiSourceText, setAiSourceText] = useState('');
   const [aiInputSource, setAiInputSource] = useState<'text' | 'voice'>('text');
   const [autopayReviews, setAutopayReviews] = useState<SubscriptionOccurrence[]>([]);
+  const [isGuestUpgradeSnoozed, setIsGuestUpgradeSnoozed] = useState(true);
   const createIdempotencyKey = useRef<string | null>(null);
   const resumeDraftAfterAccounts = useRef(false);
-  const saveConfirmationAnim = useRef(new Animated.Value(0)).current;
+  const saveConfirmationAnim = useRef(new RNAnimated.Value(0)).current;
+  const motion = useMotion();
 
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<
@@ -215,9 +307,9 @@ export default function HomeScreen() {
       setForm({
         ...blank,
         title: prompt.title,
-        amount: prompt.amount.toFixed(2),
+        amount: toAmountInputValue(prompt.amount),
         date: formatDateLabel(now),
-        time: formatDisplayTime(now),
+        time: formatTime(now) ?? '',
         mode: prompt.mode,
         category: prompt.category,
       });
@@ -348,6 +440,34 @@ export default function HomeScreen() {
     [token]
   );
 
+  /**
+   * The month strip's figures. No dates: the dashboard's own default range is
+   * the 1st to today, which is also what the Insights tab opens on, so the
+   * strip and the screen it taps through to describe the same period without
+   * either having to agree on a date locally.
+   *
+   * Failures are swallowed. This is a secondary widget on the primary screen —
+   * it renders nothing rather than putting an error where money should be.
+   */
+  const fetchMonthSummary = useCallback(
+    async (silent = false) => {
+      if (!token) {
+        setMonthDashboard(null);
+        setIsMonthLoading(false);
+        return;
+      }
+      if (!silent) setIsMonthLoading(true);
+      try {
+        setMonthDashboard(await fetchDashboard(token));
+      } catch {
+        setMonthDashboard(null);
+      } finally {
+        setIsMonthLoading(false);
+      }
+    },
+    [token]
+  );
+
   const fetchAccountOptions = useCallback(async () => {
     if (!token) {
       setAccounts([]);
@@ -430,29 +550,54 @@ export default function HomeScreen() {
         setIsEditOpen(true);
       }
       void fetchEntries();
+      void fetchMonthSummary();
       void fetchAccountOptions();
       void fetchSplitOptions();
       void fetchCredits();
       void fetchNotificationCount();
+      void isGuestUpgradePromptSnoozed().then(setIsGuestUpgradeSnoozed);
       if (token) {
         void syncSubscriptionAutomation(token)
           .then(() => fetchSubscriptionOccurrences(token))
           .then(setAutopayReviews)
           .catch(() => undefined);
       }
-    }, [fetchAccountOptions, fetchCredits, fetchEntries, fetchNotificationCount, fetchSplitOptions, token])
+    }, [
+      fetchAccountOptions,
+      fetchCredits,
+      fetchEntries,
+      fetchMonthSummary,
+      fetchNotificationCount,
+      fetchSplitOptions,
+      token,
+    ])
   );
 
   useEffect(
     () =>
       subscribeTransactionsChanged(() => {
         void fetchEntries(true);
+        // Saving an expense has to move the number at the top of the screen.
+        // A strip that still reads yesterday's total after a save is worse
+        // than no strip at all.
+        void fetchMonthSummary(true);
       }),
-    [fetchEntries]
+    [fetchEntries, fetchMonthSummary]
   );
 
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
   const hasTransactions = sections.length > 0;
+
+  /**
+   * The guest upgrade ask. It waits for entries because an account is only worth
+   * creating once there is something in it to lose — the whole point of letting
+   * people in without one.
+   */
+  const showGuestUpgradePrompt = shouldShowGuestUpgradePrompt({
+    isGuest: !!user?.is_guest,
+    entryCount: transactions.length,
+    isSnoozed: isGuestUpgradeSnoozed,
+  });
 
   const ensureMicPermission = useCallback(async () => {
     const currentPermission = await getRecordingPermissionsAsync();
@@ -479,6 +624,7 @@ export default function HomeScreen() {
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
       setIsRecording(true);
+      haptics.captureStart();
     } catch {
       setErrorMessage('Unable to start recording. Please try again.');
       setIsRecording(false);
@@ -490,6 +636,7 @@ export default function HomeScreen() {
     try {
       await audioRecorder.stop();
       setRecordedUri(audioRecorder.uri);
+      haptics.captureStop();
     } catch {
       setErrorMessage('Unable to stop recording. Please try again.');
     } finally {
@@ -510,22 +657,61 @@ export default function HomeScreen() {
     }
   }, [isRecording, startRecording, stopRecording]);
 
+  /**
+   * Tapping the collapsed pill puts the card back and the cursor in it.
+   *
+   * The card's size is a pure function of scroll offset, so "expand" means
+   * scrolling back to the top — there is no second source of truth to keep in
+   * step, and a user who then scrolls down again simply collapses it as usual.
+   */
+  const handleExpandCapture = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    // Focus after the scroll has run, not with it. Opening the text field flips
+    // `isCaptureLocked`, which takes the card out of the scroll interpolation
+    // and pins it open — do that immediately and the card snaps to full height
+    // while the feed is still gliding. Letting the scroll finish first means
+    // the expansion is the animation, and the lock only takes over once the
+    // card is already where it belongs.
+    setTimeout(() => setIsTextInputVisible(true), CAPTURE_EXPAND_MS);
+  }, [scrollRef]);
+
+  /** Recording from the pill brings the card back with it, same as expanding. */
+  const handlePillMicPress = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    void handleToggleRecording();
+  }, [handleToggleRecording, scrollRef]);
+
+  /**
+   * Capture stays open while there is something to lose by closing it — mid
+   * recording, mid parse, with a finished clip, or with typed text in the
+   * field. Collapsing then would scroll away the Process and Clear buttons the
+   * user is reaching for.
+   *
+   * An *empty* text field deliberately does not lock. It did at first, and that
+   * made the pill a one-way door: tapping it opened the field, and the card
+   * could never collapse again for the rest of the session unless the user
+   * found the "I Prefer To Write" toggle. Nothing is lost by collapsing an
+   * empty field — it is still open when the card comes back.
+   */
+  const isCaptureLocked =
+    isRecording || isSubmitting || !!recordedUri || inputText.trim().length > 0;
+
   useEffect(() => {
     if (!saveConfirmation) return undefined;
     saveConfirmationAnim.stopAnimation();
     saveConfirmationAnim.setValue(0);
-    const animation = Animated.sequence([
-      Animated.timing(saveConfirmationAnim, {
+    const animation = RNAnimated.sequence([
+      RNAnimated.timing(saveConfirmationAnim, {
         toValue: 1,
-        duration: 180,
-        easing: Easing.out(Easing.cubic),
+        duration: motion.duration('base'),
+        easing: TOAST_IN_EASING,
         useNativeDriver: true,
       }),
-      Animated.delay(2200),
-      Animated.timing(saveConfirmationAnim, {
+      RNAnimated.delay(SAVE_TOAST_DWELL_MS),
+      RNAnimated.timing(saveConfirmationAnim, {
         toValue: 0,
-        duration: 180,
-        easing: Easing.in(Easing.cubic),
+        duration: motion.exitDuration('base'),
+        easing: TOAST_OUT_EASING,
         useNativeDriver: true,
       }),
     ]);
@@ -535,7 +721,18 @@ export default function HomeScreen() {
       }
     });
     return () => animation.stop();
-  }, [saveConfirmation, saveConfirmationAnim]);
+  }, [motion, saveConfirmation, saveConfirmationAnim]);
+
+  /**
+   * The new-row highlight is a one-shot. Holding the id would re-run the
+   * entrance every time the feed re-rendered — on a refetch, a theme change, a
+   * tab return — and a row that keeps announcing itself stops meaning anything.
+   */
+  useEffect(() => {
+    if (!newTransactionId) return undefined;
+    const timeout = setTimeout(() => setNewTransactionId(null), NEW_ROW_HIGHLIGHT_MS);
+    return () => clearTimeout(timeout);
+  }, [newTransactionId]);
 
   const handleClearRecording = useCallback(() => {
     setRecordedUri(null);
@@ -644,7 +841,7 @@ export default function HomeScreen() {
             tag: trimmedTag.length > 0 ? trimmedTag : null,
             merchant: formData.merchant.trim(),
             title: formData.title.trim() || 'Untitled Transaction',
-            time: formData.time,
+            time: toApiTime(formData.time) ?? undefined,
             attachment: attachmentUrl,
             ...(splitPayload ? { split: splitPayload } : {}),
           },
@@ -677,6 +874,7 @@ export default function HomeScreen() {
           ...current.filter((transaction) => transaction.id !== createdTransaction.id),
         ]);
         setSaveConfirmation(formData.subscriptionEnabled ? 'Saved with subscription' : 'Saved');
+        setNewTransactionId(createdTransaction.id);
 
         createIdempotencyKey.current = null;
         setForm(createBlankForm());
@@ -717,6 +915,19 @@ export default function HomeScreen() {
     setIsSubmitting(true);
     setErrorMessage(null);
     setCreditAction(null);
+    // The phrase is known before the request goes out, so the sheet can show it
+    // from the first frame — during the wait it is the only thing on screen
+    // saying *which* capture is being read. The rest of the review metadata
+    // arrives with the parse.
+    setAiSourceText(trimmed);
+    setAiInputSource(recordedUri ? 'voice' : 'text');
+    setAiReview({
+      sourceText: trimmed,
+      inputSource: recordedUri ? 'voice' : 'text',
+    });
+    setIsParsing(true);
+    setModalMode('audio');
+    setIsEditOpen(true);
     try {
       let audio:
         | {
@@ -749,6 +960,11 @@ export default function HomeScreen() {
             ),
         clarifications: data.clarifications,
         smartSortingDisabled: !smartSorting,
+        // What the AI worked from, so the review sheet can show it back. A
+        // wrong field is usually a misheard word, and the phrase is the only
+        // place that is visible.
+        sourceText: data.source_text ?? trimmed,
+        inputSource: recordedUri ? 'voice' : 'text',
       });
       setForm((prev) => {
         const missing = new Set(data.missing_fields ?? []);
@@ -771,9 +987,11 @@ export default function HomeScreen() {
         return {
           ...prev,
           title: smartSorting && !missing.has('title') ? (data.title ?? '') : '',
-          amount: missing.has('amount') || data.amount == null ? '' : data.amount.toFixed(2),
+          amount:
+            missing.has('amount') || data.amount == null ? '' : toAmountInputValue(data.amount),
           currency: data.currency ?? prev.currency,
-          time: data.time ?? prev.time,
+          // The parser emits `HH:MM`; the form shows and stores a display string.
+          time: formatTime(data.time) ?? prev.time,
           type: newType,
           mode: smartSorting && !missing.has('mode') ? (data.mode ?? '') : '',
           category: smartSorting && !missing.has('category') ? (data.category ?? 'Misc') : 'Misc',
@@ -791,9 +1009,9 @@ export default function HomeScreen() {
           subscriptionCategory: subscriptionCandidate?.category ?? data.category ?? 'Misc',
           subscriptionAmount:
             subscriptionCandidate?.amount != null
-              ? subscriptionCandidate.amount.toFixed(2)
+              ? toAmountInputValue(subscriptionCandidate.amount)
               : data.amount != null
-                ? data.amount.toFixed(2)
+                ? toAmountInputValue(data.amount)
                 : '',
           subscriptionBillingInterval: subscriptionInterval,
           subscriptionNextDueDate: inferredNextDueDate,
@@ -809,9 +1027,11 @@ export default function HomeScreen() {
       });
       setInputText('');
       setRecordedUri(null);
-      setModalMode('audio');
-      setIsEditOpen(true);
     } catch (error) {
+      // The sheet came up before the request went out, so a failure has to take
+      // it back down — the credit card and the error banner both live on Home,
+      // behind it.
+      setIsEditOpen(false);
       if (error instanceof ParseApiError) {
         if (error.code === 'insufficient_ai_credits') {
           setCreditAction({
@@ -838,6 +1058,7 @@ export default function HomeScreen() {
         getFriendlyErrorMessage(error, 'Something went wrong while parsing.')
       );
     } finally {
+      setIsParsing(false);
       setIsSubmitting(false);
     }
   }, [
@@ -857,10 +1078,9 @@ export default function HomeScreen() {
   const renderRecentActivity = () => {
     if (isEntriesLoading) {
       return (
-        <View className="items-center py-10">
-          <ActivityIndicator color={theme.accent} />
-          <ThemedText className="mt-2 text-gray-400 font-medium">Loading activity...</ThemedText>
-        </View>
+        <SkeletonFrame label="Loading activity" testID="home-activity-skeleton">
+          <SkeletonRows count={4} />
+        </SkeletonFrame>
       );
     }
 
@@ -871,7 +1091,14 @@ export default function HomeScreen() {
           title="Activity did not load"
           message={entriesError}
           actionLabel="Try again"
-          onAction={() => void fetchEntries()}
+          onAction={() => {
+            // Retry everything the outage took down, not just the feed. The
+            // month strip hides itself on failure rather than showing an
+            // error, so without this it would stay missing until the next
+            // time the screen regained focus.
+            void fetchEntries();
+            void fetchMonthSummary();
+          }}
         />
       );
     }
@@ -890,13 +1117,9 @@ export default function HomeScreen() {
 
     const recentTransactions = transactions.slice(0, 5);
     const groupedRecentTransactions = groupTransactionsBySection(recentTransactions);
-    const todayCount = transactions.filter(
-      (item) => item.section === 'Today' || item.dateLabel === 'Today'
-    ).length;
-    const recentExpenseTotal = recentTransactions.reduce(
-      (sum, item) => (item.entryType === 'income' ? sum : sum + Math.abs(item.amount)),
-      0
-    );
+    // The stagger counts down the feed rather than restarting at every date
+    // heading — see the same note on the full list in app/transactions/index.tsx.
+    let rowsAbove = 0;
 
     return (
       <View>
@@ -907,9 +1130,14 @@ export default function HomeScreen() {
         />
 
         <View className="px-6">
-          {groupedRecentTransactions.map((group, groupIndex) => (
+          {groupedRecentTransactions.map((group, groupIndex) => {
+            const groupOffset = rowsAbove;
+            rowsAbove += group.data.length;
+
+            return (
+            // Changing the month rewrites the feed under whatever survives it.
+            <Animated.View key={group.title} layout={motion.reflow()}>
             <Card
-              key={group.title}
               compact
               style={{
                 overflow: 'hidden',
@@ -942,22 +1170,24 @@ export default function HomeScreen() {
                     icon={item.icon}
                     category={item.category}
                     subtitle={item.accountName ?? item.mode ?? ''}
-                    amount={Math.abs(item.amount).toFixed(2)}
+                    amount={Math.abs(item.amount)}
                     maskAmount={isStealthMode}
                     date={item.timeLabel ?? item.dateLabel ?? ''}
                     color={item.color}
                     bgColor={item.bgColor}
                     isIncome={item.entryType === 'income'}
                     variant="list"
+                    isNew={item.id === newTransactionId}
+                    entranceIndex={groupOffset + index}
                     showDivider={!isLastInSection}
-                    onPress={() => {
+                    onPress={(origin) => {
                       router.push({
                         pathname: '/entry/[id]',
                         params: {
                           id: item.id,
                           name: item.name,
                           category: item.category,
-                          amount: Math.abs(item.amount).toFixed(2),
+                          amount: toAmountString(Math.abs(item.amount)),
                           entryType: item.entryType ?? 'expense',
                           section: item.section,
                           mode: item.mode ?? '',
@@ -966,6 +1196,10 @@ export default function HomeScreen() {
                           dateLabel: item.dateLabel ?? '',
                           rawDate: item.rawDate ?? '',
                           tag: item.tag ?? '',
+                          // C9 — the feed's rows travel into detail the same
+                          // way the transaction list's do.
+                          ...(origin?.icon ? { originIcon: encodeFrame(origin.icon) } : {}),
+                          ...(origin?.amount ? { originAmount: encodeFrame(origin.amount) } : {}),
                         },
                       });
                     }}
@@ -973,26 +1207,9 @@ export default function HomeScreen() {
                 );
               })}
             </Card>
-          ))}
-          <View
-            style={{
-              paddingHorizontal: themeTokens.spacing.lg,
-              paddingTop: themeTokens.spacing.md,
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-            }}>
-            <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
-              {recentTransactions.length} latest
-            </ThemedText>
-            <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
-              {todayCount} today
-            </ThemedText>
-            <ThemedText variant="captionStrong" style={{ color: '#A7A1A3' }}>
-              {isStealthMode
-                ? `${CURRENCY_SYMBOL}•••• out`
-                : `${CURRENCY_SYMBOL}${formatCompactCurrency(recentExpenseTotal)} out`}
-            </ThemedText>
-          </View>
+            </Animated.View>
+            );
+          })}
         </View>
       </View>
     );
@@ -1000,19 +1217,25 @@ export default function HomeScreen() {
 
   return (
     <Screen>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <HomeHeader
-          unreadCount={unreadNotifications}
-          onNotificationsPress={() => router.push('/notifications')}
-        />
-
-        <View className="px-6 pb-4">
-          <ThemedText className="text-xs text-gray-500 font-medium text-center">
-            Speak naturally. Finnri will organize it.
-          </ThemedText>
-        </View>
-
-        {autopayReviews[0] ? (
+      {/* One positioning context for the pinned block and the feed it floats
+          over. Without it the block anchors to the SafeAreaView and renders
+          under the status bar. */}
+      <View className="flex-1">
+        {/* The scroll view's frame never changes, so the feed always moves 1:1
+          with the finger while the block pinned over it collapses. Its top
+          padding is the pinned block's expanded height, which is measured
+          rather than guessed — the capture card is a different height while
+          recording, while a draft is in hand, and with the text field open. */}
+        <Animated.ScrollView
+          ref={scrollRef}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingTop: pinnedTopHeight + captureExpandedHeight,
+            paddingBottom: LIST_BOTTOM_PADDING,
+          }}>
+          {autopayReviews[0] ? (
           <View className="mx-6 mb-4 rounded-3xl border p-4" style={{ backgroundColor: themeTokens.colors.card, borderColor: themeTokens.colors.accent }}>
             <View className="flex-row items-start gap-3">
               <MaterialCommunityIcons name="bank-check" size={24} color={themeTokens.colors.accent} />
@@ -1036,107 +1259,165 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        {shouldShowLowCreditNotice ? (
-          <View style={{ marginHorizontal: 24, marginBottom: themeTokens.spacing.md }}>
-            <CreditStatusCard
-              credits={billingStatus?.credits ?? null}
-              loading={isBillingLoading}
-              compact
-              onPress={() => router.push('/billing')}
+          {showGuestUpgradePrompt ? (
+            <GuestUpgradePrompt
+              entryCount={transactions.length}
+              onUpgrade={() => router.push('/auth?mode=link')}
+              onDismiss={() => {
+                setIsGuestUpgradeSnoozed(true);
+                void snoozeGuestUpgradePrompt();
+              }}
             />
-          </View>
-        ) : null}
+          ) : null}
 
-        <VoiceInputCard
-          onMicPress={handleToggleRecording}
-          isRecording={isRecording}
-          hasRecording={!!recordedUri}
-          inputText={inputText}
-          onChangeText={setInputText}
-          onProcess={handleSubmitPrompt}
-          onClear={handleClearRecording}
-          isProcessing={isSubmitting}
-          isTextInputVisible={isTextInputVisible}
-          onToggleTextInput={() => setIsTextInputVisible((current) => !current)}
-        />
+          {shouldShowLowCreditNotice ? (
+            <View style={{ marginHorizontal: 24, marginBottom: themeTokens.spacing.md }}>
+              <CreditStatusCard
+                credits={billingStatus?.credits ?? null}
+                loading={isBillingLoading}
+                compact
+                onPress={() => router.push('/billing')}
+              />
+            </View>
+          ) : null}
 
-        <QuickPrompts
-          key={`quick-prompts-${quickPromptKey}`}
-          onSelect={handleQuickPromptSelect}
-          onAdd={handleAddPrompt}
-          onLongPress={handleLongPressPrompt}
-        />
+          <QuickPrompts
+            key={`quick-prompts-${quickPromptKey}`}
+            onSelect={handleQuickPromptSelect}
+            onAdd={handleAddPrompt}
+            onLongPress={handleLongPressPrompt}
+          />
 
-        {errorMessage && (
-          <View className="mx-6 mb-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-2xl border border-red-100 dark:border-red-900/30">
-            <ThemedText className="text-red-500 dark:text-red-400 text-center font-bold">
-              {errorMessage}
-            </ThemedText>
-          </View>
-        )}
+          {errorMessage && (
+            <ErrorBanner
+              message={errorMessage}
+              style={{ marginHorizontal: 24, marginBottom: 24 }}
+            />
+          )}
 
-        {creditAction && (
-          <View
-            className="mx-6 mb-6 rounded-2xl border p-4"
-            style={{
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFF8F4',
-              borderColor: themeTokens.colors.border,
-            }}>
-            <View className="flex-row items-start gap-3">
-              <View
-                className="h-9 w-9 items-center justify-center rounded-full"
-                style={{ backgroundColor: themeTokens.colors.secondary }}>
-                <MaterialCommunityIcons
-                  name="creation"
-                  size={18}
-                  color={themeTokens.colors.accent}
-                />
-              </View>
-              <View className="min-w-0 flex-1">
-                <ThemedText className="font-bold" style={{ color: themeTokens.colors.text }}>
-                  {creditAction.title}
-                </ThemedText>
-                <ThemedText
-                  className="mt-1 text-xs"
-                  style={{ color: `${themeTokens.colors.text}99` }}>
-                  {creditAction.message}
-                </ThemedText>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() =>
-                    router.push(creditAction.action === 'login' ? '/auth?mode=link' : '/billing')
-                  }
-                  className="mt-3 self-start rounded-full px-4 py-2"
-                  style={{ backgroundColor: themeTokens.colors.accent }}>
-                  <ThemedText className="text-xs font-bold text-white">
-                    {creditAction.actionLabel}
+          {creditAction && (
+            <View
+              className="mx-6 mb-6 rounded-2xl border p-4"
+              style={{
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFF8F4',
+                borderColor: themeTokens.colors.border,
+              }}>
+              <View className="flex-row items-start gap-3">
+                <View
+                  className="h-9 w-9 items-center justify-center rounded-full"
+                  style={{ backgroundColor: themeTokens.colors.secondary }}>
+                  <MaterialCommunityIcons
+                    name="creation"
+                    size={18}
+                    color={themeTokens.colors.accent}
+                  />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <ThemedText className="font-bold" style={{ color: themeTokens.colors.text }}>
+                    {creditAction.title}
                   </ThemedText>
-                </Pressable>
+                  <ThemedText
+                    className="mt-1 text-xs"
+                    style={{ color: `${themeTokens.colors.text}99` }}>
+                    {creditAction.message}
+                  </ThemedText>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() =>
+                      router.push(creditAction.action === 'login' ? '/auth?mode=link' : '/billing')
+                    }
+                    className="mt-3 self-start rounded-full px-4 py-2"
+                    style={{ backgroundColor: themeTokens.colors.accent }}>
+                    <ThemedText className="text-xs font-bold text-white">
+                      {creditAction.actionLabel}
+                    </ThemedText>
+                  </Pressable>
+                </View>
               </View>
             </View>
+          )}
+
+          {renderRecentActivity()}
+        </Animated.ScrollView>
+
+        {/* Pinned above the feed: identity, the month, and capture. The month
+          strip staying put is the point of W2 — a figure you have to hunt for
+          is not a reason to open the app. */}
+        <View
+          className="absolute inset-x-0 top-0"
+          style={{ backgroundColor: themeTokens.colors.background }}>
+          <View
+            onLayout={(event) => setPinnedTopHeight(Math.round(event.nativeEvent.layout.height))}>
+            <HomeHeader
+              unreadCount={unreadNotifications}
+              onNotificationsPress={() => router.push('/notifications')}
+            />
+
+            <MonthStrip
+              dashboard={monthDashboard}
+              loading={isMonthLoading}
+              onPress={() =>
+                router.push({ pathname: '/(tabs)/insight', params: { period: 'this_month' } })
+              }
+            />
           </View>
-        )}
 
-        {renderRecentActivity()}
+          <CollapsibleCapture
+            scrollY={scrollY}
+            onExpand={handleExpandCapture}
+            onMicPress={handlePillMicPress}
+            isRecording={isRecording}
+            locked={isCaptureLocked}
+            onExpandedHeightChange={setCaptureExpandedHeight}>
+            <View className="px-6 pb-4">
+              <ThemedText className="text-xs text-gray-500 font-medium text-center">
+                Speak naturally. Finnri will organize it.
+              </ThemedText>
+            </View>
 
-        <View className="h-32" />
-      </ScrollView>
+            <VoiceInputCard
+              recorder={audioRecorder}
+              onMicPress={handleToggleRecording}
+              isRecording={isRecording}
+              hasRecording={!!recordedUri}
+              inputText={inputText}
+              onChangeText={setInputText}
+              onProcess={handleSubmitPrompt}
+              onClear={handleClearRecording}
+              isProcessing={isSubmitting}
+              isTextInputVisible={isTextInputVisible}
+              onToggleTextInput={() => setIsTextInputVisible((current) => !current)}
+            />
+          </CollapsibleCapture>
+        </View>
+      </View>
 
       {hasTransactions && (
         <Pressable
           accessibilityRole="button"
           onPress={handleOpenManualEntry}
-          style={[{ backgroundColor: theme.accent }, themeTokens.shadows.soft]}
-          className="h-16 w-16 rounded-full items-center justify-center absolute bottom-10 right-6 elevation-5">
+          style={[
+            {
+              backgroundColor: theme.accent,
+              height: FAB_SIZE,
+              width: FAB_SIZE,
+              borderRadius: FAB_SIZE / 2,
+              bottom: FAB_BOTTOM_OFFSET,
+              right: FAB_RIGHT_OFFSET,
+            },
+            themeTokens.shadows.soft,
+          ]}
+          className="items-center justify-center absolute elevation-5">
           <MaterialCommunityIcons name="plus" size={32} color="white" />
         </Pressable>
       )}
 
       {saveConfirmation && (
-        <Animated.View
+        <RNAnimated.View
           accessibilityLiveRegion="polite"
-          className="absolute bottom-28 self-center z-50 flex-row items-center gap-2 rounded-full px-3 py-2 shadow-md"
+          className="absolute self-center z-50 flex-row items-center gap-2 rounded-full px-3 py-2 shadow-md"
           style={{
+            bottom: SAVE_TOAST_BOTTOM_OFFSET,
             backgroundColor: theme.accent,
             opacity: saveConfirmationAnim,
             transform: [
@@ -1151,7 +1432,7 @@ export default function HomeScreen() {
           pointerEvents="none">
           <MaterialCommunityIcons name="check" size={15} color="white" />
           <ThemedText className="text-xs font-bold text-white">{saveConfirmation}</ThemedText>
-        </Animated.View>
+        </RNAnimated.View>
       )}
 
       <TransactionFormModal
@@ -1160,15 +1441,17 @@ export default function HomeScreen() {
         initialData={form}
         onSave={handleConfirmEntry}
         mode={modalMode}
+        isParsing={isParsing}
         aiReview={aiReview}
         accounts={accounts}
         splitFriends={splitFriends}
         splitGroups={splitGroups}
+        recentEntries={transactions}
         onDraftChange={setForm}
         onManageAccounts={() => {
           resumeDraftAfterAccounts.current = true;
           setIsEditOpen(false);
-          router.push('/accounts');
+          router.push('/money?segment=accounts');
         }}
       />
       <TransactionFormModal

@@ -1,11 +1,24 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
 
+/**
+ * The empty and failed states — "nothing here yet", "that did not load".
+ *
+ * It used to carry a `loading` variant too: the same panel with a spinner in
+ * the icon circle instead of an icon. That variant is gone, and the prop with
+ * it, because it was the app's most-used way of showing a spinner on an empty
+ * screen — nine screens, all of them saying "Loading X" over a blank frame and
+ * none of them saying what X would look like. Waiting is a `Skeleton` now; this
+ * component is for the two states where there genuinely is nothing to draw.
+ *
+ * The prop is deleted rather than deprecated so the pattern cannot come back by
+ * copy-paste: `loading` on a `StateView` is a type error.
+ */
 type StateViewProps = {
   icon?: keyof typeof MaterialCommunityIcons.glyphMap;
   title: string;
@@ -14,7 +27,6 @@ type StateViewProps = {
   onAction?: () => void;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
-  loading?: boolean;
   compact?: boolean;
 };
 
@@ -26,7 +38,6 @@ export function StateView({
   onAction,
   secondaryActionLabel,
   onSecondaryAction,
-  loading = false,
   compact = false,
 }: StateViewProps) {
   const colorScheme = useColorScheme() ?? 'light';
@@ -46,11 +57,7 @@ export function StateView({
         },
       ]}>
       <View style={[styles.iconCircle, { backgroundColor: theme.secondary }]}>
-        {loading ? (
-          <ActivityIndicator color={theme.accent} />
-        ) : (
-          <MaterialCommunityIcons name={icon} size={compact ? 26 : 34} color={theme.accent} />
-        )}
+        <MaterialCommunityIcons name={icon} size={compact ? 26 : 34} color={theme.accent} />
       </View>
       <ThemedText style={[styles.title, { color: theme.text }]}>{title}</ThemedText>
       {displayMessage ? (

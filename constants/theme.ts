@@ -375,6 +375,76 @@ export const Shadows = {
   },
 } as const;
 
+/**
+ * Motion tokens — the shared timing vocabulary.
+ *
+ * Every animation in the app was tuned by hand and none of them matched: the
+ * bottom sheet entered over 240ms, the save toast over 180ms, the mic ring over
+ * 260ms, and nothing chose those numbers for a reason. These are the numbers to
+ * choose from now. New animation reads a token; it does not invent a duration.
+ *
+ * Pure data on purpose — no Reanimated import, so this file stays usable from
+ * legacy `Animated`, from Reanimated worklets, and from the CSS animation API,
+ * all of which want the same curve in a different shape. `useMotion()` in
+ * `hooks/use-motion.ts` is the Reanimated-flavoured reader, and the one that
+ * applies the reduced-motion degrade.
+ *
+ * ## Why exits are derived rather than listed
+ *
+ * A leaving element is already gone as far as the user is concerned, so making
+ * them wait out an entrance-length curve reads as lag. That rule is worth more
+ * as structure than as a convention nobody remembers, so there is no
+ * `duration.sheetExit` to get out of step — exit durations come from
+ * `EXIT_RATIO` applied to the entry duration, and are therefore always faster.
+ */
+export const Motion = {
+  duration: {
+    /** Press states, chip selection, toggles. */
+    instant: 120,
+    /** Cards, list items, collapse/expand. */
+    base: 220,
+    /** Bottom sheets, modals, screen pushes. */
+    sheet: 320,
+  },
+  ease: {
+    /** Anything entering or moving. Cubic-bezier control points. */
+    standard: [0.22, 1, 0.36, 1],
+    /** Anything leaving. */
+    exit: [0.4, 0, 1, 1],
+  },
+  spring: {
+    /** Buttons, FAB, mic. */
+    press: { damping: 18, stiffness: 260 },
+  },
+  stagger: {
+    /**
+     * Feed and list entrance. `step` per row; `max` rows carry a distinct
+     * delay, and everything past that shares the last one — an 80-row feed
+     * staggered honestly would still be arriving two seconds later.
+     */
+    list: { step: 28, max: 8 },
+    /**
+     * Fields settling into a form. Slower per item than a list because there
+     * are far fewer of them and each is read rather than scanned, and capped
+     * low for the same reason — a draft that takes half a second to assemble
+     * has stopped being feedback and started being a wait.
+     */
+    fields: { step: 40, max: 6 },
+  },
+} as const;
+
+/** An exit is this fraction of the matching entry. See the note on `Motion`. */
+export const EXIT_RATIO = 0.75;
+
+export type MotionDurationToken = keyof typeof Motion.duration;
+export type MotionEaseToken = keyof typeof Motion.ease;
+export type EaseCurve = readonly [number, number, number, number];
+
+/** The same curve as a CSS timing function, for Reanimated's CSS animations. */
+export function cubicBezier(curve: EaseCurve): string {
+  return `cubic-bezier(${curve.join(',')})`;
+}
+
 export const Components = {
   screen: {
     horizontalPadding: Spacing.xxl,
@@ -427,6 +497,7 @@ export function getThemeTokens(mode: ThemeMode, mood: AppMoodSettings = DefaultA
     spacing: Spacing,
     radius: Radius,
     shadows: Shadows,
+    motion: Motion,
     components: Components,
     mood,
     icon,

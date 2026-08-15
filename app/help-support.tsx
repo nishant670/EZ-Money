@@ -22,7 +22,7 @@ const faqs = [
   {
     question: 'Where do budget and subscription alerts appear?',
     answer:
-      'Alerts appear in Notifications, and related controls live under Budget Watch and Subscriptions on your profile.',
+      'Alerts appear in Notifications, and the controls live under Budgets and Subscriptions in the Money tab.',
   },
   {
     question: 'How do I secure the app?',
@@ -50,7 +50,7 @@ const supportActions = [
   },
   {
     icon: 'rocket-launch-outline',
-    title: 'Upcoming',
+    title: "What's next",
     body: 'See planned features, changes, and bug fixes.',
     route: '/upcoming',
     color: '#0288D1',

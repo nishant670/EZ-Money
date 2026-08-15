@@ -1,5 +1,6 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useMotion } from '@/hooks/use-motion';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -16,17 +17,21 @@ import Screen1 from '@/components/onboarding/Screen1';
 import Screen2 from '@/components/onboarding/Screen2';
 import Screen3 from '@/components/onboarding/Screen3';
 import Screen4 from '@/components/onboarding/Screen4';
-import Screen5 from '@/components/onboarding/Screen5';
 import { hasCompletedOnboarding, markOnboardingComplete } from '@/lib/onboarding';
 
 const { width } = Dimensions.get('window');
 
+/**
+ * Four slides, not five. The fifth was a "You're all set to take control!"
+ * celebration for an account that did not exist yet and a user who had logged
+ * nothing — and the signup flow then celebrated a second time on the screen
+ * after it. The one celebration left is the one that follows an actual event.
+ */
 const SCREENS = [
   { id: 1, component: Screen1 },
   { id: 2, component: Screen2 },
   { id: 3, component: Screen3 },
   { id: 4, component: Screen4 },
-  { id: 5, component: Screen5 },
 ];
 
 export default function OnboardingScreen() {
@@ -81,8 +86,17 @@ export default function OnboardingScreen() {
     router.replace('/auth');
   };
 
-  const enteringAnimation = direction === 'forward' ? SlideInRight.duration(400) : SlideInLeft.duration(400);
-  const exitingAnimation = direction === 'forward' ? SlideOutLeft.duration(400) : SlideOutRight.duration(400);
+  const motion = useMotion();
+
+  // A screen push, on the `sheet` token. These used to run 400ms flat in both
+  // directions and honoured nothing — the outgoing screen is already gone as
+  // far as the user is concerned, and reduced motion could not switch them off.
+  const enterMs = motion.duration('sheet');
+  const exitMs = motion.exitDuration('sheet');
+  const enteringAnimation =
+    direction === 'forward' ? SlideInRight.duration(enterMs) : SlideInLeft.duration(enterMs);
+  const exitingAnimation =
+    direction === 'forward' ? SlideOutLeft.duration(exitMs) : SlideOutRight.duration(exitMs);
 
   if (isCheckingOnboarding) {
     return null;
@@ -93,15 +107,19 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         {/* Progress Bar */}
         <View style={styles.header}>
-            {activeIndex === 0 ? (
-                <View style={styles.skipButton} />
-            ) : (
-                <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
-                    <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
-                </TouchableOpacity>
-            )}
+            {/* Skip is offered from the first slide. Hiding it there only made
+                the one user who wanted out sit through a slide to find it. */}
+            <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
+                <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
+            </TouchableOpacity>
             
-            <View style={styles.progressContainer}>
+            {/* Decorative, and absolutely positioned across the full width of
+                the header — so it lies over Skip. It used to carry `zIndex: -1`
+                to sit behind, which on Android reorders painting but not touch
+                dispatch: Skip rendered on slide 1 and did nothing until the
+                screen had re-rendered once. `pointerEvents` is the honest way to
+                say a progress indicator is not a target. */}
+            <View pointerEvents="none" style={styles.progressContainer}>
                 {SCREENS.map((_, index) => (
                     <View 
                         key={index} 
@@ -144,7 +162,7 @@ export default function OnboardingScreen() {
                     ]}
                 >
                     <Text style={[styles.primaryButtonText, { color: activeIndex === SCREENS.length - 1 ? 'white' : theme.background }]}>
-                        {activeIndex === SCREENS.length - 1 ? 'Sign in' : 'Next'}
+                        {activeIndex === SCREENS.length - 1 ? 'Get started' : 'Next'}
                     </Text>
                     <MaterialCommunityIcons
                         name="arrow-right"
@@ -156,11 +174,6 @@ export default function OnboardingScreen() {
             </View>
         </View>
 
-        {/* {activeIndex === SCREENS.length - 1 && (
-            <TouchableOpacity onPress={handleFinish} style={styles.skipForNow}>
-                <Text style={[styles.skipForNowText, { color: theme.text, opacity: 0.4 }]}>Skip for now</Text>
-            </TouchableOpacity>
-        )} */}
       </View>
     </OnboardingScreenWrapper>
   );
@@ -191,7 +204,6 @@ const styles = StyleSheet.create({
       position: 'absolute',
       width: width,
       justifyContent: 'center',
-      zIndex: -1,
   },
   progressDot: {
       height: 4,
@@ -237,12 +249,4 @@ const styles = StyleSheet.create({
       fontSize: 16,
       fontWeight: 'bold',
   },
-  skipForNow: {
-      alignItems: 'center',
-      paddingBottom: 20,
-  },
-  skipForNowText: {
-      fontSize: 13,
-      fontWeight: '600',
-  }
 });

@@ -2,10 +2,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Contacts from 'expo-contacts/legacy';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useScrollToTop } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import type { ComponentProps, ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,16 +21,21 @@ import {
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { UpgradeSheet } from '@/components/billing/UpgradeSheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { StateView } from '@/components/ui/StateView';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchAccounts, getPreferredAccountForPaymentMode } from '@/lib/accounts';
+import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { createEntry } from '@/lib/entries';
+import { formatMoney, roundToPaise, toAmountString } from '@/lib/money';
 import {
   archiveSplitGroup,
   archiveSplitFriend,
@@ -127,11 +132,9 @@ const groupKindOptions: {
   { kind: 'other', label: 'Other', icon: 'format-list-bulleted', variant: 0 },
 ];
 
-const formatMoney = (value: number) =>
-  `₹${Math.abs(value).toLocaleString('en-IN', {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-  })}`;
+// Split balances are always drawn with their own directional wording
+// ("owes you" / "you owe"), so the sign would be redundant noise.
+const formatBalance = (value: number) => formatMoney(value, { sign: 'never' });
 
 const formatBillListDate = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
@@ -210,8 +213,8 @@ const toDeviceContactOption = (contact: Contacts.ExistingContact): DeviceContact
 };
 
 const getBalanceTone = (value: number) => {
-  if (value > 0) return { label: `you are owed ${formatMoney(value)}`, color: '#12966F' };
-  if (value < 0) return { label: `you owe ${formatMoney(value)}`, color: '#DC2626' };
+  if (value > 0) return { label: `you are owed ${formatBalance(value)}`, color: '#12966F' };
+  if (value < 0) return { label: `you owe ${formatBalance(value)}`, color: '#DC2626' };
   return { label: 'settled up', color: '#6B7280' };
 };
 
@@ -341,8 +344,8 @@ const buildGroupExportCsv = (
     openBalances.forEach(({ friend, balance }) => {
       rows.push(
         balance > 0
-          ? csvRow([friend.name, currentUserName, Math.abs(balance).toFixed(2), 'Open'])
-          : csvRow([currentUserName, friend.name, Math.abs(balance).toFixed(2), 'Open'])
+          ? csvRow([friend.name, currentUserName, toAmountString(Math.abs(balance)), 'Open'])
+          : csvRow([currentUserName, friend.name, toAmountString(Math.abs(balance)), 'Open'])
       );
     });
   }
@@ -373,15 +376,15 @@ const buildGroupExportCsv = (
       .map((participant) => {
         const friendName = friendById.get(participant.friend_id)?.name ?? 'Friend';
         return participant.direction === 'friend_owes_user'
-          ? `${friendName} owes ${currentUserName} ₹${participant.share_amount.toFixed(2)}`
-          : `${currentUserName} owes ${friendName} ₹${participant.share_amount.toFixed(2)}`;
+          ? `${friendName} owes ${currentUserName} ${formatBalance(participant.share_amount)}`
+          : `${currentUserName} owes ${friendName} ${formatBalance(participant.share_amount)}`;
       })
       .join('; ');
     rows.push(
       csvRow([
         bill.date,
         bill.title,
-        bill.total_amount.toFixed(2),
+        toAmountString(bill.total_amount),
         payer,
         splitWith,
         shareDetails,
@@ -436,6 +439,8 @@ type SplitScreenProps = {
 
 export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const router = useRouter();
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
   const { token, user } = useAuthStore();
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
@@ -525,6 +530,27 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     useState<SettlementDirection>('friend_paid_user');
   const [settlementNotes, setSettlementNotes] = useState('');
 
+  const {
+    entitlement,
+    sheetVisible: upgradeSheetVisible,
+    capture: captureEntitlement,
+    dismiss: dismissUpgrade,
+    clear: clearEntitlement,
+  } = useEntitlementGate();
+
+  /**
+   * The single exit for anything that fails on this screen. The split ledger
+   * is entitlement-gated, so a `402` has to reach the paywall rather than the
+   * red banner — every catch block here goes through this.
+   */
+  const reportSplitError = useCallback(
+    (splitError: unknown, fallback: string) => {
+      if (captureEntitlement(splitError)) return;
+      setError(formatFriendlySplitError(splitError, fallback));
+    },
+    [captureEntitlement]
+  );
+
   const loadSplitData = useCallback(async () => {
     if (!token) {
       setFriends([]);
@@ -550,12 +576,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setBalances(nextBalances);
       setBills(nextBills);
       setActivity(nextActivity);
+      clearEntitlement();
     } catch (loadError) {
-      setError(formatFriendlySplitError(loadError, 'Unable to load split data.'));
+      reportSplitError(loadError, 'Unable to load split data.');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [clearEntitlement, reportSplitError, token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -584,11 +611,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           .filter((contact): contact is DeviceContactOption => Boolean(contact))
       );
     } catch (contactError) {
-      setError(formatFriendlySplitError(contactError, 'Unable to load your contacts.'));
+      reportSplitError(contactError, 'Unable to load your contacts.');
     } finally {
       setContactsLoading(false);
     }
-  }, []);
+  }, [reportSplitError]);
 
   const refreshContactsPermission = useCallback(async () => {
     try {
@@ -677,8 +704,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           const balance = groupBalancesByFriendId.get(memberId) ?? 0;
           if (!friend || balance === 0) return null;
           return balance > 0
-            ? `${friend.name} owes you ${formatMoney(balance)}`
-            : `You owe ${friend.name} ${formatMoney(balance)}`;
+            ? `${friend.name} owes you ${formatBalance(balance)}`
+            : `You owe ${friend.name} ${formatBalance(balance)}`;
         })
         .filter((line): line is string => Boolean(line));
 
@@ -799,8 +826,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         const friend = friendById.get(friendId);
         if (!friend || value === 0) return null;
         return value > 0
-          ? `${friend.name} owes you ${formatMoney(value)}`
-          : `You owe ${friend.name} ${formatMoney(value)}`;
+          ? `${friend.name} owes you ${formatBalance(value)}`
+          : `You owe ${friend.name} ${formatBalance(value)}`;
       })
       .filter((line): line is string => Boolean(line))
       .slice(0, 2);
@@ -1019,7 +1046,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       closeModal();
       await loadSplitData();
     } catch (saveError) {
-      setError(formatFriendlySplitError(saveError, 'Unable to save this friend.'));
+      reportSplitError(saveError, 'Unable to save this friend.');
     } finally {
       setSaving(false);
     }
@@ -1063,7 +1090,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       await loadSplitData();
       setSelectedGroupDetailId(isEditingGroup ? null : savedGroup.id);
     } catch (saveError) {
-      setError(formatFriendlySplitError(saveError, 'Unable to save this group.'));
+      reportSplitError(saveError, 'Unable to save this group.');
     } finally {
       setSaving(false);
     }
@@ -1093,7 +1120,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           void archiveSplitFriend(token, friend.id)
             .then(loadSplitData)
             .catch((archiveError: unknown) => {
-              setError(formatFriendlySplitError(archiveError, 'Unable to archive friend.'));
+              reportSplitError(archiveError, 'Unable to archive friend.');
             });
         },
       },
@@ -1107,7 +1134,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     void archiveSplitFriend(token, pendingFriendDelete.id)
       .then(loadSplitData)
       .catch((archiveError: unknown) => {
-        setError(formatFriendlySplitError(archiveError, 'Unable to delete friend.'));
+        reportSplitError(archiveError, 'Unable to delete friend.');
       })
       .finally(() => {
         setSaving(false);
@@ -1173,7 +1200,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           share_amount:
             splitChoiceMode === 'friend_paid_full'
               ? amount
-              : Number((amount / splitPersonCount).toFixed(2)),
+              : roundToPaise(amount / splitPersonCount),
           direction: 'user_owes_friend',
         },
       ];
@@ -1190,7 +1217,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       return uniqueFriendIds.map((friendId, index) => {
         const share =
           index === uniqueFriendIds.length - 1
-            ? Number((amount - allocated).toFixed(2))
+            ? roundToPaise(amount - allocated)
             : baseShare;
         allocated += share;
         return {
@@ -1206,7 +1233,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setError('Choose at least one person for this split.');
       return null;
     }
-    const perPersonShare = Number((amount / splitPersonCount).toFixed(2));
+    const perPersonShare = roundToPaise(amount / splitPersonCount);
     return uniqueFriendIds.map((friendId) => ({
       friend_id: friendId,
       share_amount: perPersonShare,
@@ -1244,7 +1271,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       authToken,
       {
         title: billTitle.trim(),
-        amount: amount.toFixed(2),
+        amount: toAmountString(amount),
         currency: 'INR',
         account_id: account.id,
         type: 'expense',
@@ -1309,7 +1336,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         setSelectedGroupDetailId(nextGroupId);
       }
     } catch (saveError) {
-      setError(formatFriendlySplitError(saveError, 'Unable to save this split bill.'));
+      reportSplitError(saveError, 'Unable to save this split bill.');
     } finally {
       setSaving(false);
     }
@@ -1330,7 +1357,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         }
       })
       .catch((deleteError: unknown) => {
-        setError(formatFriendlySplitError(deleteError, 'Unable to delete this expense.'));
+        reportSplitError(deleteError, 'Unable to delete this expense.');
       })
       .finally(() => setSaving(false));
   };
@@ -1355,7 +1382,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       closeModal();
       await loadSplitData();
     } catch (saveError) {
-      setError(formatFriendlySplitError(saveError, 'Unable to record this settlement.'));
+      reportSplitError(saveError, 'Unable to record this settlement.');
     } finally {
       setSaving(false);
     }
@@ -1412,7 +1439,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         url: invite.url,
       });
     } catch (inviteError) {
-      setError(formatFriendlySplitError(inviteError, 'Unable to share this invite link.'));
+      reportSplitError(inviteError, 'Unable to share this invite link.');
     } finally {
       setSaving(false);
     }
@@ -1451,7 +1478,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setGroupSettingsId(invite.group.id);
       await loadPendingGroupInvites(invite.group.id);
     } catch (inviteError) {
-      setError(formatFriendlySplitError(inviteError, 'Unable to invite this friend.'));
+      reportSplitError(inviteError, 'Unable to invite this friend.');
     } finally {
       setSaving(false);
     }
@@ -1477,7 +1504,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadPendingGroupInvites(groupId);
       })
       .catch((revokeError: unknown) => {
-        setError(formatFriendlySplitError(revokeError, 'Unable to revoke this invite.'));
+        reportSplitError(revokeError, 'Unable to revoke this invite.');
       })
       .finally(() => setSaving(false));
   };
@@ -1515,7 +1542,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setSelectedGroupDetailId(groupId);
       await loadSplitData();
     } catch (saveError) {
-      setError(formatFriendlySplitError(saveError, 'Unable to update group members.'));
+      reportSplitError(saveError, 'Unable to update group members.');
     } finally {
       setSaving(false);
     }
@@ -1543,7 +1570,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadSplitData();
       })
       .catch((deleteError: unknown) => {
-        setError(formatFriendlySplitError(deleteError, 'Unable to delete this split group.'));
+        reportSplitError(deleteError, 'Unable to delete this split group.');
       })
       .finally(() => setSaving(false));
   };
@@ -1560,7 +1587,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadSplitData();
       })
       .catch((leaveError: unknown) => {
-        setError(formatFriendlySplitError(leaveError, 'Unable to leave this split group.'));
+        reportSplitError(leaveError, 'Unable to leave this split group.');
       })
       .finally(() => setSaving(false));
   };
@@ -1576,7 +1603,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         await loadDeviceContacts();
       }
     } catch (permissionError) {
-      setError(formatFriendlySplitError(permissionError, 'Unable to request contacts permission.'));
+      reportSplitError(permissionError, 'Unable to request contacts permission.');
     } finally {
       setContactsLoading(false);
     }
@@ -1605,7 +1632,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       );
       await loadSplitData();
     } catch (saveError) {
-      setError(formatFriendlySplitError(saveError, 'Unable to add this contact.'));
+      reportSplitError(saveError, 'Unable to add this contact.');
     } finally {
       setSaving(false);
     }
@@ -1719,7 +1746,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     if (!friend) return;
     resetSettlementForm();
     setSettlementFriendId(friend.id);
-    setSettlementAmount(String(Math.abs(balance).toFixed(2)));
+    setSettlementAmount(toAmountString(Math.abs(balance)));
     setSettlementDirection(balance > 0 ? 'friend_paid_user' : 'user_paid_friend');
     setSettlementNotes(`Settlement for ${summary.group.name}`);
     setGroupAction(null);
@@ -1748,7 +1775,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         dialogTitle: `${summary.group.name} Finnri split export`,
       });
     } catch (shareError) {
-      setError(formatFriendlySplitError(shareError, 'Unable to export this group summary.'));
+      reportSplitError(shareError, 'Unable to export this group summary.');
     }
   };
 
@@ -1785,9 +1812,9 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   if (loading && balances.length === 0 && friends.length === 0) {
     return (
       <SplitScreenFrame embedded={embedded} backgroundColor={theme.background}>
-        <View className="flex-1 justify-center">
-          <StateView icon="account-multiple-outline" title="Loading splits" loading />
-        </View>
+        <SkeletonFrame label="Loading splits" testID="split-skeleton" style={{ paddingTop: 16 }}>
+          <SkeletonRows count={5} lines={2} />
+        </SkeletonFrame>
       </SplitScreenFrame>
     );
   }
@@ -1849,7 +1876,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
               {[friend.phone, friend.email].filter(Boolean).join(' • ') || 'No contact saved'}
             </TText>
             <TText className="mt-1 text-sm" style={{ color: amountColor, fontFamily: Fonts.title }}>
-              {formatMoney(netBalance)} {balanceLabel}
+              {formatBalance(netBalance)} {balanceLabel}
             </TText>
           </View>
         </Pressable>
@@ -1969,7 +1996,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       </View>
       {item.amount != null ? (
         <TText className="text-sm" style={{ color: theme.text, fontFamily: Fonts.title }}>
-          {formatMoney(item.amount)}
+          {formatBalance(item.amount)}
         </TText>
       ) : null}
     </Pressable>
@@ -1979,6 +2006,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     <SplitScreenFrame embedded={embedded} backgroundColor={theme.background}>
       <TView className="flex-1" style={{ backgroundColor: theme.background }}>
         <ScrollView
+          ref={scrollRef}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingHorizontal: 24,
@@ -2003,11 +2031,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             />
           )}
 
-          {error && (
-            <View className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
-              <TText className="text-center text-sm text-red-600 dark:text-red-300">{error}</TText>
-            </View>
-          )}
+          {error && <ErrorBanner message={error} style={{ marginTop: 16 }} />}
 
           <SegmentedSections activeSection={activeSection} onChange={setActiveSection} />
 
@@ -2464,6 +2488,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             onPress={() => void handleCreateSettlement()}
           />
         </SplitModal>
+
+        <UpgradeSheet
+          visible={upgradeSheetVisible}
+          entitlement={entitlement}
+          onClose={dismissUpgrade}
+        />
       </TView>
     </SplitScreenFrame>
   );
@@ -3087,7 +3117,7 @@ function CreateGroupModal({
                   className="h-16 w-16 items-center justify-center rounded-lg border"
                   style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                   <TText className="text-3xl" style={{ color: theme.text }}>
-                    ₹
+                    {CURRENCY_SYMBOL}
                   </TText>
                 </View>
                 <TextInput
@@ -3233,11 +3263,11 @@ function FriendDetailModal({
   );
   const balanceCopy =
     netBalance > 0
-      ? `${friendFirstName} owes you ${formatMoney(netBalance)}${
+      ? `${friendFirstName} owes you ${formatBalance(netBalance)}${
           unsettledGroup ? ` in "${unsettledGroup.group.name}"` : ''
         }`
       : netBalance < 0
-        ? `You owe ${friendFirstName} ${formatMoney(netBalance)}${
+        ? `You owe ${friendFirstName} ${formatBalance(netBalance)}${
             unsettledGroup ? ` in "${unsettledGroup.group.name}"` : ''
           }`
         : `You and ${friendFirstName} are settled up.`;
@@ -3442,7 +3472,7 @@ function FriendSharedGroupRow({
             <TText
               className="mt-1 text-lg"
               style={{ color: friendNet > 0 ? '#12966F' : '#DC2626', fontFamily: Fonts.title }}>
-              {formatMoney(friendNet)}
+              {formatBalance(friendNet)}
             </TText>
           </>
         )}
@@ -3506,8 +3536,8 @@ function GroupDetailModal({
         ? 'Everyone is settled up'
         : 'No expenses yet'
       : summary.netBalance > 0
-        ? `You are owed ${formatMoney(summary.netBalance)} overall`
-        : `You owe ${formatMoney(Math.abs(summary.netBalance))} overall`;
+        ? `You are owed ${formatBalance(summary.netBalance)} overall`
+        : `You owe ${formatBalance(Math.abs(summary.netBalance))} overall`;
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -3771,7 +3801,7 @@ function GroupExpenseRow({
           {bill.title}
         </TText>
         <TText className="mt-1 text-base text-black/50">
-          {paidByYou ? 'You' : payerName} paid {formatMoney(bill.total_amount)}
+          {paidByYou ? 'You' : payerName} paid {formatBalance(bill.total_amount)}
         </TText>
       </View>
       {net !== 0 ? (
@@ -3784,7 +3814,7 @@ function GroupExpenseRow({
           <TText
             className="mt-1 text-base"
             style={{ color: net > 0 ? '#12966F' : '#DC2626', fontFamily: Fonts.title }}>
-            {formatMoney(net)}
+            {formatBalance(net)}
           </TText>
         </View>
       ) : null}
@@ -3882,11 +3912,11 @@ function GroupActionModal({
           {mode === 'totals' ? (
             <View>
               <View className="gap-3">
-                <GroupMetricRow label="Total expenses" value={formatMoney(totals.total)} icon="receipt-text-outline" />
-                <GroupMetricRow label="You paid" value={formatMoney(totals.youPaid)} icon="wallet-outline" />
-                <GroupMetricRow label="Friends paid" value={formatMoney(totals.friendPaid)} icon="account-cash-outline" />
-                <GroupMetricRow label="You lent" value={formatMoney(totals.youLent)} icon="arrow-up-circle-outline" positive />
-                <GroupMetricRow label="You borrowed" value={formatMoney(totals.youBorrowed)} icon="arrow-down-circle-outline" negative />
+                <GroupMetricRow label="Total expenses" value={formatBalance(totals.total)} icon="receipt-text-outline" />
+                <GroupMetricRow label="You paid" value={formatBalance(totals.youPaid)} icon="wallet-outline" />
+                <GroupMetricRow label="Friends paid" value={formatBalance(totals.friendPaid)} icon="account-cash-outline" />
+                <GroupMetricRow label="You lent" value={formatBalance(totals.youLent)} icon="arrow-up-circle-outline" positive />
+                <GroupMetricRow label="You borrowed" value={formatBalance(totals.youBorrowed)} icon="arrow-down-circle-outline" negative />
               </View>
               <TText className="mt-8 text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
                 Paid by
@@ -3901,7 +3931,7 @@ function GroupActionModal({
                       {name}
                     </TText>
                     <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
-                      {formatMoney(value)}
+                      {formatBalance(value)}
                     </TText>
                   </View>
                 ))}
@@ -4046,12 +4076,12 @@ function GroupBalanceActionRow({
             {settled
               ? 'settled up'
               : balance > 0
-                ? `owes you ${formatMoney(balance)}`
-                : `you owe ${formatMoney(balance)}`}
+                ? `owes you ${formatBalance(balance)}`
+                : `you owe ${formatBalance(balance)}`}
           </TText>
         </View>
         <TText className="text-base" style={{ color, fontFamily: Fonts.title }}>
-          {settled ? '₹0' : formatMoney(balance)}
+          {settled ? formatBalance(0) : formatBalance(balance)}
         </TText>
       </View>
       {actionLabel && onPress ? (
@@ -4111,7 +4141,7 @@ function BillDetailModal({
   const payerName = payerParticipant
     ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
     : currentUserName;
-  const paidLine = `${payerName === currentUserName ? 'You' : payerName} paid ${formatMoney(
+  const paidLine = `${payerName === currentUserName ? 'You' : payerName} paid ${formatBalance(
     bill.total_amount
   )}`;
   const canEdit = bill.viewer_can_edit === true;
@@ -4170,7 +4200,7 @@ function BillDetailModal({
               <TText
                 className="mt-2 text-4xl"
                 style={{ color: theme.text, fontFamily: Fonts.title }}>
-                {formatMoney(bill.total_amount)}
+                {formatBalance(bill.total_amount)}
               </TText>
               <TText className="mt-4 text-base leading-6 text-black/55 dark:text-white/55">
                 {bill.date}
@@ -4188,8 +4218,8 @@ function BillDetailModal({
                 const friendName = friendById.get(participant.friend_id)?.name ?? 'Friend';
                 const isUserOwes = participant.direction === 'user_owes_friend';
                 const label = isUserOwes
-                  ? `You owe ${friendName} ${formatMoney(participant.share_amount)}`
-                  : `${friendName} owes ${formatMoney(participant.share_amount)}`;
+                  ? `You owe ${friendName} ${formatBalance(participant.share_amount)}`
+                  : `${friendName} owes ${formatBalance(participant.share_amount)}`;
                 return (
                   <View
                     key={`${participant.friend_id}-${participant.direction}`}
@@ -4393,7 +4423,7 @@ function AddExpenseModal({
                     className="h-[70px] w-[70px] items-center justify-center rounded border"
                     style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                     <TText className="text-4xl" style={{ color: theme.text }}>
-                      ₹
+                      {CURRENCY_SYMBOL}
                     </TText>
                   </View>
                   <TextInput
@@ -4446,11 +4476,7 @@ function AddExpenseModal({
                 ) : null}
 
                 {errorMessage ? (
-                  <View className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
-                    <TText className="text-center text-sm text-red-600 dark:text-red-300">
-                      {errorMessage}
-                    </TText>
-                  </View>
+                  <ErrorBanner message={errorMessage} style={{ marginTop: 24 }} />
                 ) : null}
               </View>
             </ScrollView>
@@ -4864,7 +4890,7 @@ function AdjustSplitScreen({
         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
         <View className="flex-1 items-center">
           <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
-            {formatMoney(perPerson)}/person
+            {formatBalance(perPerson)}/person
           </TText>
           <TText className="mt-1 text-base text-black/55 dark:text-white/55">
             ({totalSelected} people)
@@ -5136,9 +5162,12 @@ function GroupSettingsModal({
             <>
               <SettingsSectionTitle label="Pending invites" />
               {pendingInvitesLoading ? (
-                <View className="px-6 py-4">
-                  <ActivityIndicator color={theme.accent} />
-                </View>
+                <SkeletonFrame
+                  label="Loading pending invites"
+                  testID="pending-invites-skeleton"
+                  style={{ paddingHorizontal: 24, paddingVertical: 8 }}>
+                  <SkeletonRows count={2} variant="list" showAmount={false} carded={false} />
+                </SkeletonFrame>
               ) : (
                 pendingInvites.map((invite) => (
                   <PendingInviteRow
@@ -5479,12 +5508,9 @@ function GroupMembersModal({
               onRequest={onRequestContactsAccess}
             />
           ) : contactsLoading ? (
-            <View className="items-center py-10">
-              <ActivityIndicator color={theme.accent} />
-              <TText className="mt-3 text-sm text-black/55 dark:text-white/55">
-                Loading contacts
-              </TText>
-            </View>
+            <SkeletonFrame label="Loading contacts" testID="contacts-skeleton">
+              <SkeletonRows count={5} variant="list" showAmount={false} carded={false} />
+            </SkeletonFrame>
           ) : filteredContacts.length > 0 ? (
             <View className="mt-3">
               {contactsAccessPrivileges === 'limited' ? (
@@ -5802,11 +5828,7 @@ function SplitModal({
           </Pressable>
         </View>
         {errorMessage ? (
-          <View className="mb-3 rounded-2xl border border-red-100 bg-red-50 p-3 dark:border-red-900/30 dark:bg-red-900/20">
-            <TText className="text-center text-sm text-red-600 dark:text-red-300">
-              {errorMessage}
-            </TText>
-          </View>
+          <ErrorBanner message={errorMessage} style={{ marginBottom: 12 }} />
         ) : null}
         <ScrollView
           keyboardShouldPersistTaps="handled"

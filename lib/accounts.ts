@@ -1,5 +1,31 @@
 import { API_BASE_URL } from './transactions';
 import { ApiFieldErrors, readApiError } from './api-error';
+import { getClientTimeZone } from './datetime';
+
+/**
+ * What an account can prove from its transactions, derived by the backend (see
+ * `internal/http/account_summary.go`). Nothing in here is user-entered.
+ *
+ * Absent on the create/update responses, which return the bare account; the
+ * screens re-fetch the list to get figures.
+ */
+export type AccountSummary = {
+    /** Month-to-date: the 1st through today, same window as the dashboard. */
+    spent_this_month: number;
+    received_this_month: number;
+    entries_this_month: number;
+    lifetime_spent: number;
+    lifetime_received: number;
+    entries_total: number;
+    /** YYYY-MM-DD of the most recent entry; absent when never used. */
+    last_activity_date?: string;
+    /** Credit cards only — what is owed. Never `credit_limit`. */
+    outstanding?: number;
+    /** Credit cards with a limit only. Percent; can exceed 100. */
+    credit_utilisation?: number;
+    /** Non-card accounts with an opening balance only. */
+    running_balance?: number;
+};
 
 export type Account = {
     id: number;
@@ -10,9 +36,14 @@ export type Account = {
     identifier?: string;
     credit_limit?: number;
     due_day?: number;
-    fee_month?: string;
+    /**
+     * Opening balance — what the account held (or, on a card, owed) before the
+     * first logged transaction. Read `summary` for anything current.
+     */
     balance?: number;
+    fee_month?: string;
     is_default?: boolean;
+    summary?: AccountSummary;
     created_at?: string;
     updated_at?: string;
 };
@@ -134,7 +165,11 @@ const readAccountError = async (response: Response, fallback: string): Promise<A
 };
 
 export const fetchAccounts = async (token: string): Promise<Account[]> => {
-    const response = await fetch(`${API_BASE_URL}/v1/accounts`, {
+    // The same `tz` the dashboard sends, because "this month" has to mean the
+    // same month on both tabs — otherwise the two screens disagree about the
+    // same account for a few hours either side of a month boundary.
+    const query = new URLSearchParams({ tz: getClientTimeZone() });
+    const response = await fetch(`${API_BASE_URL}/v1/accounts?${query.toString()}`, {
         headers: {
             Authorization: `Bearer ${token}`,
         },

@@ -3,19 +3,31 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import React from 'react';
-import { ActivityIndicator, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 import { AuthPinSetupScreen } from './AuthPinSetupScreen';
 import { styles } from './styles';
 import { ScreenProps } from './types';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { HapticSwitch } from '@/components/ui/HapticSwitch';
 
+type AuthSecuritySetupProps = ScreenProps & {
+  /** Copy for the confirm button. "Continue" while signing up, "Done" later. */
+  continueLabel?: string;
+};
+
+/**
+ * PIN and biometrics, both optional. The PIN was previously mandatory while the
+ * copy called it optional; the button now works with no PIN set and says what it
+ * will do, because a lock nobody chose is a lock nobody remembers.
+ */
 export const AuthSecuritySetupScreen = ({
   onContinue,
   onSecondary,
   isLoading,
-  errorMessage: externalError
-}: ScreenProps) => {
+  errorMessage: externalError,
+  continueLabel = 'Continue',
+}: AuthSecuritySetupProps) => {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const [biometricsEnabled, setBiometricsEnabled] = React.useState(false);
@@ -33,6 +45,15 @@ export const AuthSecuritySetupScreen = ({
     if (!nextValue) {
       setBiometricsEnabled(false);
       setIsBiometricsVerified(false);
+      return;
+    }
+
+    // Biometrics is a shortcut past the PIN, so it needs one behind it. Without
+    // a fallback, a failed scan leaves the user staring at a keypad that will
+    // never accept anything.
+    if (!pinConfigured) {
+      setLocalError('Set a PIN first — it is the fallback when biometrics fail.');
+      setBiometricsEnabled(false);
       return;
     }
 
@@ -118,7 +139,8 @@ export const AuthSecuritySetupScreen = ({
         <View style={styles.textSection}>
           <Text style={[styles.title, { color: theme.text, fontSize: 26 }]}>Protect your Finnri data</Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6 }]}>
-            Set up a PIN, then optionally enable Biometrics to keep your spending records private.
+            A PIN or Biometrics keeps your spending records private on this device. Both are
+            optional — you can add them later from Settings.
           </Text>
         </View>
 
@@ -133,7 +155,7 @@ export const AuthSecuritySetupScreen = ({
                 Use Face ID or Touch ID
               </Text>
             </View>
-            <Switch
+            <HapticSwitch
               value={biometricsEnabled}
               onValueChange={handleBiometricsToggle}
               trackColor={{ false: '#f4f3f4', true: theme.accent }}
@@ -142,6 +164,8 @@ export const AuthSecuritySetupScreen = ({
             />
           </View>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={pinConfigured ? 'Change your PIN' : 'Set up a PIN'}
             style={[styles.securityCard, { backgroundColor: 'white', marginTop: 12 }]}
             onPress={() => {
               setIsSettingPin(true);
@@ -160,7 +184,7 @@ export const AuthSecuritySetupScreen = ({
                 {pinConfigured ? "PIN Configured" : "Set up a PIN"}
               </Text>
               <Text style={[styles.securitySubtitle, { color: theme.text, opacity: 0.4 }]}>
-                {pinConfigured ? "You can change your PIN here" : "Create a 4-digit code"}
+                {pinConfigured ? 'You can change your PIN here' : 'Create a 4-digit code — optional'}
               </Text>
             </View>
             <MaterialCommunityIcons
@@ -185,27 +209,26 @@ export const AuthSecuritySetupScreen = ({
 
         <View style={styles.buttonSection}>
           <TouchableOpacity
+            accessibilityRole="button"
             style={[
               styles.primaryButton,
-              {
-                backgroundColor: theme.accent,
-                opacity: pinConfigured && !isLoading ? 1 : 0.6,
-              },
+              { backgroundColor: theme.accent, opacity: isLoading ? 0.6 : 1 },
             ]}
-            disabled={!pinConfigured || !pin || isLoading}
-            onPress={() => {
-              if (!pin) {
-                setLocalError('Create a PIN before continuing.');
-                return;
-              }
-              onContinue({ pin, biometricsEnabled });
-            }}
+            disabled={isLoading}
+            onPress={() => onContinue({ pin: pinConfigured ? pin : null, biometricsEnabled })}
           >
-            {isLoading ? <ActivityIndicator color="white" /> : <Text style={styles.primaryButtonText}>Continue</Text>}
+            {isLoading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                {pinConfigured ? continueLabel : 'Set up later'}
+              </Text>
+            )}
           </TouchableOpacity>
 
           {onSecondary ? (
             <TouchableOpacity
+              accessibilityRole="button"
               style={styles.textButton}
               onPress={onSecondary}
               disabled={isLoading}
