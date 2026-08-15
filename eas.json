@@ -16,7 +16,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REPLACE-ME.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://ez-money-be-production.up.railway.app"
       }
     },
     "production": {
