@@ -8,6 +8,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
+// Must load before any component calls setColorScheme: NativeWind reads the
+// compiled darkMode setting from this stylesheet and throws without it.
+import '../global.css';
+
 import { FinnriSplashScreen } from '@/components/SplashScreen';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';

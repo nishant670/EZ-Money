@@ -10,6 +10,7 @@ import { File } from 'expo-file-system';
 import { useRouter, useFocusEffect, useScrollToTop } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated as RNAnimated,
   Easing,
@@ -22,6 +23,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 
+import { AnswerCard } from '@/components/home/AnswerCard';
 import { CollapsibleCapture } from '@/components/home/CollapsibleCapture';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { MonthStrip } from '@/components/home/MonthStrip';
@@ -78,7 +80,14 @@ import { haptics } from '@/lib/haptics';
 import { resolveAttachmentForSave } from '@/lib/uploads';
 import { formatTime, toApiTime } from '@/lib/datetime';
 import { toAmountInputValue, toAmountString } from '@/lib/money';
-import { ParseApiError, parseEntryDraft, type ParseResponse } from '@/lib/parse';
+import {
+  isParseAnswer,
+  looksLikeQuestion,
+  ParseApiError,
+  parseEntryDraft,
+  type LedgerAnswer,
+  type ParseResponse,
+} from '@/lib/parse';
 import {
   fetchSplitFriends,
   fetchSplitGroups,
@@ -105,8 +114,6 @@ import {
   type AiReviewMetadata,
   type EntryForm,
 } from '@/components/transactions/TransactionFormModal';
-
-import '../../global.css';
 
 /**
  * The FAB floats above the scroll view, so anything that scrolls under it has
@@ -271,6 +278,19 @@ export default function HomeScreen() {
    * the same seconds inside the sheet the answer will appear in is progress.
    */
   const [isParsing, setIsParsing] = useState(false);
+  /**
+   * The other direction of the capture field: the answer to a question about
+   * money already recorded. It lives on Home rather than in a sheet because it
+   * is a reply, not a form — there is nothing to confirm and nothing to save.
+   */
+  const [answer, setAnswer] = useState<LedgerAnswer | null>(null);
+  const [answerSourceText, setAnswerSourceText] = useState('');
+  /**
+   * Set while a question is in flight, so the wait has somewhere to happen that
+   * is not the draft sheet. Only ever set for typed text that reads as a
+   * question; a capture never sees it.
+   */
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   /**
    * The row that was just written, so the feed can say which one is new. Cleared
    * on a timer rather than left set, or the highlight would come back every time
@@ -905,29 +925,39 @@ export default function HomeScreen() {
     ]
   );
 
-  const handleSubmitPrompt = useCallback(async () => {
+  const submitPrompt = useCallback(async (overrideText?: string) => {
     if (isSubmitting) return;
-    const trimmed = inputText.trim();
-    if (!trimmed && !recordedUri) {
+    const trimmed = (overrideText ?? inputText).trim();
+    // A re-asked suggestion is text, so any pending recording is not part of it.
+    const audioUri = overrideText ? null : recordedUri;
+    if (!trimmed && !audioUri) {
       setErrorMessage('Please type or record your expense first.');
       return;
     }
     setIsSubmitting(true);
     setErrorMessage(null);
     setCreditAction(null);
+    setAnswer(null);
+    // Typed text that reads as a question waits behind an inline indicator
+    // instead of the draft sheet. The server still decides what it was — this
+    // only decides where the wait is shown.
+    const deferSheet = Boolean(trimmed) && !audioUri && looksLikeQuestion(trimmed);
+    setPendingQuestion(deferSheet ? trimmed : null);
     // The phrase is known before the request goes out, so the sheet can show it
     // from the first frame — during the wait it is the only thing on screen
     // saying *which* capture is being read. The rest of the review metadata
     // arrives with the parse.
     setAiSourceText(trimmed);
-    setAiInputSource(recordedUri ? 'voice' : 'text');
+    setAiInputSource(audioUri ? 'voice' : 'text');
     setAiReview({
       sourceText: trimmed,
-      inputSource: recordedUri ? 'voice' : 'text',
+      inputSource: audioUri ? 'voice' : 'text',
     });
     setIsParsing(true);
     setModalMode('audio');
-    setIsEditOpen(true);
+    if (!deferSheet) {
+      setIsEditOpen(true);
+    }
     try {
       let audio:
         | {
@@ -937,19 +967,42 @@ export default function HomeScreen() {
         | undefined;
       if (trimmed) {
         audio = undefined;
-      } else if (recordedUri) {
-        const extension = recordedUri.split('.').pop();
+      } else if (audioUri) {
+        const extension = audioUri.split('.').pop();
         const fileName = `recording.${extension ?? 'm4a'}`;
         audio = {
-          file: new File(recordedUri),
+          file: new File(audioUri),
           name: fileName,
         };
       }
-      const data: ParseResponse = await parseEntryDraft({ token, hintText: trimmed, audio });
+      const result = await parseEntryDraft({ token, hintText: trimmed, audio });
       void fetchCredits(true);
       createIdempotencyKey.current = null;
+
+      // The question direction. An answer is not a transaction and must never
+      // reach the form — the sheet goes back down and the card takes the feed's
+      // first slot instead.
+      if (isParseAnswer(result)) {
+        setIsEditOpen(false);
+        setAiReview(null);
+        setPendingQuestion(null);
+        setAnswerSourceText(result.source_text ?? trimmed);
+        setAnswer(result.answer);
+        setInputText('');
+        setRecordedUri(null);
+        haptics.saved();
+        return;
+      }
+
+      const data: ParseResponse = result;
+      // A capture that was mistaken for a question needs the sheet it did not
+      // get; opening it here costs one frame rather than a wrong destination.
+      setPendingQuestion(null);
+      if (deferSheet) {
+        setIsEditOpen(true);
+      }
       setAiSourceText(data.source_text ?? trimmed);
-      setAiInputSource(recordedUri ? 'voice' : 'text');
+      setAiInputSource(audioUri ? 'voice' : 'text');
       setAiReview({
         confidence: data.confidence,
         needsConfirmation: data.needs_confirmation,
@@ -964,7 +1017,7 @@ export default function HomeScreen() {
         // wrong field is usually a misheard word, and the phrase is the only
         // place that is visible.
         sourceText: data.source_text ?? trimmed,
-        inputSource: recordedUri ? 'voice' : 'text',
+        inputSource: audioUri ? 'voice' : 'text',
       });
       setForm((prev) => {
         const missing = new Set(data.missing_fields ?? []);
@@ -1032,6 +1085,7 @@ export default function HomeScreen() {
       // it back down — the credit card and the error banner both live on Home,
       // behind it.
       setIsEditOpen(false);
+      setPendingQuestion(null);
       if (error instanceof ParseApiError) {
         if (error.code === 'insufficient_ai_credits') {
           setCreditAction({
@@ -1074,6 +1128,8 @@ export default function HomeScreen() {
     token,
     user?.is_guest,
   ]);
+
+  const handleSubmitPrompt = useCallback(() => submitPrompt(), [submitPrompt]);
 
   const renderRecentActivity = () => {
     if (isEntriesLoading) {
@@ -1279,6 +1335,37 @@ export default function HomeScreen() {
                 onPress={() => router.push('/billing')}
               />
             </View>
+          ) : null}
+
+          {/* Questions answer here, at the top of the feed, directly under the
+              capture field that asked them — not in a sheet. */}
+          {pendingQuestion ? (
+            <View
+              className="mx-6 mb-4 flex-row items-center gap-3 rounded-3xl border p-4"
+              style={{
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFF8F4',
+                borderColor: themeTokens.colors.border,
+              }}>
+              <ActivityIndicator size="small" color={themeTokens.colors.accent} />
+              <ThemedText
+                variant="caption"
+                numberOfLines={2}
+                style={{ flex: 1, color: `${themeTokens.colors.text}99` }}>
+                Looking through your transactions…
+              </ThemedText>
+            </View>
+          ) : null}
+
+          {answer ? (
+            <AnswerCard
+              answer={answer}
+              sourceText={answerSourceText}
+              onDismiss={() => setAnswer(null)}
+              onAskSuggestion={(question) => {
+                setAnswer(null);
+                void submitPrompt(question);
+              }}
+            />
           ) : null}
 
           <QuickPrompts
