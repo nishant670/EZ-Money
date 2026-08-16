@@ -335,6 +335,25 @@ export const Typography = {
   },
 } as const;
 
+/**
+ * The ratio every preset above is drawn at, and the one a size override is
+ * given when it does not bring a line height of its own.
+ *
+ * A `lineHeight` smaller than the glyphs need does not overflow — it *clips*,
+ * at the bottom of the line box, which on a money screen is not cosmetic:
+ * digits have no descenders but the grouping comma does, so `₹40,486` loses
+ * the comma's tail and reads as `₹40.486`. Inter needs about 1.21x its font
+ * size; 1.3 is that plus the leading the presets already sit at (they run
+ * 1.26-1.5, and the two display sizes that were hand-tuned on a handset landed
+ * at 1.26 and 1.33).
+ */
+export const LineHeightRatio = 1.3;
+
+/** The line height a given font size wants, absent an explicit one. */
+export function derivedLineHeight(fontSize: number): number {
+  return Math.round(fontSize * LineHeightRatio);
+}
+
 export const Spacing = {
   none: 0,
   xxs: 2,

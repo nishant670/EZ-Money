@@ -91,16 +91,14 @@ export function MonthStrip({ dashboard, loading, onPress }: MonthStripProps) {
 
     return (
       <>
-        {/* lineHeight is not optional here. ThemedText's default style sets
-            `lineHeight: 21` for its 14px body size, and a className only
-            changes fontSize — so a 30px number renders inside a 21px line box
-            and everything below the baseline is clipped. Digits have no
-            descenders so they look fine; the grouping comma loses its tail and
-            `₹40,486` reads as `₹40.486`. The account detail hero hit the same
-            trap and pins its line height for the same reason. */}
+        {/* This carried `lineHeight: 40` until X14, because ThemedText's 21px
+            default line box clipped the grouping comma off a 30px number and
+            `₹40,486` read as `₹40.486`. ThemedText now derives the height from
+            the size it is actually given, so the pin is gone from here and
+            from the two other screens that had each arrived at it separately. */}
         <ThemedText
           className="mt-1 text-[30px]"
-          style={{ fontFamily: Fonts.title, color: theme.text, lineHeight: 40 }}>
+          style={{ fontFamily: Fonts.title, color: theme.text }}>
           {formatMoney(summary.total_spent)}
         </ThemedText>
 

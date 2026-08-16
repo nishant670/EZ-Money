@@ -114,13 +114,10 @@ export function CategoryDonut({
               style={{ fontFamily: Fonts.title, letterSpacing: 1, lineHeight: 14 }}>
               Total
             </ThemedText>
-            {/* lineHeight is mandatory beside a text-[Npx]: ThemedText's default
-                21px line box clips the grouping comma's tail, so ₹40,486 reads
-                as ₹40.486 (see X14). */}
             <CountUpMoney
               amount={totalSpent}
               className="text-[19px]"
-              style={{ fontFamily: Fonts.title, color: theme.text, lineHeight: 26 }}
+              style={{ fontFamily: Fonts.title, color: theme.text }}
             />
           </View>
         </View>

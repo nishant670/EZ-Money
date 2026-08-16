@@ -1,6 +1,11 @@
-import { StyleSheet, Text, type TextProps } from 'react-native';
+import { StyleSheet, Text, type StyleProp, type TextProps, type TextStyle } from 'react-native';
 
-import { Fonts, Typography, type TypographyVariant } from '@/constants/theme';
+import {
+  Fonts,
+  Typography,
+  derivedLineHeight,
+  type TypographyVariant,
+} from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type ThemedTextProps = TextProps & {
@@ -9,6 +14,43 @@ export type ThemedTextProps = TextProps & {
   type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
   variant?: TypographyVariant;
 };
+
+/**
+ * The line height an override needs, or `undefined` if the preset's will do.
+ *
+ * A preset here carries a `fontSize` *and* a `lineHeight`, but a caller's
+ * override almost never carries both: `text-[30px]` compiles to `fontSize`
+ * alone (Tailwind pairs a line height with its *named* sizes only, so
+ * `text-lg` is safe and `text-[18px]` is not), and an inline
+ * `style={{ fontSize: 18 }}` is the same trap spelled out. The preset's line
+ * height then survives the override and boxes a larger glyph than it was
+ * measured for, which clips — see `LineHeightRatio`.
+ *
+ * It only ever *grows* the box. Most overrides in the app are smaller than the
+ * preset — `text-[10px]` and `text-[11px]` are 134 of the 148 — and those sit
+ * in a roomy line box rather than a clipping one, so returning a derived
+ * height for them would re-space a third of the app's text to fix nothing.
+ * The rule is `max(preset, derived)`, expressed as "speak only when short".
+ */
+export function resolveLineHeight(
+  preset: TextStyle | undefined,
+  override: StyleProp<TextStyle>
+): number | undefined {
+  const presetLineHeight = preset?.lineHeight;
+  // A preset without a line height leaves the platform to measure the line,
+  // which it does against the font actually in use. Nothing to outgrow.
+  if (typeof presetLineHeight !== 'number') return undefined;
+
+  const flat = StyleSheet.flatten(override) as TextStyle | undefined;
+  // An explicit line height is an answer, not an omission. Deliberately checked
+  // before the font size: `style={{ lineHeight }}` with no size is a caller
+  // re-spacing the preset, and that must survive too.
+  if (typeof flat?.lineHeight === 'number') return undefined;
+  if (typeof flat?.fontSize !== 'number') return undefined;
+
+  const derived = derivedLineHeight(flat.fontSize);
+  return derived > presetLineHeight ? derived : undefined;
+}
 
 export function ThemedText({
   style,
@@ -20,18 +62,19 @@ export function ThemedText({
 }: ThemedTextProps) {
   const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
   const accent = useThemeColor({}, 'tint');
-  const variantStyle = variant ? Typography[variant] : undefined;
+  const preset: TextStyle = variant ? Typography[variant] : styles[type];
+  const lineHeight = resolveLineHeight(preset, style);
 
   return (
     <Text
       style={[
         { color },
-        variantStyle ?? (type === 'default' ? styles.default : undefined),
-        !variant && type === 'title' ? styles.title : undefined,
-        !variant && type === 'defaultSemiBold' ? styles.defaultSemiBold : undefined,
-        !variant && type === 'subtitle' ? styles.subtitle : undefined,
-        !variant && type === 'link' ? [styles.link, { color: accent }] : undefined,
+        preset,
+        !variant && type === 'link' ? { color: accent } : undefined,
         style,
+        // Last, so it wins over the preset — and only ever present when the
+        // caller left the question open.
+        lineHeight === undefined ? undefined : { lineHeight },
       ]}
       {...rest}
     />
@@ -53,7 +96,9 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    lineHeight: 30,
+    // 30 until X14: the one preset that was itself clipping, at a ratio of
+    // 1.07. `Typography.amountHero` is the house pair for this size.
+    lineHeight: 34,
     fontFamily: Fonts.title,
   },
   subtitle: {

@@ -415,7 +415,7 @@ export default function AccountDetailsScreen() {
               className="mt-2 text-[38px]"
               numberOfLines={1}
               adjustsFontSizeToFit
-              style={{ fontFamily: Fonts.title, color: theme.text, lineHeight: 48 }}>
+              style={{ fontFamily: Fonts.title, color: theme.text }}>
               {headline?.placeholder ?? formatMoney(headline?.amount ?? 0)}
             </TText>
 
