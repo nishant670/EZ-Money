@@ -55,6 +55,7 @@ import {
   fetchSplitGroupDirectInvites,
   leaveSplitGroup,
   revokeSplitGroupDirectInvite,
+  splitScreenState,
   updateSplitBill,
   updateSplitFriend,
   updateSplitGroup,
@@ -397,6 +398,12 @@ const buildGroupExportCsv = (
   return rows.join('\n');
 };
 
+/**
+ * Neither of the two connection messages ends in "and try again" any more.
+ * Both of the places they land now carry a Try again control of their own, and
+ * a sentence that asks for a tap next to a button that performs it reads as two
+ * different instructions.
+ */
 const formatFriendlySplitError = (error: unknown, fallback: string) => {
   const rawMessage = error instanceof Error ? error.message : '';
   const normalized = rawMessage.toLowerCase();
@@ -410,7 +417,7 @@ const formatFriendlySplitError = (error: unknown, fallback: string) => {
     normalized.includes('timed out') ||
     normalized.includes('networkerror')
   ) {
-    return 'We could not reach Finnri right now. Check your internet connection and try again.';
+    return 'We could not reach Finnri. Check your internet connection.';
   }
 
   if (
@@ -418,7 +425,7 @@ const formatFriendlySplitError = (error: unknown, fallback: string) => {
     normalized.includes('could not resolve') ||
     normalized.includes('connection refused')
   ) {
-    return 'The server is not reachable right now. Please try again in a moment.';
+    return 'Finnri is not responding right now.';
   }
 
   if (!rawMessage.trim()) return fallback;
@@ -456,7 +463,21 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [activity, setActivity] = useState<SplitActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  /**
+   * Two different failures, deliberately not sharing a slot.
+   *
+   * `error` is something the user just did that did not work — a name left
+   * blank, a settlement that would not save. It belongs in a banner over a
+   * screen that still has its content.
+   *
+   * `loadError` is the ledger itself never arriving. It cannot be a banner,
+   * because everything under a banner would then be drawn from state that was
+   * never filled: "Overall, settled up" over "Create your first group" is not
+   * an empty account, it is an unanswered request wearing one's clothes — and
+   * it invites a user with eight groups to make a ninth.
+   */
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalKind>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>('groups');
   const [searchVisible, setSearchVisible] = useState(false);
@@ -564,6 +585,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
     setLoading(true);
     setError(null);
+    setLoadError(null);
     try {
       const [nextFriends, nextGroups, nextBalances, nextBills, nextActivity] = await Promise.all([
         fetchSplitFriends(token),
@@ -578,12 +600,16 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       setBills(nextBills);
       setActivity(nextActivity);
       clearEntitlement();
-    } catch (loadError) {
-      reportSplitError(loadError, 'Unable to load split data.');
+    } catch (fetchError) {
+      // Still through the entitlement gate first: a 402 on the split ledger is
+      // the paywall's to answer, not a "check your connection".
+      if (!captureEntitlement(fetchError)) {
+        setLoadError(formatFriendlySplitError(fetchError, 'Unable to load split data.'));
+      }
     } finally {
       setLoading(false);
     }
-  }, [clearEntitlement, reportSplitError, token]);
+  }, [captureEntitlement, clearEntitlement, token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -652,6 +678,27 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const overallNetBalance = totals.owedByFriends - totals.owedToFriends;
   const overallTone = getBalanceTone(overallNetBalance);
+
+  /**
+   * Whether the screen is drawing from an answer the server actually gave.
+   *
+   * All five collections start empty and stay empty on a failed load, so
+   * "empty" and "unknown" are the same value in every one of them. This is the
+   * only thing that tells them apart, and it is what decides between showing
+   * the ledger with a warning over it and not pretending to have a ledger.
+   */
+  const hasSplitData =
+    friends.length > 0 ||
+    groups.length > 0 ||
+    balances.length > 0 ||
+    bills.length > 0 ||
+    activity.length > 0;
+
+  const screenState = splitScreenState({
+    loading,
+    loadFailed: !!loadError,
+    hasData: hasSplitData,
+  });
 
   const balanceByFriendId = useMemo(() => {
     return new Map(balances.map((balance) => [balance.friend.id, balance]));
@@ -1810,7 +1857,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     Alert.alert('Activity details', 'This activity is not linked to a detail page yet.');
   };
 
-  if (loading && balances.length === 0 && friends.length === 0) {
+  if (screenState === 'loading') {
     return (
       <SplitScreenFrame embedded={embedded} backgroundColor={theme.background}>
         <SkeletonFrame label="Loading splits" testID="split-skeleton" style={{ paddingTop: 16 }}>
@@ -2034,110 +2081,138 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
           {error && <ErrorBanner message={error} style={{ marginTop: 16 }} />}
 
-          <SegmentedSections activeSection={activeSection} onChange={setActiveSection} />
-
-          {activeSection !== 'activity' ? (
-            <View className="mt-7 flex-row items-center justify-between gap-4">
-              <View className="flex-1">
-                <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
-                  Overall, {overallTone.label}
-                </TText>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Filter split balances"
-                onPress={() => setFilterSheetVisible(true)}
-                className="h-12 w-12 items-center justify-center rounded-full"
-                style={{ backgroundColor: theme.secondary }}>
-                <MaterialCommunityIcons name="tune-variant" size={24} color={theme.text} />
-              </Pressable>
-            </View>
+          {/* A load that failed on top of a ledger we already have is a
+              warning, not a wall: the figures below are real, just possibly a
+              few minutes old, and blanking them would cost the user more than
+              the staleness does. The retry is on the banner because there is
+              nowhere else on the screen it would belong. */}
+          {loadError && screenState === 'ledger' ? (
+            <ErrorBanner
+              message={loadError}
+              onRetry={() => void loadSplitData()}
+              retryLabel="Try again"
+              style={{ marginTop: 16 }}
+            />
           ) : null}
 
-          {activeSection === 'groups' && (
-            <View className="mt-6 gap-5">
-              {visibleGroupSummaries.length > 0 || showNonGroupSummary ? (
-                <>
-                  {visibleGroupSummaries.map(renderGroupCard)}
-                  {showNonGroupSummary ? renderNonGroupRow() : null}
-                  {balanceFilter !== 'settled' ? (
-                    <SettledHint
-                      settledCount={
-                        groups.filter((group) => {
-                          const memberIds = (group.members ?? []).map((member) => member.friend_id);
-                          return memberIds.every(
-                            (memberId) => (balanceByFriendId.get(memberId)?.net_balance ?? 0) === 0
-                          );
-                        }).length
-                      }
-                      onShowSettled={() => {
-                        setBalanceFilter('settled');
-                        setFilterSheetVisible(false);
-                      }}
-                    />
-                  ) : null}
-                </>
-              ) : (
-                <InlineEmptyState
-                  icon="account-group-outline"
-                  title={normalizedSearch ? 'No matching groups' : 'Create your first group'}
-                  message={
-                    normalizedSearch
-                      ? 'Try another search or balance filter.'
-                      : 'Start a group now. Members can be added later.'
-                  }
-                  actionLabel={normalizedSearch ? undefined : 'New group'}
-                  onAction={() => openModal('group')}
-                />
-              )}
+          {loadError && screenState === 'unavailable' ? (
+            <View className="mt-8">
+              <InlineEmptyState
+                icon="wifi-off"
+                title="Splits did not load"
+                message={loadError}
+                actionLabel="Try again"
+                onAction={() => void loadSplitData()}
+              />
             </View>
-          )}
+          ) : (
+            <>
+            <SegmentedSections activeSection={activeSection} onChange={setActiveSection} />
 
-          {activeSection === 'friends' && (
-            <View className="mt-6 gap-4">
-              {visibleFriends.length > 0 ? (
-                visibleFriends.map(renderFriendRow)
-              ) : (
-                <InlineEmptyState
-                  icon={
-                    friends.length === 0
-                      ? 'account-multiple-plus-outline'
-                      : 'account-search-outline'
-                  }
-                  title={normalizedSearch ? 'No matching friends' : 'Add friends to split bills'}
-                  message={
-                    normalizedSearch
-                      ? 'Try another search or balance filter.'
-                      : 'Create friends, then add them to groups, bills, and settlements.'
-                  }
-                  actionLabel={normalizedSearch ? undefined : 'Add friend'}
-                  onAction={() => openModal('friend')}
-                />
-              )}
-            </View>
-          )}
-
-          {activeSection === 'activity' && (
-            <View className="mt-9 gap-4">
-              <View className="mb-2">
-                <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
-                  Recent activity
-                </TText>
+            {activeSection !== 'activity' ? (
+              <View className="mt-7 flex-row items-center justify-between gap-4">
+                <View className="flex-1">
+                  <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                    Overall, {overallTone.label}
+                  </TText>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Filter split balances"
+                  onPress={() => setFilterSheetVisible(true)}
+                  className="h-12 w-12 items-center justify-center rounded-full"
+                  style={{ backgroundColor: theme.secondary }}>
+                  <MaterialCommunityIcons name="tune-variant" size={24} color={theme.text} />
+                </Pressable>
               </View>
-              {visibleActivity.length > 0 ? (
-                visibleActivity.map(renderActivityRow)
-              ) : (
-                <InlineEmptyState
-                  icon="history"
-                  title={normalizedSearch ? 'No matching activity' : 'No activity yet'}
-                  message={
-                    normalizedSearch
-                      ? 'Try another search.'
-                      : 'Group, friend, bill, and settlement activity will appear here.'
-                  }
-                />
-              )}
-            </View>
+            ) : null}
+
+            {activeSection === 'groups' && (
+              <View className="mt-6 gap-5">
+                {visibleGroupSummaries.length > 0 || showNonGroupSummary ? (
+                  <>
+                    {visibleGroupSummaries.map(renderGroupCard)}
+                    {showNonGroupSummary ? renderNonGroupRow() : null}
+                    {balanceFilter !== 'settled' ? (
+                      <SettledHint
+                        settledCount={
+                          groups.filter((group) => {
+                            const memberIds = (group.members ?? []).map((member) => member.friend_id);
+                            return memberIds.every(
+                              (memberId) => (balanceByFriendId.get(memberId)?.net_balance ?? 0) === 0
+                            );
+                          }).length
+                        }
+                        onShowSettled={() => {
+                          setBalanceFilter('settled');
+                          setFilterSheetVisible(false);
+                        }}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <InlineEmptyState
+                    icon="account-group-outline"
+                    title={normalizedSearch ? 'No matching groups' : 'Create your first group'}
+                    message={
+                      normalizedSearch
+                        ? 'Try another search or balance filter.'
+                        : 'Start a group now. Members can be added later.'
+                    }
+                    actionLabel={normalizedSearch ? undefined : 'New group'}
+                    onAction={() => openModal('group')}
+                  />
+                )}
+              </View>
+            )}
+
+            {activeSection === 'friends' && (
+              <View className="mt-6 gap-4">
+                {visibleFriends.length > 0 ? (
+                  visibleFriends.map(renderFriendRow)
+                ) : (
+                  <InlineEmptyState
+                    icon={
+                      friends.length === 0
+                        ? 'account-multiple-plus-outline'
+                        : 'account-search-outline'
+                    }
+                    title={normalizedSearch ? 'No matching friends' : 'Add friends to split bills'}
+                    message={
+                      normalizedSearch
+                        ? 'Try another search or balance filter.'
+                        : 'Create friends, then add them to groups, bills, and settlements.'
+                    }
+                    actionLabel={normalizedSearch ? undefined : 'Add friend'}
+                    onAction={() => openModal('friend')}
+                  />
+                )}
+              </View>
+            )}
+
+            {activeSection === 'activity' && (
+              <View className="mt-9 gap-4">
+                <View className="mb-2">
+                  <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                    Recent activity
+                  </TText>
+                </View>
+                {visibleActivity.length > 0 ? (
+                  visibleActivity.map(renderActivityRow)
+                ) : (
+                  <InlineEmptyState
+                    icon="history"
+                    title={normalizedSearch ? 'No matching activity' : 'No activity yet'}
+                    message={
+                      normalizedSearch
+                        ? 'Try another search.'
+                        : 'Group, friend, bill, and settlement activity will appear here.'
+                    }
+                  />
+                )}
+              </View>
+            )}
+            </>
           )}
         </ScrollView>
 
