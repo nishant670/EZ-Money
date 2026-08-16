@@ -33,6 +33,7 @@ import { useAuthStore } from '@/hooks/use-auth-store';
 import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchAccounts, getPreferredAccountForPaymentMode } from '@/lib/accounts';
+import { userDisplayName } from '@/lib/display-name';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { createEntry } from '@/lib/entries';
 import { formatMoney, roundToPaise, toAmountString } from '@/lib/money';
@@ -445,7 +446,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
   const borderColor = theme.border;
-  const currentUserName = user?.username?.trim() || 'You';
+  const currentUserName = userDisplayName(user?.username, 'You');
   const currentUserContact = user?.email?.trim() || user?.phone?.trim() || '';
 
   const [friends, setFriends] = useState<SplitFriend[]>([]);

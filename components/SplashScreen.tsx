@@ -1,7 +1,9 @@
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import React, { useEffect, useRef } from 'react';
-import { Animated, Image, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
+
+import { FinnriLogoMark } from '@/components/FinnriLogoMark';
 
 interface FinnriSplashScreenProps {
   onAnimationComplete?: () => void;
@@ -52,8 +54,6 @@ export function FinnriSplashScreen({ onAnimationComplete }: FinnriSplashScreenPr
     };
   }, [fadeAnim, onAnimationComplete, scaleAnim, slideAnim]);
 
-  const logoBackground = colorScheme === 'light' ? '#2D2D2D' : theme.card;
-
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Animated.View 
@@ -66,13 +66,7 @@ export function FinnriSplashScreen({ onAnimationComplete }: FinnriSplashScreenPr
         ]}
       >
         {/* Logo Container */}
-        <View style={[styles.logoContainer, { backgroundColor: logoBackground }]}>
-          <Image 
-            source={require('@/assets/images/logo-white.png')} 
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
+        <FinnriLogoMark size={100} style={styles.logoContainer} />
 
         {/* Tagline */}
         <Animated.View style={{ transform: [{ translateY: slideAnim }] }}>
@@ -106,12 +100,9 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
   },
+  // Size, radius and ground come from the mark itself; what is left here is
+  // only what this screen adds on top of it.
   logoContainer: {
-    height: 100,
-    width: 100,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#000',
     shadowOpacity: 0.1,
     shadowRadius: 20,

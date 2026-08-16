@@ -46,6 +46,13 @@ export default function Screen2() {
                 <MaterialCommunityIcons name="check-circle" size={14} color="#4A90E2" style={{ marginLeft: 4 }} />
               </View>
             </View>
+
+            {/* The approval step used to be a whole slide. It is one line on
+                the card it belongs to, next to the fields it governs. */}
+            <View style={[styles.reviewRow, { borderTopColor: theme.border }]}>
+              <MaterialCommunityIcons name="check-decagram" size={14} color={theme.accent} />
+              <Text style={[styles.reviewText, { color: theme.text }]}>Review to save</Text>
+            </View>
           </View>
 
           {/* Floating AI Bubble */}
@@ -62,7 +69,8 @@ export default function Screen2() {
             Finnri understands {('\n')}<Text style={{ color: theme.accent }}>your words</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
-            Whether it is English, Hindi, or any language, AI extracts amount, category, date, and all.
+            Amount, category, date and account, pulled out for you. Nothing is saved until you have
+            looked at it.
           </Text>
         </View>
       </View>
@@ -154,6 +162,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
     textAlign: 'right',
+  },
+  reviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  reviewText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   floatingAiHead: {
     position: 'absolute',

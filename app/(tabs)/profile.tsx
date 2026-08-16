@@ -13,6 +13,7 @@ import { useAppSettingsStore } from '@/hooks/use-app-settings-store';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
+import { userDisplayName } from '@/lib/display-name';
 import { clearGuestUpgradeSnooze } from '@/lib/guest-upgrade';
 import { getMonogram } from '@/lib/monogram';
 
@@ -66,7 +67,7 @@ export default function ProfileScreen() {
   const borderColor = isDark ? colors.border : 'rgba(0,0,0,0.05)';
   const iconStyle = theme.mood.iconStyle;
   const { smartSorting, setSmartSorting } = useAppSettingsStore();
-  const displayName = user?.username?.trim() || 'Guest User';
+  const displayName = userDisplayName(user?.username);
   const monogram = getMonogram(displayName);
   const hasEmail = !!user?.email?.trim();
   const hasPhone = !!user?.phone?.trim();

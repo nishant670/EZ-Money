@@ -4,7 +4,7 @@ import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
@@ -18,6 +18,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { installApiSessionGuard } from '@/lib/api-session';
+import { monthFromActionURL } from '@/lib/monthly-review';
 import { hasCompletedOnboarding } from '@/lib/onboarding';
 
 export const unstable_settings = {
@@ -26,6 +27,42 @@ export const unstable_settings = {
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * One frame's grace on top of a transition's own duration. The transition is
+ * finished by then and the splash can come down without showing its tail.
+ */
+const FRAME_MS = 16;
+
+/**
+ * Resolves once the persisted auth store has been read off disk. Until it has,
+ * `user` is `undefined` — indistinguishable from a signed-out user, which is
+ * how a returning user ends up looking at Welcome.
+ */
+const waitForAuthHydration = () =>
+  new Promise<void>((resolve) => {
+    if (useAuthStore.persist.hasHydrated()) {
+      resolve();
+      return;
+    }
+    const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
+
+/**
+ * Where a cold start belongs. Only meaningful after hydration.
+ */
+const resolveInitialRoute = async () => {
+  const currentUser = useAuthStore.getState().user;
+
+  if (currentUser) {
+    return currentUser.has_pin || currentUser.biometrics_enabled ? '/lock' : '/(tabs)';
+  }
+
+  return (await hasCompletedOnboarding()) ? '/auth' : '/onboarding';
+};
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -65,38 +102,30 @@ export default function RootLayout() {
     prepare();
   }, []);
 
-  const routeAfterSplash = async () => {
-    const currentUser = useAuthStore.getState().user;
+  /**
+   * `(tabs)` is the cold-start route. There is no `app/index.tsx`, and a group
+   * is transparent to the router, so `(tabs)/index` owns `/` — Home mounts
+   * under the splash on every launch, whoever the user turns out to be.
+   *
+   * Everything that decides where they actually belong therefore has to finish
+   * while the splash is still covering Home, and the splash has to outlive the
+   * transition that follows. Hiding it first, then awaiting hydration and the
+   * onboarding flag, is what put a second of somebody else's Home in front of
+   * a user on their way to Welcome — and the `fade` these screens are
+   * registered with made the handover a visible cross-dissolve rather than a
+   * cut, which is the part that read as a bug rather than as a slow launch.
+   */
+  const handleCustomSplashComplete = useCallback(async () => {
+    await waitForAuthHydration();
+    router.replace(await resolveInitialRoute());
 
-    if (currentUser) {
-      if (currentUser.has_pin || currentUser.biometrics_enabled) {
-        router.replace('/lock');
-      } else {
-        router.replace('/(tabs)');
-      }
-      return;
-    }
-
-    if (await hasCompletedOnboarding()) {
-      router.replace('/auth');
-    } else {
-      router.replace('/onboarding');
-    }
-  };
-
-  const handleCustomSplashComplete = () => {
-    setShowCustomSplash(false);
-
-    if (!useAuthStore.persist.hasHydrated()) {
-      const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
-        unsubscribe();
-        routeAfterSplash();
-      });
-      return;
-    }
-
-    routeAfterSplash();
-  };
+    // `replace` commits on the next frame and the screen's own animation runs
+    // after that, both of them behind the splash. `exitDuration` is what the
+    // Stack below is configured with, so the two cannot drift apart, and it is
+    // 0 under reduced motion — where the navigation is instant and there is
+    // nothing to wait for either.
+    setTimeout(() => setShowCustomSplash(false), motion.exitDuration('sheet') + FRAME_MS);
+  }, [motion, router]);
 
   useEffect(() => {
     if (isAppReady) {
@@ -126,7 +155,18 @@ export default function RootLayout() {
       .then(([Notifications, { registerForPushNotifications }]) => {
         if (cancelled) return;
         void registerForPushNotifications(token).catch(() => undefined);
-        responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+        responseSubscription = Notifications.addNotificationResponseReceivedListener((event) => {
+          // Tapping a push has always landed on the notification list, which is
+          // right when there is nothing more specific to open and wrong for the
+          // monthly review — the whole point of that notification is the screen
+          // behind it. The server sends the destination it already stores on
+          // the notification, so the two routes cannot drift apart.
+          const actionURL = event?.notification?.request?.content?.data?.action_url;
+          const month = typeof actionURL === 'string' ? monthFromActionURL(actionURL) : null;
+          if (month) {
+            router.push({ pathname: '/monthly-review', params: { month } });
+            return;
+          }
           router.push('/notifications');
         });
       })
@@ -194,6 +234,7 @@ export default function RootLayout() {
         <Stack.Screen name="insight-detail" />
         <Stack.Screen name="recurring-review" />
         <Stack.Screen name="weekly-review" />
+        <Stack.Screen name="monthly-review" />
         <Stack.Screen name="budgets" />
         <Stack.Screen name="subscriptions" />
         <Stack.Screen name="billing" />

@@ -110,9 +110,26 @@ jest.mock('react-native-reanimated', () => {
     // what they were given so a test can assert the entrance is staggered.
     FadeInDown: makeLayoutBuilder('FadeInDown'),
     LinearTransition: makeLayoutBuilder('LinearTransition'),
+    // The screen-push builders. Onboarding and the auth flow both drive their
+    // slide transitions from these, and without them here neither screen could
+    // be rendered under test at all — which is why the Skip button went three
+    // builds without one.
+    SlideInLeft: makeLayoutBuilder('SlideInLeft'),
+    SlideInRight: makeLayoutBuilder('SlideInRight'),
+    SlideOutLeft: makeLayoutBuilder('SlideOutLeft'),
+    SlideOutRight: makeLayoutBuilder('SlideOutRight'),
+    // Easings are shapes, and nothing here is timed, so the modifiers hand back
+    // whatever they were given. `out`/`in` were missing entirely, which is what
+    // stopped the onboarding slides from rendering under test.
     Easing: {
       bezier: (...curve: number[]) => ({ curve }),
       linear: (t: number) => t,
+      quad: (t: number) => t * t,
+      cubic: (t: number) => t * t * t,
+      ease: (t: number) => t,
+      in: (easing: unknown) => easing,
+      out: (easing: unknown) => easing,
+      inOut: (easing: unknown) => easing,
     },
   };
 });

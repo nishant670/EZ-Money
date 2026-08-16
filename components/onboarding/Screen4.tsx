@@ -19,11 +19,13 @@ export default function Screen4() {
                 <MaterialCommunityIcons name="calendar-month" size={16} color={theme.accent} />
                 <Text style={[styles.label, { color: theme.text, opacity: 0.6 }]}>Monthly Spend</Text>
               </View>
-              <View style={[styles.monthBadge, { backgroundColor: '#F0F0F0' }]}>
-                <Text style={{ fontSize: 10, fontWeight: '600' }}>Oct</Text>
+              <View style={[styles.monthBadge, { backgroundColor: theme.accent + '20' }]}>
+                <Text style={{ fontSize: 10, fontWeight: '600', color: theme.accent }}>
+                  This month
+                </Text>
               </View>
             </View>
-            <Text style={[styles.amount, { color: theme.text }]}>₹2,450</Text>
+            <Text style={[styles.amount, { color: theme.text }]}>₹24,500</Text>
             <View style={styles.chartContainer}>
               {[0.4, 0.6, 0.3, 0.8, 0.5, 0.9, 0.7].map((h, i) => (
                 <View key={i} style={[styles.bar, { height: h * 40, backgroundColor: i === 5 ? theme.accent : '#F0E5E7' }]} />
@@ -31,52 +33,45 @@ export default function Screen4() {
             </View>
           </View>
 
-          {/* Floating Category Split Card */}
+          {/* Floating Budget Card */}
           <View style={[styles.floatingCard, styles.splitCard, { backgroundColor: theme.card }]}>
             <View style={styles.splitHeader}>
-              <MaterialCommunityIcons name="chart-donut" size={16} color="#4A90E2" />
-              <Text style={{ fontSize: 11, fontWeight: '700', marginLeft: 6 }}>Category Split</Text>
+              <MaterialCommunityIcons name="target" size={16} color="#4A90E2" />
+              <Text style={[styles.floatingCardTitle, { color: theme.text }]}>Budget</Text>
             </View>
-            <View style={styles.splitContent}>
-              <View style={styles.donut} />
-              <View style={styles.splitLabels}>
-                <View style={styles.splitRow}>
-                  <View style={[styles.splitDot, { backgroundColor: theme.accent }]} />
-                  <Text style={styles.splitText}>Food</Text>
-                  <Text style={styles.splitValue}>60%</Text>
-                </View>
-                <View style={styles.splitRow}>
-                  <View style={[styles.splitDot, { backgroundColor: '#4A90E2' }]} />
-                  <Text style={styles.splitText}>Home</Text>
-                  <Text style={styles.splitValue}>25%</Text>
-                </View>
-              </View>
+            <Text style={[styles.budgetCategory, { color: theme.text }]}>Food &amp; dining</Text>
+            <View style={[styles.budgetTrack, { backgroundColor: theme.border }]}>
+              <View style={[styles.budgetFill, { backgroundColor: theme.accent }]} />
             </View>
+            <Text style={[styles.budgetMeta, { color: theme.text }]}>₹6,200 of ₹8,000</Text>
           </View>
 
-          {/* Floating Accounts Card */}
+          {/* Floating Subscription Card */}
           <View style={[styles.floatingCard, styles.accountsCard, { backgroundColor: theme.card }]}>
             <View style={styles.splitHeader}>
-              <MaterialCommunityIcons name="bank" size={16} color="#B088FF" />
-              <Text style={{ fontSize: 11, fontWeight: '700', marginLeft: 6 }}>My Accounts</Text>
+              <MaterialCommunityIcons name="autorenew" size={16} color="#B088FF" />
+              <Text style={[styles.floatingCardTitle, { color: theme.text }]}>Renews soon</Text>
             </View>
             <View style={styles.accountRow}>
-              <View style={styles.accIcon}><MaterialCommunityIcons name="credit-card" size={14} color="#666" /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 10, color: '#666' }}>Checking</Text>
-                <Text style={{ fontSize: 11, fontWeight: '700' }}>****4521</Text>
+              <View style={[styles.accIcon, { backgroundColor: theme.border }]}>
+                <MaterialCommunityIcons name="play-circle" size={14} color="#B088FF" />
               </View>
-              <Text style={{ fontSize: 11, fontWeight: '700' }}>₹1,240</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.subscriptionName, { color: theme.text }]}>Netflix</Text>
+                <Text style={[styles.subscriptionMeta, { color: theme.text }]}>in 3 days</Text>
+              </View>
+              <Text style={[styles.subscriptionAmount, { color: theme.text }]}>₹649</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.textGroup}>
           <Text style={[styles.title, { color: theme.text, fontFamily: Fonts.title }]}>
-            See where your money <Text style={{ color: theme.accent }}>goes</Text>
+            It keeps watch,{('\n')}<Text style={{ color: theme.accent }}>so you don&apos;t have to</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
-            Clear insights, accounts, and trends — without the confusion.
+            Budgets that warn you early, subscriptions caught before they renew, and a weekly
+            review of where the month actually went.
           </Text>
         </View>
       </View>
@@ -175,40 +170,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  splitContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  floatingCardTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 6,
   },
-  donut: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 6,
-    borderColor: '#90A4AE',
-    marginRight: 12,
+  budgetCategory: {
+    fontSize: 10,
+    fontWeight: '700',
+    opacity: 0.7,
+    marginBottom: 6,
   },
-  splitLabels: {
-    flex: 1,
-  },
-  splitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  splitDot: {
-    width: 6,
+  budgetTrack: {
     height: 6,
     borderRadius: 3,
-    marginRight: 4,
+    overflow: 'hidden',
   },
-  splitText: {
-    fontSize: 9,
-    color: '#666',
-    flex: 1,
+  budgetFill: {
+    // 78% spent: far enough along to be the reason a warning exists.
+    width: '78%',
+    height: '100%',
+    borderRadius: 3,
   },
-  splitValue: {
+  budgetMeta: {
     fontSize: 9,
-    fontWeight: '700',
+    opacity: 0.5,
+    marginTop: 5,
+    fontWeight: '600',
   },
   accountRow: {
     flexDirection: 'row',
@@ -219,9 +207,21 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 6,
-    backgroundColor: '#F5F5F7',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  subscriptionName: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  subscriptionMeta: {
+    fontSize: 9,
+    opacity: 0.5,
+    marginTop: 1,
+  },
+  subscriptionAmount: {
+    fontSize: 11,
+    fontWeight: '800',
   },
   textGroup: {
     alignItems: 'center',

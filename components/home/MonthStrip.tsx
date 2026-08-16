@@ -53,6 +53,26 @@ export function MonthStrip({ dashboard, loading, onPress }: MonthStripProps) {
 
   const month = monthLabel(dashboard?.period?.start);
 
+  /**
+   * A month with nothing in it is a line, not a panel.
+   *
+   * This used to be the full card — border, chevron, 24px headline — wrapped
+   * around the words "Nothing logged yet". A card is a promise that there is
+   * something inside it worth the space and worth a tap, and on a brand-new
+   * account both are false: the chevron opened an Insights screen as empty as
+   * the card, and the panel pushed the capture field the user actually needs a
+   * third of the way down the screen. One quiet sentence says the same thing
+   * and gets out of the way; the card comes back with the first expense.
+   */
+  if (dashboard && dashboard.summary.transaction_count === 0) {
+    return (
+      <View className="mx-6 mb-4">
+        <ThemedText className="text-sm opacity-60">
+          Nothing logged in {month} yet — your first expense starts the story.
+        </ThemedText>
+      </View>
+    );
+  }
 
   const body = () => {
     if (!dashboard) {
@@ -62,23 +82,6 @@ export function MonthStrip({ dashboard, loading, onPress }: MonthStripProps) {
     }
 
     const { summary, top_categories: topCategories, period } = dashboard;
-
-    // A brand-new account gets a sentence, not three zeros. Zeros here would
-    // read as a real report of a real month, which is the opposite of true.
-    if (summary.transaction_count === 0) {
-      return (
-        <>
-          <ThemedText
-            className="mt-1 text-2xl"
-            style={{ fontFamily: Fonts.title, color: theme.text, lineHeight: 32 }}>
-            Nothing logged yet
-          </ThemedText>
-          <ThemedText className="mt-1 text-sm opacity-60">
-            Log your first expense below and {month} starts filling in here.
-          </ThemedText>
-        </>
-      );
-    }
 
     const previousWindow = previousWindowLabel(period);
     const change = summary.spend_change ?? 0;

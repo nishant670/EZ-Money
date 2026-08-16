@@ -63,6 +63,8 @@ export default function TransactionsScreen() {
     end_date: routeEndDate,
     category: routeCategory,
     type: routeType,
+    q: routeSearch,
+    mode: routeMode,
   } = useLocalSearchParams<{
     accountId?: string;
     review?: string;
@@ -70,6 +72,8 @@ export default function TransactionsScreen() {
     end_date?: string;
     category?: string;
     type?: string;
+    q?: string;
+    mode?: string;
   }>();
   const routeAccountId = accountIdParam ? Number(accountIdParam) : null;
   const reviewMode = review === '1';
@@ -82,8 +86,11 @@ export default function TransactionsScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  // A search arriving as a route param seeds both halves, so the first load
+  // already carries it — waiting for the debounce would fetch the unfiltered
+  // list first and show rows the answer that opened it did not count.
+  const [searchQuery, setSearchQuery] = useState(routeSearch ?? '');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(routeSearch?.trim() ?? '');
   const [accounts, setAccounts] = useState<Account[]>([]);
 
   // Filter State — one object, the same shape the sheet edits and
@@ -93,6 +100,7 @@ export default function TransactionsScreen() {
     ...emptyFilterState,
     type: routeFilterType ?? 'All',
     category: routeCategory ?? null,
+    mode: routeMode ?? null,
     accountId: Number.isFinite(routeAccountId) && routeAccountId ? routeAccountId : null,
     startDate: routeStartDate ?? null,
     endDate: routeEndDate ?? null,

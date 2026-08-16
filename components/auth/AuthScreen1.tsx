@@ -4,6 +4,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
+import { FinnriLogoMark } from '@/components/FinnriLogoMark';
+
 import { GoogleGlyph } from './GoogleGlyph';
 import { styles } from './styles';
 
@@ -44,9 +46,7 @@ export const AuthScreen1 = ({
     >
       <View style={styles.topSection}>
         <View style={styles.logoRow}>
-          <View style={[styles.logoCircle, { backgroundColor: theme.accent }]}>
-            <MaterialCommunityIcons name="lightning-bolt" size={20} color="white" />
-          </View>
+          <FinnriLogoMark size={36} style={styles.logoMark} />
           <Text style={[styles.logoText, { color: theme.text }]}>finnri</Text>
         </View>
 

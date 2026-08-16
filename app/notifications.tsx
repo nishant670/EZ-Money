@@ -17,6 +17,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/notifications';
+import { monthFromActionURL } from '@/lib/monthly-review';
 import { confirmSubscriptionOccurrence, revertSubscriptionOccurrence } from '@/lib/subscriptions';
 
 type Filter = 'all' | 'unread' | 'read';
@@ -125,6 +126,12 @@ export default function NotificationsScreen() {
     const splitInviteToken = splitInviteTokenFromActionURL(notification.action_url);
     if (splitInviteToken) {
       router.push({ pathname: '/invite/split/[token]', params: { token: splitInviteToken } });
+      return;
+    }
+
+    const reviewMonth = monthFromActionURL(notification.action_url);
+    if (reviewMonth) {
+      router.push({ pathname: '/monthly-review', params: { month: reviewMonth } });
     }
   };
 

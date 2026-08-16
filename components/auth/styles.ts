@@ -24,13 +24,8 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 30,
   },
-  logoCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
+  logoMark: {
+    marginRight: 10,
   },
   logoText: {
     fontSize: 24,

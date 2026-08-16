@@ -75,6 +75,13 @@ const PROMPT_ROTATE_MS = 2600;
 const STILL_REACH = 0.18;
 const STILL_OPACITY = 0.2;
 
+/**
+ * One question, shown under the capture field so the other direction of the
+ * channel is discoverable. It matches the first of the server's own
+ * suggestions, so the app never advertises a question shape the API declines.
+ */
+const EXAMPLE_QUESTION = 'How much did I spend on food this month?';
+
 type VoiceInputCardProps = {
   /**
    * Read for its metering only. The card never starts or stops it — that stays
@@ -588,6 +595,26 @@ export function VoiceInputCard({
               )}
             </Pressable>
           </View>
+
+          {/* The field takes questions as well as captures, and nothing else on
+              the screen says so. A worked example is the only reliable way to
+              tell someone that — and tapping it asks it, so the first question
+              costs a tap rather than a sentence they have to compose. */}
+          {!trimmedInput ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Ask ${EXAMPLE_QUESTION}`}
+              onPress={() => onChangeText(EXAMPLE_QUESTION)}
+              disabled={isProcessing || isRecording}
+              hitSlop={6}
+              style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+              <ThemedText variant="caption" style={{ color: `${colors.text}99` }}>
+                Or ask — <ThemedText variant="caption" style={{ color: colors.accent }}>
+                  “{EXAMPLE_QUESTION}”
+                </ThemedText>
+              </ThemedText>
+            </Pressable>
+          ) : null}
         </Animated.View>
       ) : null}
     </View>

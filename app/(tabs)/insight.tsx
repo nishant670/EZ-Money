@@ -409,6 +409,10 @@ export default function InsightScreen() {
           <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
         </Reflow>
 
+        <Reflow>
+          <MonthlyReviewTeaser />
+        </Reflow>
+
         {allClear && (
           <Reflow>
             <AllClearCard dashboard={dashboard} />
@@ -736,6 +740,63 @@ function PeriodPulseCard({
         </View>
       </View>
     </View>
+  );
+}
+
+/**
+ * The way into the monthly review that is not a notification.
+ *
+ * A screen reachable only from a push is a screen most people never see: the
+ * notification can be missed, dismissed, or switched off entirely, and the
+ * review is still the most interesting page in the app on the 1st. It sits
+ * under the weekly teaser because they answer the same question at two
+ * different distances.
+ *
+ * It carries no figures. The card would have to fetch the month to show one,
+ * and a teaser that loads a whole review to render a subtitle is a request
+ * charged to every visit to this tab, for a line nobody reads twice.
+ */
+function MonthlyReviewTeaser() {
+  const theme = useThemeTokens();
+  const lastMonth = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  }, []);
+  const label = lastMonth.toLocaleDateString('en-IN', { month: 'long' });
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.84}
+      accessibilityRole="button"
+      accessibilityLabel={`Open the ${label} review`}
+      onPress={() =>
+        router.push({
+          pathname: '/monthly-review',
+          params: {
+            month: `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`,
+          },
+        })
+      }
+      className="rounded-[24px] border p-5 shadow-sm"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+      <View className="flex-row items-start">
+        <View
+          className="mr-4 h-12 w-12 items-center justify-center rounded-2xl"
+          style={{ backgroundColor: theme.colors.secondary }}>
+          <MaterialCommunityIcons name="calendar-month" size={23} color={theme.colors.accent} />
+        </View>
+        <View className="flex-1">
+          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+            Monthly Review
+          </ThemedText>
+          <ThemedText className="mt-1 text-base font-black">{label} in review</ThemedText>
+          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+            The finished month, with what changed and a summary you can share.
+          </ThemedText>
+        </View>
+        <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.accent} />
+      </View>
+    </TouchableOpacity>
   );
 }
 
