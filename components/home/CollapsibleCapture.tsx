@@ -53,8 +53,15 @@ const CROSSFADE_END = 0.55;
  */
 const PILL_BOTTOM_GAP = 12;
 
-/** What the whole capture region shrinks to. */
-const COLLAPSED_HEIGHT = CAPTURE_PILL_HEIGHT + PILL_BOTTOM_GAP;
+/**
+ * What the whole capture region shrinks to.
+ *
+ * Exported because the screen has to guarantee the collapse can *finish*: the
+ * scroll range it needs is the expanded height minus this, and a feed shorter
+ * than that strands the crossfade half-done. See `app/(tabs)/index.tsx`.
+ */
+export const CAPTURE_COLLAPSED_HEIGHT = CAPTURE_PILL_HEIGHT + PILL_BOTTOM_GAP;
+const COLLAPSED_HEIGHT = CAPTURE_COLLAPSED_HEIGHT;
 
 type CollapsibleCaptureProps = {
   scrollY: SharedValue<number>;
@@ -68,7 +75,8 @@ type CollapsibleCaptureProps = {
   /**
    * Held open regardless of scroll — while recording, or with a draft or a
    * finished recording in hand, collapsing the card would hide controls the
-   * user is in the middle of using.
+   * user is in the middle of using. Home also locks it on a feed too short to
+   * be worth reclaiming space from; see `MIN_ENTRIES_FOR_COLLAPSE` there.
    */
   locked?: boolean;
   /** Reports the expanded height so the list can pad itself to match. */

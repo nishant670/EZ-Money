@@ -24,7 +24,10 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { AnswerCard } from '@/components/home/AnswerCard';
-import { CollapsibleCapture } from '@/components/home/CollapsibleCapture';
+import {
+  CAPTURE_COLLAPSED_HEIGHT,
+  CollapsibleCapture,
+} from '@/components/home/CollapsibleCapture';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { MonthStrip } from '@/components/home/MonthStrip';
 import { QuickPrompts } from '@/components/home/QuickPrompts';
@@ -126,6 +129,21 @@ const FAB_BOTTOM_OFFSET = 40;
 const FAB_RIGHT_OFFSET = 24;
 /** The button's full footprint, plus a gap of air so the last row breathes. */
 const LIST_BOTTOM_PADDING = FAB_SIZE + FAB_BOTTOM_OFFSET + 24;
+
+/**
+ * How many entries the feed needs before the capture card is allowed to
+ * collapse into its pill.
+ *
+ * The collapse trades the card for space to read the feed in, and on an empty
+ * or nearly-empty Home there is no feed to make room for — the trade is all
+ * cost. Worse, it half-happened: the content was long enough to scroll a
+ * little and nowhere near long enough to scroll the ~230px the collapse spans,
+ * so the card stopped mid-crossfade and left a ghost pill at 50% opacity under
+ * a band of dead space, with the scroll already at its end and no way to
+ * finish. `minHeight` below keeps that from happening at any length; this
+ * keeps the animation from running at all when it has nothing to buy.
+ */
+const MIN_ENTRIES_FOR_COLLAPSE = 3;
 /** Just above the FAB, so the toast never lands on top of it. */
 const SAVE_TOAST_BOTTOM_OFFSET = FAB_BOTTOM_OFFSET + FAB_SIZE + 8;
 
@@ -262,6 +280,9 @@ export default function HomeScreen() {
   // to pad itself, and the capture card's height changes with its state.
   const [pinnedTopHeight, setPinnedTopHeight] = useState(0);
   const [captureExpandedHeight, setCaptureExpandedHeight] = useState(0);
+  // The scroll view's own height, so the content can be padded to guarantee
+  // the collapse has somewhere to run. See `contentContainerStyle` below.
+  const [viewportHeight, setViewportHeight] = useState(0);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   // Re-tapping the Home tab returns the feed to the top. The reanimated ref
   // holds the same ScrollView instance react-navigation's helper looks for.
@@ -715,6 +736,9 @@ export default function HomeScreen() {
    */
   const isCaptureLocked =
     isRecording || isSubmitting || !!recordedUri || inputText.trim().length > 0;
+
+  /** Whether the collapse is worth running at all — see the constant. */
+  const isCaptureCollapsible = transactions.length >= MIN_ENTRIES_FOR_COLLAPSE;
 
   useEffect(() => {
     if (!saveConfirmation) return undefined;
@@ -1287,9 +1311,23 @@ export default function HomeScreen() {
           onScroll={scrollHandler}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
+          onLayout={(event) => setViewportHeight(Math.round(event.nativeEvent.layout.height))}
           contentContainerStyle={{
             paddingTop: pinnedTopHeight + captureExpandedHeight,
             paddingBottom: LIST_BOTTOM_PADDING,
+            // The card shrinks one pixel per pixel scrolled, so it needs a
+            // scroll range of exactly its collapse distance to finish. A feed
+            // that runs out before then leaves the card stranded halfway with
+            // nowhere left to scroll. Asking for a content height of one
+            // viewport plus that distance is the smallest guarantee that the
+            // pill can always fully form — and costs nothing on a long feed,
+            // which already exceeds it.
+            ...(isCaptureCollapsible && viewportHeight > 0
+              ? {
+                  minHeight:
+                    viewportHeight + captureExpandedHeight - CAPTURE_COLLAPSED_HEIGHT,
+                }
+              : null),
           }}>
           {autopayReviews[0] ? (
           <View className="mx-6 mb-4 rounded-3xl border p-4" style={{ backgroundColor: themeTokens.colors.card, borderColor: themeTokens.colors.accent }}>
@@ -1454,7 +1492,7 @@ export default function HomeScreen() {
             onExpand={handleExpandCapture}
             onMicPress={handlePillMicPress}
             isRecording={isRecording}
-            locked={isCaptureLocked}
+            locked={isCaptureLocked || !isCaptureCollapsible}
             onExpandedHeightChange={setCaptureExpandedHeight}>
             <View className="px-6 pb-4">
               <ThemedText className="text-xs text-gray-500 font-medium text-center">
