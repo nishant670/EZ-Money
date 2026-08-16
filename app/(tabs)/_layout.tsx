@@ -29,14 +29,16 @@ const ICON_FOCUSED_SCALE = 1.12;
 type TabIconProps = {
   activeName: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   inactiveName: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  /** The screen's route name, which is how the marker keys this tab's frame. */
+  route: string;
   focused: boolean;
   color: ColorValue;
   iconStyle: IconStyle;
 };
 
-function TabIcon({ activeName, inactiveName, focused, color, iconStyle }: TabIconProps) {
+function TabIcon({ activeName, inactiveName, route, focused, color, iconStyle }: TabIconProps) {
   const motion = useMotion();
-  const anchor = useTabMarkerAnchor(focused);
+  const anchor = useTabMarkerAnchor(route);
   const name = focused && iconStyle !== 'minimal' ? activeName : inactiveName;
   const scale = useSharedValue(focused ? ICON_FOCUSED_SCALE : 1);
 
@@ -108,6 +110,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="chart-timeline-variant-shimmer"
+              route="insight"
               inactiveName="chart-timeline-variant"
               focused={focused}
               color={color}
@@ -123,6 +126,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="wallet-bifold"
+              route="money"
               inactiveName="wallet-bifold-outline"
               focused={focused}
               color={color}
@@ -138,6 +142,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="home-variant"
+              route="index"
               inactiveName="home-variant-outline"
               focused={focused}
               color={color}
@@ -153,6 +158,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="account-multiple"
+              route="split"
               inactiveName="account-multiple-outline"
               focused={focused}
               color={color}
@@ -168,6 +174,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="account-circle"
+              route="profile"
               inactiveName="account-circle-outline"
               focused={focused}
               color={color}
