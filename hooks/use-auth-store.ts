@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resetDismissedPaywalls } from '@/hooks/use-entitlement-gate';
 
 export type User = {
   uuid: string;
@@ -32,7 +33,11 @@ export const useAuthStore = create<AuthState>()(
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null,
         })),
-      clearAuth: () => set({ user: null, token: null }),
+      clearAuth: () => {
+        // A dismissed paywall must not follow one account into the next.
+        resetDismissedPaywalls();
+        set({ user: null, token: null });
+      },
     }),
     {
       name: 'auth-storage',

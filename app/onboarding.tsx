@@ -1,9 +1,10 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useMotion } from '@/hooks/use-motion';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
     SlideInLeft,
     SlideInRight,
@@ -16,17 +17,28 @@ import Screen1 from '@/components/onboarding/Screen1';
 import Screen2 from '@/components/onboarding/Screen2';
 import Screen3 from '@/components/onboarding/Screen3';
 import Screen4 from '@/components/onboarding/Screen4';
-import Screen5 from '@/components/onboarding/Screen5';
 import { hasCompletedOnboarding, markOnboardingComplete } from '@/lib/onboarding';
 
-const { width } = Dimensions.get('window');
-
+/**
+ * Four slides, one capability each: say it, Finnri reads it, split it, Finnri
+ * watches it.
+ *
+ * Four, not five. The fifth was a "You're all set to take control!" celebration
+ * for an account that did not exist yet and a user who had logged nothing — and
+ * the signup flow then celebrated a second time on the screen after it. The one
+ * celebration left is the one that follows an actual event.
+ *
+ * Staying at four through a feature refresh meant spending the slots rather
+ * than adding to them. Reviewing a parsed entry had a slide of its own saying
+ * what the slide before it had already said, so it became one line on that
+ * slide's card, and splitting — the thing people open the app for with someone
+ * else standing next to them — took the slot it left.
+ */
 const SCREENS = [
   { id: 1, component: Screen1 },
   { id: 2, component: Screen2 },
   { id: 3, component: Screen3 },
   { id: 4, component: Screen4 },
-  { id: 5, component: Screen5 },
 ];
 
 export default function OnboardingScreen() {
@@ -77,12 +89,29 @@ export default function OnboardingScreen() {
   };
 
   const handleFinish = async () => {
-    await markOnboardingComplete();
+    // The flag is a convenience, not a gate. If the write fails the user has
+    // still asked to leave, and an unhandled rejection here would strand them
+    // on the screen whose only exit they just pressed — the same dead button,
+    // arrived at from the other side. Worst case onboarding shows once more.
+    try {
+      await markOnboardingComplete();
+    } catch {
+      // Deliberately swallowed; see above.
+    }
     router.replace('/auth');
   };
 
-  const enteringAnimation = direction === 'forward' ? SlideInRight.duration(400) : SlideInLeft.duration(400);
-  const exitingAnimation = direction === 'forward' ? SlideOutLeft.duration(400) : SlideOutRight.duration(400);
+  const motion = useMotion();
+
+  // A screen push, on the `sheet` token. These used to run 400ms flat in both
+  // directions and honoured nothing — the outgoing screen is already gone as
+  // far as the user is concerned, and reduced motion could not switch them off.
+  const enterMs = motion.duration('sheet');
+  const exitMs = motion.exitDuration('sheet');
+  const enteringAnimation =
+    direction === 'forward' ? SlideInRight.duration(enterMs) : SlideInLeft.duration(enterMs);
+  const exitingAnimation =
+    direction === 'forward' ? SlideOutLeft.duration(exitMs) : SlideOutRight.duration(exitMs);
 
   if (isCheckingOnboarding) {
     return null;
@@ -93,15 +122,32 @@ export default function OnboardingScreen() {
       <View style={styles.container}>
         {/* Progress Bar */}
         <View style={styles.header}>
-            {activeIndex === 0 ? (
-                <View style={styles.skipButton} />
-            ) : (
-                <TouchableOpacity onPress={handleFinish} style={styles.skipButton}>
-                    <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
-                </TouchableOpacity>
-            )}
-            
-            <View style={styles.progressContainer}>
+            {/* Skip is offered from the first slide. Hiding it there only made
+                the one user who wanted out sit through a slide to find it. */}
+            <TouchableOpacity
+                onPress={handleFinish}
+                style={styles.skipButton}
+                accessibilityRole="button"
+                hitSlop={12}>
+                <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
+            </TouchableOpacity>
+
+            {/* Centred by the layout rather than by lying a full-width absolute
+                view across the row.
+
+                Two fixes were already spent trying to keep these dots on top of
+                Skip without eating its tap: `zIndex: -1`, which on Android
+                reorders painting but not touch dispatch, and then
+                `pointerEvents="none"`, which is the correct spelling of "not a
+                target" and *still* left the button dead on the first slide in
+                build 47da4506. Rather than guess at a third mechanism, the
+                overlap is gone: a view that does not lie over the button cannot
+                swallow its tap by any mechanism at all.
+
+                The spacer opposite Skip is what keeps the dots centred on the
+                header rather than on the space left over beside it. The footer's
+                nav row already centres itself this way. */}
+            <View pointerEvents="none" style={styles.progressContainer}>
                 {SCREENS.map((_, index) => (
                     <View 
                         key={index} 
@@ -115,6 +161,8 @@ export default function OnboardingScreen() {
                     />
                 ))}
             </View>
+
+            <View style={styles.headerSpacer} />
         </View>
 
         {/* Content Area */}
@@ -144,7 +192,7 @@ export default function OnboardingScreen() {
                     ]}
                 >
                     <Text style={[styles.primaryButtonText, { color: activeIndex === SCREENS.length - 1 ? 'white' : theme.background }]}>
-                        {activeIndex === SCREENS.length - 1 ? 'Sign in' : 'Next'}
+                        {activeIndex === SCREENS.length - 1 ? 'Get started' : 'Next'}
                     </Text>
                     <MaterialCommunityIcons
                         name="arrow-right"
@@ -156,11 +204,6 @@ export default function OnboardingScreen() {
             </View>
         </View>
 
-        {/* {activeIndex === SCREENS.length - 1 && (
-            <TouchableOpacity onPress={handleFinish} style={styles.skipForNow}>
-                <Text style={[styles.skipForNowText, { color: theme.text, opacity: 0.4 }]}>Skip for now</Text>
-            </TouchableOpacity>
-        )} */}
       </View>
     </OnboardingScreenWrapper>
   );
@@ -186,12 +229,14 @@ const styles = StyleSheet.create({
       fontWeight: '600',
   },
   progressContainer: {
+      flex: 1,
       flexDirection: 'row',
+      alignItems: 'center',
       gap: 6,
-      position: 'absolute',
-      width: width,
       justifyContent: 'center',
-      zIndex: -1,
+  },
+  headerSpacer: {
+      width: 60,
   },
   progressDot: {
       height: 4,
@@ -237,12 +282,4 @@ const styles = StyleSheet.create({
       fontSize: 16,
       fontWeight: 'bold',
   },
-  skipForNow: {
-      alignItems: 'center',
-      paddingBottom: 20,
-  },
-  skipForNowText: {
-      fontSize: 13,
-      fontWeight: '600',
-  }
 });

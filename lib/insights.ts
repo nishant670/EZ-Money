@@ -6,6 +6,19 @@ export type DashboardSummary = {
     total_income: number;
     daily_average: number;
     transaction_count: number;
+    /** Expense total for the window named by `period.previous_start/_end`. */
+    previous_total_spent?: number;
+    /**
+     * Percent change in total spend against that window. Always 0 when
+     * `spend_change_comparable` is false — read the flag first, never this alone.
+     */
+    spend_change?: number;
+    /**
+     * False when the previous window was too thin to divide by (under ₹500 or
+     * fewer than 5 transactions). Show no comparison rather than a percentage
+     * that describes a near-empty base.
+     */
+    spend_change_comparable?: boolean;
 };
 
 export type DashboardCategory = {
@@ -13,6 +26,56 @@ export type DashboardCategory = {
     amount: number;
     percentage: number;
     change: number;
+    /**
+     * False when the previous window was too thin to divide by — under ₹500 or
+     * fewer than 5 transactions in that category. `change` is 0 in that case;
+     * show no trend rather than a percentage that describes a near-empty base.
+     */
+    change_comparable?: boolean;
+};
+
+export type DashboardPeriod = {
+    start: string;
+    end: string;
+    /** The window every change on this response is measured against. */
+    previous_start?: string;
+    previous_end?: string;
+    comparison_kind?: 'same_days_previous_month' | 'preceding_period';
+    /** The comparison stated for display, e.g. "Aug 1–11 vs Jul 1–11". */
+    comparison_label?: string;
+};
+
+/**
+ * How big a change is, phrased the way the backend phrases it (see
+ * `formatChangeMagnitude` in `internal/http/insights_comparison.go`).
+ *
+ * Past roughly 300% a percentage stops reading as a quantity — "1218% higher"
+ * looks like a broken calculation, while "13× higher" is a number someone can
+ * picture. Only increases get there; a decrease bottoms out at -100%.
+ */
+export const formatChangeMagnitude = (change: number) => {
+    if (change > 300) {
+        const multiple = 1 + change / 100;
+        if (multiple >= 10) {
+            return `${Math.round(multiple)}×`;
+        }
+        return `${multiple.toFixed(1).replace(/\.0$/, '')}×`;
+    }
+    return `${Math.round(Math.abs(change))}%`;
+};
+
+/**
+ * Just the window a change is measured against — "Jul 1–12" out of the
+ * backend's "Aug 1–12 vs Jul 1–12".
+ *
+ * The label is built by `comparisonLabel` in `internal/http/insights_comparison.go`
+ * and always has that shape, but a caller that only needs the second half
+ * should not have to know that, and must not print a mangled string if the
+ * shape ever changes — hence the fallback.
+ */
+export const previousWindowLabel = (period?: DashboardPeriod) => {
+    const [, previous] = (period?.comparison_label ?? '').split(' vs ');
+    return previous?.trim() || 'the same days last month';
 };
 
 export type DashboardMerchant = {
@@ -106,7 +169,7 @@ export type RecurringCandidateDecision = {
 };
 
 export type DashboardResponse = {
-    period: { start: string; end: string };
+    period: DashboardPeriod;
     summary: DashboardSummary;
     top_categories: DashboardCategory[];
     top_merchants: DashboardMerchant[];
@@ -165,6 +228,61 @@ export const saveRecurringCandidateDecision = async (
     });
     if (!response.ok) {
         let message = 'Unable to save recurring review decision.';
+        try {
+            const body = await response.json() as { error?: string };
+            message = body.error || message;
+        } catch {
+            // Keep stable fallback.
+        }
+        throw new Error(message);
+    }
+    return response.json();
+};
+
+export type TrackedRecurringCandidate = {
+    candidate_key: string;
+    subscription: {
+        id: number;
+        name: string;
+        merchant: string;
+        amount: number | string;
+        billing_interval: string;
+        next_due_date: string;
+    };
+};
+
+export type TrackRecurringCandidatesResponse = {
+    tracked: TrackedRecurringCandidate[];
+    skipped: { candidate_key: string; reason: string }[];
+};
+
+/**
+ * Turns detected patterns into subscriptions in one call.
+ *
+ * Only keys are sent. The server recomputes every figure it writes onto the
+ * subscriptions, so the amount and renewal date come from the same detection
+ * that produced the card the user just tapped — the client cannot drift from
+ * what it displayed.
+ */
+export const trackRecurringCandidates = async (
+    token: string,
+    payload: { candidate_keys?: string[]; start_date?: string; end_date?: string } = {}
+): Promise<TrackRecurringCandidatesResponse> => {
+    const params = new URLSearchParams();
+    params.append('tz', getClientTimeZone());
+    const response = await fetch(
+        `${API_BASE_URL}/v1/recurring-candidates/track?${params.toString()}`,
+        {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        }
+    );
+    if (!response.ok) {
+        let message = 'Unable to track these recurring payments.';
         try {
             const body = await response.json() as { error?: string };
             message = body.error || message;

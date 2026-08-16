@@ -579,3 +579,43 @@ export const fetchSplitBalances = async (token: string): Promise<SplitBalance[]>
     net_balance: Number(balance.net_balance),
   }));
 };
+
+/**
+ * What the Splits screen is actually in a position to draw.
+ *
+ * The screen keeps five collections and every one of them is `[]` both when
+ * the user has nothing and when the request for it failed. Reading "empty" off
+ * them without asking which kind of empty it is put a confident ledger on top
+ * of no data at all: "Overall, settled up" over "Create your first group", on
+ * an account that may well have eight groups and an outstanding balance. The
+ * second line is worse than the first — it does not merely misreport, it
+ * invites a duplicate.
+ *
+ * Naming the three cases is what stops that recurring. There is no fourth, and
+ * in particular no "empty" — an emptied-out ledger is still `ledger`, and the
+ * per-section empty states inside it are the ones that know whether a search
+ * filter is on.
+ */
+export type SplitScreenState =
+  /** Nothing to show yet and the request still out: skeleton. */
+  | 'loading'
+  /** The request came back with nothing usable: say so, offer a retry. */
+  | 'unavailable'
+  /** Real data, even if stale or partial: draw it. */
+  | 'ledger';
+
+export const splitScreenState = ({
+  loading,
+  loadFailed,
+  hasData,
+}: {
+  loading: boolean;
+  loadFailed: boolean;
+  hasData: boolean;
+}): SplitScreenState => {
+  // Anything already loaded outranks both: a refresh that fails, or one still
+  // in flight, is no reason to take away figures the user can already see.
+  if (hasData) return 'ledger';
+  if (loading) return 'loading';
+  return loadFailed ? 'unavailable' : 'ledger';
+};

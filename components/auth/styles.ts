@@ -24,13 +24,8 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 30,
   },
-  logoCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
+  logoMark: {
+    marginRight: 10,
   },
   logoText: {
     fontSize: 24,
@@ -230,10 +225,6 @@ export const styles = StyleSheet.create({
   },
   googleMark: {
     marginRight: 10,
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#4285F4',
-    fontFamily: Fonts.title,
   },
   googleButtonText: {
     fontSize: 17,
@@ -254,6 +245,41 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     fontFamily: Fonts.title,
+  },
+  helperText: {
+    fontSize: 13,
+    fontFamily: Fonts.body,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 4,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: 12,
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontFamily: Fonts.title,
+    fontWeight: '700',
+  },
+  trustNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+  },
+  trustNoteText: {
+    fontSize: 12,
+    fontFamily: Fonts.body,
+    fontWeight: '600',
   },
   textButton: {
     padding: 10,

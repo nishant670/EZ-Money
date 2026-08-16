@@ -1,8 +1,9 @@
 import { BottomTabBarButtonProps } from 'expo-router/js-tabs';
 import { PlatformPressable } from 'expo-router/react-navigation';
-import * as Haptics from 'expo-haptics';
 import { useRef } from 'react';
 import { Animated } from 'react-native';
+
+import { haptics } from '@/lib/haptics';
 
 export function HapticTab(props: BottomTabBarButtonProps) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -20,10 +21,10 @@ export function HapticTab(props: BottomTabBarButtonProps) {
             speed: 24,
             bounciness: 6,
           }).start();
-          if (process.env.EXPO_OS === 'ios') {
-            // Add a soft haptic feedback when pressing down on the tabs.
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
+          // This used to be gated on `EXPO_OS === 'ios'`, which meant the
+          // app's one wired haptic did nothing on the platform the audit was
+          // run on. `haptics.select()` answers on both.
+          haptics.select();
           onPressIn?.(ev);
         }}
         onPressOut={(ev) => {

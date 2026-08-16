@@ -1,29 +1,58 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { HapticTab } from '@/components/haptic-tab';
+import {
+  MARKER_LANE,
+  TabMarker,
+  TabMarkerProvider,
+  useTabMarkerAnchor,
+} from '@/components/tab-marker';
 import { Fonts, type IconStyle } from '@/constants/theme';
+import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+/**
+ * The size the glyph is always rendered at, and what focus scales it to.
+ *
+ * The focused icon used to be *drawn* two points larger, which is a different
+ * glyph rasterisation rather than a bigger one — there is no in-between to
+ * animate, so it could only ever snap. One size, scaled, lands within a
+ * quarter-pixel of where the old 26 did and can travel there on a spring.
+ */
+const ICON_SIZE = 23;
+const ICON_FOCUSED_SCALE = 1.12;
 
 type TabIconProps = {
   activeName: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   inactiveName: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  /** The screen's route name, which is how the marker keys this tab's frame. */
+  route: string;
   focused: boolean;
   color: ColorValue;
   iconStyle: IconStyle;
 };
 
-function TabIcon({ activeName, inactiveName, focused, color, iconStyle }: TabIconProps) {
+function TabIcon({ activeName, inactiveName, route, focused, color, iconStyle }: TabIconProps) {
+  const motion = useMotion();
+  const anchor = useTabMarkerAnchor(route);
   const name = focused && iconStyle !== 'minimal' ? activeName : inactiveName;
+  const scale = useSharedValue(focused ? ICON_FOCUSED_SCALE : 1);
+
+  useEffect(() => {
+    scale.value = motion.springTo(focused ? ICON_FOCUSED_SCALE : 1);
+  }, [focused, motion, scale]);
+
+  const iconStyleAnimated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <View style={styles.iconStack}>
-      <View style={[styles.activeMarker, focused && { backgroundColor: color }]} />
-      <View style={[styles.iconFrame, focused && styles.activeIconFrame]}>
-        <MaterialCommunityIcons size={focused ? 26 : 23} name={name} color={color} />
-      </View>
+    <View ref={anchor.ref} onLayout={anchor.onLayout} style={styles.iconStack}>
+      <Animated.View style={[styles.iconFrame, iconStyleAnimated]}>
+        <MaterialCommunityIcons size={ICON_SIZE} name={name} color={color} />
+      </Animated.View>
     </View>
   );
 }
@@ -35,9 +64,14 @@ export default function TabLayout() {
   const inactiveTint = theme.mode === 'dark' ? '#ABA5B0' : '#756D78';
 
   return (
+    // The provider sits outside the navigator because the two halves that feed
+    // the marker — the icons and the bar background — are on different branches
+    // of what the navigator renders, and this is their nearest common ancestor.
+    <TabMarkerProvider>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
+        tabBarBackground: () => <TabMarker color={colors.tint} />,
         tabBarInactiveTintColor: inactiveTint,
         headerShown: false,
         animation: 'shift',
@@ -76,6 +110,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="chart-timeline-variant-shimmer"
+              route="insight"
               inactiveName="chart-timeline-variant"
               focused={focused}
               color={color}
@@ -85,12 +120,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="accounts"
+        name="money"
         options={{
-          title: 'Accounts',
+          title: 'Money',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="wallet-bifold"
+              route="money"
               inactiveName="wallet-bifold-outline"
               focused={focused}
               color={color}
@@ -106,6 +142,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="home-variant"
+              route="index"
               inactiveName="home-variant-outline"
               focused={focused}
               color={color}
@@ -121,6 +158,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="account-multiple"
+              route="split"
               inactiveName="account-multiple-outline"
               focused={focused}
               color={color}
@@ -136,6 +174,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               activeName="account-circle"
+              route="profile"
               inactiveName="account-circle-outline"
               focused={focused}
               color={color}
@@ -149,9 +188,15 @@ export default function TabLayout() {
         options={{
           href: null,
           title: 'App Mood',
+          // No tab of its own, so no pill. `tabBarBackground` is read from the
+          // *focused* screen's options, which makes opting out a property of
+          // this screen rather than something the marker has to infer — and
+          // stops the pill hovering under whichever tab the user arrived from.
+          tabBarBackground: undefined,
         }}
       />
     </Tabs>
+    </TabMarkerProvider>
   );
 }
 
@@ -171,21 +216,15 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    // The room the five static pills used to take up, kept behind now that the
+    // one travelling pill is drawn from the bar side. Without it every icon in
+    // the bar rises by half a lane.
+    paddingTop: MARKER_LANE,
   },
   iconFrame: {
     width: 36,
     height: 27,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  activeIconFrame: {
-    transform: [{ translateY: -1 }],
-  },
-  activeMarker: {
-    width: 18,
-    height: 3,
-    borderRadius: 3,
-    marginBottom: 2,
-    backgroundColor: 'transparent',
   },
 });

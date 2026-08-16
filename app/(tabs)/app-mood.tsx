@@ -2,10 +2,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import React from 'react';
-import { Pressable, ScrollView, Switch, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import {
   Fonts,
   ThemeMoods,
@@ -15,6 +16,7 @@ import {
 } from '@/constants/theme';
 import { useAppMoodStore } from '@/hooks/use-app-mood-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { haptics } from '@/lib/haptics';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
@@ -165,7 +167,10 @@ export default function AppMoodScreen() {
                 key={option.id}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
-                onPress={() => setThemeColor(option.id as ThemeMoodId)}
+                onPress={() => {
+                  haptics.select();
+                  setThemeColor(option.id as ThemeMoodId);
+                }}
                 className="h-16 w-16 items-center justify-center"
                 style={{
                   borderColor: active ? option.accent : 'transparent',
@@ -220,7 +225,7 @@ export default function AppMoodScreen() {
               </TText>
             </View>
           </View>
-          <Switch
+          <HapticSwitch
             value={nightMode}
             onValueChange={setNightMode}
             trackColor={{ false: isDark ? '#3A3A3A' : '#D9E1EA', true: colors.accent }}
@@ -244,7 +249,10 @@ export default function AppMoodScreen() {
               mutedText={mutedText}
               isDark={isDark}
               radius={themeTokens.icon.activeContainerRadius}
-              onPress={() => setIconStyle(option.id)}
+              onPress={() => {
+                haptics.select();
+                setIconStyle(option.id);
+              }}
             />
           ))}
         </View>

@@ -4,6 +4,24 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+/**
+ * Splitting. This slot used to hold a second slide about reviewing a draft
+ * entry — the same point the slide before it already made, spent twice — while
+ * split groups, the feature people actually open the app with someone else
+ * standing next to them for, went unmentioned until they found the tab.
+ *
+ * The vocabulary here is the Split tab's own: groups, friends, split equally,
+ * owed to me, settled up. An onboarding slide that names things differently
+ * from the screen it is describing is a slide the user has to translate.
+ */
+
+const MEMBERS = ['A', 'M', 'R', 'S'];
+
+const BALANCES = [
+  { initial: 'A', name: 'Aarav', detail: 'owes you', amount: '₹600', owed: true },
+  { initial: 'M', name: 'Meera', detail: 'you owe', amount: '₹450', owed: false },
+];
+
 export default function Screen3() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
@@ -12,67 +30,79 @@ export default function Screen3() {
     <View style={styles.container}>
       <View style={styles.content}>
         <View style={styles.visualContainer}>
-          <View style={[styles.draftCard, { backgroundColor: theme.card }]}>
-             <View style={styles.cardHeader}>
-                <View style={styles.headerDots}>
-                   <View style={[styles.hDot, { backgroundColor: '#FF5F56' }]} />
-                   <View style={[styles.hDot, { backgroundColor: '#FFBD2E' }]} />
-                   <View style={[styles.hDot, { backgroundColor: '#27C93F' }]} />
-                </View>
-                <Text style={[styles.headerTitle, { color: theme.accent }]}>DRAFT ENTRY</Text>
-             </View>
+          {/* Group Card */}
+          <View style={[styles.groupCard, { backgroundColor: theme.card }]}>
+            <View style={styles.groupHeader}>
+              <View style={[styles.groupIcon, { backgroundColor: theme.accent + '20' }]}>
+                <MaterialCommunityIcons name="account-group" size={16} color={theme.accent} />
+              </View>
+              <View style={styles.groupTitleGroup}>
+                <Text style={[styles.groupName, { color: theme.text }]}>Goa trip</Text>
+                <Text style={[styles.groupMeta, { color: theme.text }]}>4 friends</Text>
+              </View>
+              <View style={styles.avatarStack}>
+                {MEMBERS.map((initial, index) => (
+                  <View
+                    key={initial}
+                    style={[
+                      styles.avatar,
+                      {
+                        backgroundColor: theme.accent,
+                        borderColor: theme.card,
+                        marginLeft: index === 0 ? 0 : -8,
+                      },
+                    ]}>
+                    <Text style={styles.avatarText}>{initial}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
 
-             <View style={styles.draftContent}>
-                <View style={styles.fieldRow}>
-                   <View style={styles.iconBox}>
-                      <MaterialCommunityIcons name="store" size={18} color={theme.accent} />
-                   </View>
-                   <View style={styles.fieldTexts}>
-                      <Text style={[styles.fieldLabel, { color: theme.text, opacity: 0.4 }]}>Merchant</Text>
-                      <Text style={[styles.fieldValue, { color: theme.text }]}>Grocery Store</Text>
-                   </View>
-                   <MaterialCommunityIcons name="check-circle" size={18} color="#27C93F" />
-                </View>
+            <View style={[styles.billRow, { backgroundColor: theme.accent + '12' }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.billTitle, { color: theme.text }]}>Dinner</Text>
+                <Text style={[styles.billMeta, { color: theme.text }]}>You paid · split equally</Text>
+              </View>
+              <Text style={[styles.billAmount, { color: theme.text }]}>₹2,400</Text>
+            </View>
 
-                <View style={[styles.fieldRow, styles.activeRow, { backgroundColor: theme.accent + '10' }]}>
-                   <View style={[styles.iconBox, { backgroundColor: 'white' }]}>
-                      <MaterialCommunityIcons name="currency-inr" size={18} color={theme.accent} />
-                   </View>
-                   <View style={styles.fieldTexts}>
-                      <Text style={[styles.fieldLabel, { color: theme.accent }]}>Amount</Text>
-                      <Text style={[styles.fieldValue, { color: theme.text }]}>₹820.00?</Text>
-                   </View>
-                   <View style={[styles.checkBadge, { backgroundColor: '#FF5F56' }]}>
-                      <MaterialCommunityIcons name="alert-circle" size={10} color="white" />
-                      <Text style={styles.checkText}>Check</Text>
-                   </View>
-                   <MaterialCommunityIcons name="pencil" size={16} color={theme.accent} style={{ marginLeft: 8 }} />
+            {BALANCES.map((balance) => (
+              <View key={balance.initial} style={styles.balanceRow}>
+                <View style={[styles.balanceAvatar, { backgroundColor: theme.border }]}>
+                  <Text style={[styles.balanceAvatarText, { color: theme.text }]}>
+                    {balance.initial}
+                  </Text>
                 </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.balanceName, { color: theme.text }]}>{balance.name}</Text>
+                  <Text style={[styles.balanceMeta, { color: theme.text }]}>{balance.detail}</Text>
+                </View>
+                <Text
+                  style={[styles.balanceAmount, { color: balance.owed ? '#27C93F' : theme.accent }]}>
+                  {balance.amount}
+                </Text>
+              </View>
+            ))}
+          </View>
 
-                <View style={styles.fieldRow}>
-                   <View style={styles.iconBox}>
-                      <MaterialCommunityIcons name="calendar" size={18} color={theme.accent} />
-                   </View>
-                   <View style={styles.fieldTexts}>
-                      <Text style={[styles.fieldLabel, { color: theme.text, opacity: 0.4 }]}>Date</Text>
-                      <Text style={[styles.fieldValue, { color: theme.text }]}>Today</Text>
-                   </View>
-                   <MaterialCommunityIcons name="check-circle" size={18} color="#27C93F" />
-                </View>
-
-                <View style={[styles.reviewButton, { backgroundColor: '#F5F5F7' }]}>
-                    <Text style={{ color: '#A0A0A0', fontWeight: '600', fontSize: 12 }}>Review to Save</Text>
-                </View>
-             </View>
+          {/* Floating "Owed to me" pill */}
+          <View style={[styles.floatingPill, { backgroundColor: theme.card }]}>
+            <MaterialCommunityIcons name="scale-balance" size={14} color="#27C93F" />
+            <View style={{ marginLeft: 8 }}>
+              <Text style={[styles.pillLabel, { color: theme.text }]}>Owed to me</Text>
+              <Text style={[styles.pillValue, { color: theme.text }]}>₹1,150</Text>
+            </View>
           </View>
         </View>
 
         <View style={styles.textGroup}>
           <Text style={[styles.title, { color: theme.text, fontFamily: Fonts.title }]}>
-            You&apos;re always in <Text style={{ color: theme.accent }}>control</Text>
+            Split bills without{('\n')}
+            <Text style={{ color: theme.accent }}>the awkward math</Text>
           </Text>
           <Text style={[styles.subtitle, { color: theme.text, opacity: 0.6, fontFamily: Fonts.body }]}>
-            Review, edit, and confirm every entry before it&apos;s saved. Nothing slips through without your okay.
+            Trips, dinners, rent. Add friends from your contacts, split equally or not, and Finnri
+            keeps the running balance until everyone is settled up.
           </Text>
         </View>
       </View>
@@ -93,99 +123,137 @@ const styles = StyleSheet.create({
   },
   visualContainer: {
     width: '100%',
-    height: 320,
+    height: 300,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 40,
   },
-  draftCard: {
-    width: '100%',
-    maxWidth: 280,
+  groupCard: {
+    width: 260,
     borderRadius: 24,
-    overflow: 'hidden',
+    padding: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.08,
     shadowRadius: 25,
     elevation: 5,
   },
-  cardHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: '#F0F0F0',
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
   },
-  headerDots: {
-      flexDirection: 'row',
-      gap: 5,
+  groupIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  hDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
+  groupTitleGroup: {
+    flex: 1,
+    marginLeft: 10,
   },
-  headerTitle: {
-      fontSize: 10,
-      fontWeight: '800',
-      letterSpacing: 1,
+  groupName: {
+    fontSize: 13,
+    fontWeight: '800',
   },
-  draftContent: {
-      padding: 16,
+  groupMeta: {
+    fontSize: 10,
+    opacity: 0.5,
+    marginTop: 1,
   },
-  fieldRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: 12,
-      borderRadius: 16,
-      marginBottom: 8,
+  avatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  activeRow: {
-      borderWidth: 1,
-      borderColor: 'rgba(0,0,0,0.08)',
+  avatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  iconBox: {
-      width: 32,
-      height: 32,
-      borderRadius: 10,
-      backgroundColor: '#F8F8F8',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
+  avatarText: {
+    color: 'white',
+    fontSize: 8,
+    fontWeight: '800',
   },
-  fieldTexts: {
-      flex: 1,
+  billRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 12,
   },
-  fieldLabel: {
-      fontSize: 10,
-      fontWeight: '600',
-      marginBottom: 2,
+  billTitle: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  fieldValue: {
-      fontSize: 13,
-      fontWeight: '600',
+  billMeta: {
+    fontSize: 9,
+    opacity: 0.5,
+    marginTop: 2,
   },
-  checkBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 6,
-      gap: 3,
+  billAmount: {
+    fontSize: 13,
+    fontWeight: '800',
   },
-  checkText: {
-      color: 'white',
-      fontSize: 9,
-      fontWeight: 'bold',
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
   },
-  reviewButton: {
-      marginTop: 8,
-      paddingVertical: 12,
-      borderRadius: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
+  balanceAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  balanceAvatarText: {
+    fontSize: 10,
+    fontWeight: '800',
+    opacity: 0.7,
+  },
+  balanceName: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  balanceMeta: {
+    fontSize: 9,
+    opacity: 0.5,
+    marginTop: 1,
+  },
+  balanceAmount: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  floatingPill: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    left: 4,
+    bottom: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 6,
+  },
+  pillLabel: {
+    fontSize: 9,
+    opacity: 0.5,
+    fontWeight: '600',
+  },
+  pillValue: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   textGroup: {
     alignItems: 'center',

@@ -26,6 +26,7 @@ import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { updateProfile, authOtpSend, authOtpVerify } from '@/lib/auth';
+import { getMonogram } from '@/lib/monogram';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
@@ -39,9 +40,9 @@ export default function EditProfileScreen() {
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
   const [isLoading, setIsLoading] = useState(false);
-  const avatarSource = user?.profile_photo_uri
-    ? { uri: user.profile_photo_uri }
-    : require('@/assets/images/finnri_avatar.png');
+  // Off the field rather than off the stored user, so the monogram follows the
+  // name as it is typed — it is the same identity being edited.
+  const monogram = getMonogram(name || user?.username);
 
   // OTP State
   const [showOtp, setShowOtp] = useState(false);
@@ -196,13 +197,27 @@ export default function EditProfileScreen() {
             {/* Avatar Section */}
             <View className="items-center mt-6 mb-8">
               <View className="relative">
-                <View className="w-36 h-36 rounded-full border-4 border-white overflow-hidden shadow-md">
-                  <Image
-                    source={avatarSource}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="cover"
-                  />
-                </View>
+                {user?.profile_photo_uri ? (
+                  <View className="w-36 h-36 rounded-full border-4 border-white overflow-hidden shadow-md">
+                    <Image
+                      source={{ uri: user.profile_photo_uri }}
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                    />
+                  </View>
+                ) : (
+                  <View
+                    accessible
+                    accessibilityLabel="Profile monogram"
+                    className="w-36 h-36 rounded-full border-4 border-white items-center justify-center shadow-md"
+                    style={{ backgroundColor: theme.secondary }}>
+                    <TText
+                      className="text-5xl"
+                      style={{ color: theme.accent, fontFamily: Fonts.title }}>
+                      {monogram}
+                    </TText>
+                  </View>
+                )}
                 <Pressable
                   onPress={() => void handleChangePhoto()}
                   className="absolute bottom-1 right-1 w-10 h-10 rounded-full border-2 border-white items-center justify-center shadow-lg"

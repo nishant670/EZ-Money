@@ -6,19 +6,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { SkeletonCards, SkeletonFrame } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatMoney } from '@/lib/money';
 import { DashboardRecurringCandidate, fetchDashboard, saveRecurringCandidateDecision } from '@/lib/insights';
 
 const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
-
-const formatMoney = (value: number) =>
-  `₹${Math.round(value).toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
 
 const formatDate = (value: string) => {
   const parsed = new Date(`${value}T00:00:00`);
@@ -140,9 +136,9 @@ export default function RecurringReviewScreen() {
         </View>
 
         {loading ? (
-          <View className="py-10">
-            <ActivityIndicator color={colors.accent} />
-          </View>
+          <SkeletonFrame label="Loading recurring review" testID="recurring-review-skeleton">
+            <SkeletonCards count={3} lines={3} radius={28} />
+          </SkeletonFrame>
         ) : error ? (
           <StateView icon="wifi-off" title="Recurring review did not load" message={error} actionLabel="Try again" onAction={load} compact />
         ) : visibleCandidates.length === 0 ? (

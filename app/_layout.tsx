@@ -4,14 +4,21 @@ import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
+
+// Must load before any component calls setColorScheme: NativeWind reads the
+// compiled darkMode setting from this stylesheet and throws without it.
+import '../global.css';
 
 import { FinnriSplashScreen } from '@/components/SplashScreen';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { installApiSessionGuard } from '@/lib/api-session';
+import { monthFromActionURL } from '@/lib/monthly-review';
 import { hasCompletedOnboarding } from '@/lib/onboarding';
 
 export const unstable_settings = {
@@ -21,10 +28,47 @@ export const unstable_settings = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * One frame's grace on top of a transition's own duration. The transition is
+ * finished by then and the splash can come down without showing its tail.
+ */
+const FRAME_MS = 16;
+
+/**
+ * Resolves once the persisted auth store has been read off disk. Until it has,
+ * `user` is `undefined` — indistinguishable from a signed-out user, which is
+ * how a returning user ends up looking at Welcome.
+ */
+const waitForAuthHydration = () =>
+  new Promise<void>((resolve) => {
+    if (useAuthStore.persist.hasHydrated()) {
+      resolve();
+      return;
+    }
+    const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
+
+/**
+ * Where a cold start belongs. Only meaningful after hydration.
+ */
+const resolveInitialRoute = async () => {
+  const currentUser = useAuthStore.getState().user;
+
+  if (currentUser) {
+    return currentUser.has_pin || currentUser.biometrics_enabled ? '/lock' : '/(tabs)';
+  }
+
+  return (await hasCompletedOnboarding()) ? '/auth' : '/onboarding';
+};
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { setColorScheme } = useNativeWindColorScheme();
   const themeTokens = useThemeTokens();
+  const motion = useMotion();
   const [isAppReady, setIsAppReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
   const { clearAuth, token } = useAuthStore();
@@ -58,38 +102,30 @@ export default function RootLayout() {
     prepare();
   }, []);
 
-  const routeAfterSplash = async () => {
-    const currentUser = useAuthStore.getState().user;
+  /**
+   * `(tabs)` is the cold-start route. There is no `app/index.tsx`, and a group
+   * is transparent to the router, so `(tabs)/index` owns `/` — Home mounts
+   * under the splash on every launch, whoever the user turns out to be.
+   *
+   * Everything that decides where they actually belong therefore has to finish
+   * while the splash is still covering Home, and the splash has to outlive the
+   * transition that follows. Hiding it first, then awaiting hydration and the
+   * onboarding flag, is what put a second of somebody else's Home in front of
+   * a user on their way to Welcome — and the `fade` these screens are
+   * registered with made the handover a visible cross-dissolve rather than a
+   * cut, which is the part that read as a bug rather than as a slow launch.
+   */
+  const handleCustomSplashComplete = useCallback(async () => {
+    await waitForAuthHydration();
+    router.replace(await resolveInitialRoute());
 
-    if (currentUser) {
-      if (currentUser.has_pin || currentUser.biometrics_enabled) {
-        router.replace('/lock');
-      } else {
-        router.replace('/(tabs)');
-      }
-      return;
-    }
-
-    if (await hasCompletedOnboarding()) {
-      router.replace('/auth');
-    } else {
-      router.replace('/onboarding');
-    }
-  };
-
-  const handleCustomSplashComplete = () => {
-    setShowCustomSplash(false);
-
-    if (!useAuthStore.persist.hasHydrated()) {
-      const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
-        unsubscribe();
-        routeAfterSplash();
-      });
-      return;
-    }
-
-    routeAfterSplash();
-  };
+    // `replace` commits on the next frame and the screen's own animation runs
+    // after that, both of them behind the splash. `exitDuration` is what the
+    // Stack below is configured with, so the two cannot drift apart, and it is
+    // 0 under reduced motion — where the navigation is instant and there is
+    // nothing to wait for either.
+    setTimeout(() => setShowCustomSplash(false), motion.exitDuration('sheet') + FRAME_MS);
+  }, [motion, router]);
 
   useEffect(() => {
     if (isAppReady) {
@@ -119,7 +155,18 @@ export default function RootLayout() {
       .then(([Notifications, { registerForPushNotifications }]) => {
         if (cancelled) return;
         void registerForPushNotifications(token).catch(() => undefined);
-        responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+        responseSubscription = Notifications.addNotificationResponseReceivedListener((event) => {
+          // Tapping a push has always landed on the notification list, which is
+          // right when there is nothing more specific to open and wrong for the
+          // monthly review — the whole point of that notification is the screen
+          // behind it. The server sends the destination it already stores on
+          // the notification, so the two routes cannot drift apart.
+          const actionURL = event?.notification?.request?.content?.data?.action_url;
+          const month = typeof actionURL === 'string' ? monthFromActionURL(actionURL) : null;
+          if (month) {
+            router.push({ pathname: '/monthly-review', params: { month } });
+            return;
+          }
           router.push('/notifications');
         });
       })
@@ -136,13 +183,26 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={navigationTheme}>
+    // The gesture layer the audit found missing entirely. `react-native-gesture-handler`
+    // has been a dependency all along — react-navigation pulls it in — but nothing in
+    // the app had ever imported it, and on Android its handlers do nothing at all
+    // unless a `GestureHandlerRootView` is above them. One root here, so a row on any
+    // screen can be swiped without each screen remembering to provide one.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={navigationTheme}>
       {showCustomSplash && <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />}
       <Stack
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
-          animationDuration: 280,
+          // A native stack has one duration for both directions, so the two
+          // halves of the `sheet` token cannot both apply — and the exit is the
+          // half that binds. A push that is slightly quicker than the vocabulary
+          // asks for costs nothing; a pop held to entrance length is the lag
+          // `EXIT_RATIO` exists to prevent, on the one gesture the user makes
+          // most. 240ms is `sheet`'s exit exactly, which is also the number the
+          // audit asked for, arrived at from the tokens rather than by hand.
+          animationDuration: motion.exitDuration('sheet'),
           gestureEnabled: true,
           fullScreenGestureEnabled: true,
           contentStyle: { backgroundColor: themeTokens.colors.background },
@@ -174,6 +234,7 @@ export default function RootLayout() {
         <Stack.Screen name="insight-detail" />
         <Stack.Screen name="recurring-review" />
         <Stack.Screen name="weekly-review" />
+        <Stack.Screen name="monthly-review" />
         <Stack.Screen name="budgets" />
         <Stack.Screen name="subscriptions" />
         <Stack.Screen name="billing" />
@@ -183,8 +244,23 @@ export default function RootLayout() {
         <Stack.Screen name="help-support" />
         <Stack.Screen name="feedback" />
         <Stack.Screen name="upcoming" />
+        {/* The one screen in the app that does not slide, and C9 is the reason.
+            Its icon and amount are drawn on top of where the tapped row's were
+            and released towards where they belong, and two elements can only
+            read as one object if the screens behind them are not also sliding
+            past each other — a push turns the travel into two things moving in
+            different directions at once.
+
+            Under reduced motion there is no travel to coordinate, so the screen
+            goes back to the push every other screen uses. That is the degrade
+            the task asks for: the plain push, not a half-played transition. */}
+        <Stack.Screen
+          name="entry/[id]"
+          options={{ animation: motion.reduced ? 'slide_from_right' : 'fade' }}
+        />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-    </ThemeProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

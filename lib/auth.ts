@@ -43,6 +43,11 @@ const readAuthErrorPayload = async (response: Response, fallback: string) => {
 export type IdentifyResponse = {
   exists: boolean;
   is_guest: boolean;
+  /**
+   * False for an account that skipped PIN setup. Such an account has no keypad
+   * to be sent to, so the flow has to route it to OTP instead.
+   */
+  has_pin?: boolean;
 };
 
 export const identifyUser = async (identifier: string): Promise<IdentifyResponse> => {
@@ -95,7 +100,8 @@ export const guestCheckin = async (
 
 export type RegisterPayload = {
   claim_token: string;
-  pin: string;
+  /** Omitted when the user chose "Set up later" on the security screen. */
+  pin?: string;
   guest_uuid?: string;
   device_id: string;
   biometrics_enabled: boolean;
@@ -190,7 +196,11 @@ export const loginWithGoogle = async (payload: GoogleLoginPayload): Promise<Auth
 
 export type ResetPinPayload = {
   claim_token: string;
-  pin: string;
+  /**
+   * Omitted to sign in on the OTP alone without touching the stored PIN — the
+   * path an account that never set one takes on a new device.
+   */
+  pin?: string;
   device_id: string;
   biometrics_enabled?: boolean;
 };

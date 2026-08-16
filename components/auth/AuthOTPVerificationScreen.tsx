@@ -18,12 +18,28 @@ import {
 import { styles } from './styles';
 import { ScreenProps } from './types';
 
-type AuthOtpProps = ScreenProps & { data?: string };
+/**
+ * What a verified OTP is worth: the claim token, and the moment it stops being
+ * one. The expiry rides along so the flow can persist the token and know, on
+ * resume, whether it is still worth resuming into.
+ */
+export type ClaimTokenResult = {
+  claimToken: string;
+  expiresAt: number | null;
+};
+
+type AuthOtpProps = Omit<ScreenProps, 'onContinue'> & {
+  data?: string;
+  onContinue: (result: ClaimTokenResult) => void;
+  /** Copy for the confirm button — "Verify" while signing up, "Sign in" on return. */
+  continueLabel?: string;
+};
 
 export const AuthOTPVerificationScreen = ({
   onContinue,
   onSecondary,
   data,
+  continueLabel = 'Verify',
 }: AuthOtpProps) => {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
@@ -115,8 +131,12 @@ export const AuthOTPVerificationScreen = ({
         const errorText = await response.text();
         throw new Error(errorText || 'Unable to verify code right now.');
       }
-      const result = await response.json();
-      onContinue(result.claim_token);
+      const result = (await response.json()) as { claim_token: string; expires_at?: string };
+      const expiresAt = result.expires_at ? Date.parse(result.expires_at) : NaN;
+      onContinue({
+        claimToken: result.claim_token,
+        expiresAt: Number.isFinite(expiresAt) ? expiresAt : null,
+      });
     } catch (error) {
       setErrorMessage(getFriendlyAuthErrorMessage(error, 'Unable to verify code.'));
     } finally {
@@ -239,7 +259,7 @@ export const AuthOTPVerificationScreen = ({
             {isVerifying ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text style={styles.primaryButtonText}>Verify</Text>
+              <Text style={styles.primaryButtonText}>{continueLabel}</Text>
             )}
           </TouchableOpacity>
 

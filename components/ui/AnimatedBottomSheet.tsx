@@ -11,6 +11,18 @@ import {
   ViewStyle,
 } from 'react-native';
 
+import { Motion } from '@/constants/theme';
+import { useMotion } from '@/hooks/use-motion';
+
+/**
+ * The sheet runs on legacy `Animated`, so its curves are built from the raw
+ * control points in `Motion.ease` rather than through `useMotion()`, whose
+ * easings are Reanimated worklets and would not survive the trip. The durations
+ * still come from the hook, which is what carries the reduced-motion degrade.
+ */
+const ENTER_EASING = Easing.bezier(...Motion.ease.standard);
+const EXIT_EASING = Easing.bezier(...Motion.ease.exit);
+
 type AnimatedBottomSheetProps = {
   visible: boolean;
   onClose: () => void;
@@ -36,6 +48,9 @@ export function AnimatedBottomSheet({
 }: AnimatedBottomSheetProps) {
   const [isMounted, setIsMounted] = useState(visible);
   const progress = useRef(new Animated.Value(0)).current;
+  const motion = useMotion();
+  const enterDuration = motion.duration('sheet');
+  const exitDurationMs = motion.exitDuration('sheet');
 
   useEffect(() => {
     if (visible) {
@@ -44,8 +59,8 @@ export function AnimatedBottomSheet({
         Animated.parallel([
           Animated.timing(progress, {
             toValue: 1,
-            duration: 240,
-            easing: Easing.out(Easing.cubic),
+            duration: enterDuration,
+            easing: ENTER_EASING,
             useNativeDriver: true,
           }),
         ]).start();
@@ -55,8 +70,8 @@ export function AnimatedBottomSheet({
 
     Animated.timing(progress, {
       toValue: 0,
-      duration: 210,
-      easing: Easing.in(Easing.cubic),
+      duration: exitDurationMs,
+      easing: EXIT_EASING,
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
@@ -64,7 +79,7 @@ export function AnimatedBottomSheet({
         onDismiss?.();
       }
     });
-  }, [onDismiss, progress, visible]);
+  }, [enterDuration, exitDurationMs, onDismiss, progress, visible]);
 
   if (!isMounted) return null;
 

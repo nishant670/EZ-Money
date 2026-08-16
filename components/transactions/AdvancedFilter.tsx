@@ -1,44 +1,54 @@
-import { Fonts } from '@/constants/theme';
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import type { Account } from '@/lib/accounts';
-import { formatApiDate, parseDateLabel } from '@/lib/transactions';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import React from 'react';
+
+import { ThemedText } from '@/components/themed-text';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import type { Account } from '@/lib/accounts';
+import { CATEGORIES, categoryVisual } from '@/lib/categories';
+import { haptics } from '@/lib/haptics';
+import { formatApiDate, parseDateLabel } from '@/lib/transactions';
+import { formatMoney } from '@/lib/money';
+import { PAYMENT_MODES, paymentModeVisual } from '@/lib/payment-modes';
+import { TRANSACTION_SORTS, type TransactionSort } from '@/lib/transactions';
 import {
-  Dimensions,
-  PanResponder,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+  FILTER_PRESETS,
+  applyPreset,
+  emptyFilterState,
+  isPresetApplied,
+  type TransactionFilterState,
+} from '@/lib/transaction-filters';
 
 interface AdvancedFilterProps {
   onClose: () => void;
-  onApply: (filters: {
-    type: string;
-    category: string | null;
-    mode: string | null;
-    account_id: number | null;
-    min_amount: number;
-    max_amount: number;
-    start_date: string | null;
-    end_date: string | null;
-  }) => void;
+  onApply: (filters: TransactionFilterState) => void;
+  /** Rows the current filters match, for the Show Me badge. */
   count?: number;
-  currentFilters: {
-    type: string;
-    dateRange: { from: string | null; to: string | null };
-    amountRange: { min: number; max: number };
-    category: string | null;
-    accountId: number | null;
-    paymentMethod: string | null;
-  };
+  currentFilters: TransactionFilterState;
   accounts: Account[];
+  /** Entries per canonical category, counted ignoring the category filter. */
+  categoryCounts?: Record<string, number>;
 }
+
+type SectionKey = 'sort' | 'dates' | 'type' | 'amount' | 'category' | 'account' | 'mode';
+
+const emptyCounts: Record<string, number> = {};
+
+const formatDate = (value: string | null) => {
+  if (!value) return 'Any';
+  const parsed = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+/** Digits only — an amount box that accepts "1,0O0" is a box that returns NaN. */
+const toAmountValue = (text: string): number | null => {
+  const digits = text.replace(/[^\d]/g, '');
+  if (digits === '') return null;
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 export const AdvancedFilter = ({
   onClose,
@@ -46,690 +56,456 @@ export const AdvancedFilter = ({
   currentFilters,
   accounts,
   count = 0,
+  categoryCounts = emptyCounts,
 }: AdvancedFilterProps) => {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
-  const accentSurface = themeTokens.mode === 'dark' ? theme.secondary : theme.secondary;
+  const accent = theme.accent;
+  const accentSurface = theme.secondary;
+  const mutedText = themeTokens.mode === 'dark' ? 'rgba(255,255,255,0.5)' : '#90A4AE';
 
-  const [type, setType] = React.useState(currentFilters.type);
-  const [category, setCategory] = React.useState(currentFilters.category);
-  const [accountId, setAccountId] = React.useState(currentFilters.accountId);
-  const [paymentMethod, setPaymentMethod] = React.useState(currentFilters.paymentMethod);
+  const [draft, setDraft] = useState<TransactionFilterState>(currentFilters);
+  const [showPicker, setShowPicker] = useState<'start' | 'end' | null>(null);
+  /**
+   * Everything starts closed. The audit's complaint was six sections open at
+   * once with no way to see the shape of the thing; a closed section still
+   * reports its own value in the header, so nothing is hidden — only folded.
+   */
+  const [openSection, setOpenSection] = useState<SectionKey | null>(null);
+  const now = useMemo(() => new Date(), []);
 
-  // Date Picker States
-  const [startDate, setStartDate] = React.useState<Date | null>(
-    parseDateLabel(currentFilters.dateRange.from)
+  const patch = useCallback(
+    (updates: Partial<TransactionFilterState>) => setDraft((prev) => ({ ...prev, ...updates })),
+    []
   );
-  const [endDate, setEndDate] = React.useState<Date | null>(
-    parseDateLabel(currentFilters.dateRange.to)
+
+  /**
+   * `patch` with the tap. Separate from `patch` itself because the amount
+   * fields patch on every keystroke, and a chip's confirmation fired once per
+   * character is not a confirmation.
+   */
+  const selectPatch = useCallback(
+    (updates: Partial<TransactionFilterState>) => {
+      haptics.select();
+      patch(updates);
+    },
+    [patch]
   );
-  const [showPicker, setShowPicker] = React.useState<'start' | 'end' | null>(null);
 
-  // Amount Slider States
-  const [minAmount, setMinAmount] = React.useState(currentFilters.amountRange.min);
-  const [maxAmount, setMaxAmount] = React.useState(currentFilters.amountRange.max);
+  const toggleSection = useCallback(
+    (key: SectionKey) => setOpenSection((prev) => (prev === key ? null : key)),
+    []
+  );
 
-  const onDateChange = (selectedDate?: Date) => {
-    const currentDate = selectedDate || (showPicker === 'start' ? startDate : endDate);
+  const accountName = useMemo(
+    () => accounts.find((account) => account.id === draft.accountId)?.name,
+    [accounts, draft.accountId]
+  );
+
+  const amountSummary =
+    draft.minAmount === null && draft.maxAmount === null
+      ? 'Any'
+      : draft.minAmount !== null && draft.maxAmount !== null
+        ? `${formatMoney(draft.minAmount)} – ${formatMoney(draft.maxAmount)}`
+        : draft.minAmount !== null
+          ? `Over ${formatMoney(draft.minAmount)}`
+          : `Under ${formatMoney(draft.maxAmount as number)}`;
+
+  const dateSummary =
+    !draft.startDate && !draft.endDate
+      ? 'Any'
+      : `${formatDate(draft.startDate)} → ${formatDate(draft.endDate)}`;
+
+  const sortLabel =
+    TRANSACTION_SORTS.find((option) => option.value === draft.sort)?.label ?? 'Newest';
+
+  const onDateChange = (selected?: Date) => {
+    const target = showPicker;
     setShowPicker(null);
-    if (showPicker === 'start') {
-      setStartDate(currentDate);
-    } else {
-      setEndDate(currentDate);
-    }
+    if (!selected || !target) return;
+    patch(
+      target === 'start'
+        ? { startDate: formatApiDate(selected) }
+        : { endDate: formatApiDate(selected) }
+    );
   };
 
-  const formatDate = (date: Date | null) => {
-    if (!date) return 'Select Date';
-    return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const renderSection = (
+    key: SectionKey,
+    icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'],
+    label: string,
+    summary: string,
+    body: React.ReactNode
+  ) => {
+    const isOpen = openSection === key;
+    const hasValue = summary !== 'Any';
+    return (
+      <View key={key} className="mb-3">
+        <Pressable
+          testID={`filter-section-${key}`}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: isOpen }}
+          onPress={() => toggleSection(key)}
+          className="flex-row items-center gap-3 rounded-2xl border px-4 py-3.5"
+          style={{
+            backgroundColor: theme.card,
+            borderColor: isOpen ? accent : theme.border,
+          }}>
+          <MaterialCommunityIcons name={icon} size={18} color={hasValue ? accent : mutedText} />
+          <ThemedText
+            className="text-[11px] font-black uppercase tracking-widest"
+            style={{ color: mutedText }}>
+            {label}
+          </ThemedText>
+          <ThemedText
+            numberOfLines={1}
+            className="flex-1 text-right text-xs font-black"
+            style={{ color: hasValue ? theme.text : mutedText }}>
+            {summary}
+          </ThemedText>
+          <MaterialCommunityIcons
+            name={isOpen ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={mutedText}
+          />
+        </Pressable>
+        {isOpen && <View className="px-1 pt-3">{body}</View>}
+      </View>
+    );
   };
 
-  const formatToApiDate = (date: Date | null) => {
-    if (!date) return null;
-    return formatApiDate(date);
-  };
-
-  // Slider PanResponder Logic
-  const maxPossibleAmount = 10000;
-  const sliderContainerWidth = Dimensions.get('window').width - 48; // Total padding
-
-  const minPanResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        // Optional: Provide visual feedback
-      },
-      onPanResponderTerminationRequest: () => false, // Critical: stops ScrollView from stealing touch
-      onPanResponderMove: (evt, gestureState) => {
-        const newX = Math.max(0, Math.min(gestureState.moveX - 24, sliderContainerWidth));
-        const newValue = Math.round((newX / sliderContainerWidth) * maxPossibleAmount);
-        const steppedValue = Math.round(newValue / 100) * 100;
-
-        if (steppedValue < maxAmount) {
-          setMinAmount(steppedValue);
-        }
-      },
-      onPanResponderRelease: () => {
-        // Cleanup if needed
-      },
-    })
-  ).current;
-
-  const maxPanResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        // Optional: Provide visual feedback
-      },
-      onPanResponderTerminationRequest: () => false, // Critical: stops ScrollView from stealing touch
-      onPanResponderMove: (evt, gestureState) => {
-        const newX = Math.max(0, Math.min(gestureState.moveX - 24, sliderContainerWidth));
-        const newValue = Math.round((newX / sliderContainerWidth) * maxPossibleAmount);
-        const steppedValue = Math.round(newValue / 100) * 100;
-
-        if (steppedValue > minAmount) {
-          setMaxAmount(steppedValue);
-        }
-      },
-      onPanResponderRelease: () => {
-        // Cleanup if needed
-      },
-    })
-  ).current;
+  const chipStyle = (selected: boolean) => ({
+    backgroundColor: selected ? accentSurface : theme.card,
+    borderColor: selected ? accent : theme.border,
+  });
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.card }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Find Your Transactions!</Text>
-        </View>
-        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-          <MaterialCommunityIcons name="close" size={20} color={theme.text} />
-        </TouchableOpacity>
+    <View className="flex-1 rounded-t-[30px]" style={{ backgroundColor: theme.background }}>
+      <View className="flex-row items-center px-6 pb-3 pt-5">
+        <ThemedText className="flex-1 text-base font-black" style={{ color: theme.text }}>
+          Filters
+        </ThemedText>
+        <Pressable
+          testID="filter-close"
+          accessibilityRole="button"
+          accessibilityLabel="Close filters"
+          onPress={onClose}
+          className="h-9 w-9 items-center justify-center rounded-full"
+          style={{ backgroundColor: theme.card }}>
+          <MaterialCommunityIcons name="close" size={18} color={theme.text} />
+        </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* When did this happen? */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#90A4AE" />
-            <Text style={styles.sectionLabel}>WHEN DID THIS HAPPEN?</Text>
-          </View>
-          <View style={styles.dateContainer}>
-            <TouchableOpacity
-              onPress={() => setShowPicker('start')}
-              style={[styles.dateCard, { backgroundColor: accentSurface }]}>
-              <View>
-                <Text style={styles.dateHeader}>FROM</Text>
-                <Text style={[styles.dateValue, { color: theme.text }]}>
-                  {formatDate(startDate)}
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="calendar-outline" size={20} color={theme.accent} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setShowPicker('end')}
-              style={[styles.dateCard, { backgroundColor: accentSurface }]}>
-              <View>
-                <Text style={styles.dateHeader}>TO</Text>
-                <Text style={[styles.dateValue, { color: theme.text }]}>{formatDate(endDate)}</Text>
-              </View>
-              <MaterialCommunityIcons name="calendar-outline" size={20} color={theme.accent} />
-            </TouchableOpacity>
-          </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+        <ThemedText
+          className="mb-2 text-[10px] font-black uppercase tracking-widest"
+          style={{ color: mutedText }}>
+          Quick filters
+        </ThemedText>
+        <View className="mb-5 flex-row flex-wrap gap-2">
+          {FILTER_PRESETS.map((preset) => {
+            const applied = isPresetApplied(preset, draft, now);
+            return (
+              <Pressable
+                key={preset.key}
+                testID={`filter-preset-${preset.key}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: applied }}
+                onPress={() => {
+                  haptics.select();
+                  setDraft((prev) => applyPreset(preset, prev, now));
+                }}
+                className="rounded-full border px-4 py-2.5 active:opacity-60"
+                style={chipStyle(applied)}>
+                <ThemedText
+                  className="text-xs font-black"
+                  style={{ color: applied ? accent : theme.text }}>
+                  {preset.label}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {showPicker && (
-          <DateTimePicker
-            value={showPicker === 'start' ? startDate || new Date() : endDate || new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onValueChange={(_, selectedDate) => onDateChange(selectedDate)}
-            onDismiss={() => setShowPicker(null)}
-          />
+        {renderSection(
+          'sort',
+          'sort',
+          'Sort',
+          sortLabel,
+          <View className="flex-row flex-wrap gap-2">
+            {TRANSACTION_SORTS.map((option) => (
+              <Pressable
+                key={option.value}
+                testID={`filter-sort-${option.value}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: draft.sort === option.value }}
+                onPress={() => selectPatch({ sort: option.value as TransactionSort })}
+                className="rounded-full border px-4 py-2.5 active:opacity-60"
+                style={chipStyle(draft.sort === option.value)}>
+                <ThemedText
+                  className="text-xs font-black"
+                  style={{ color: draft.sort === option.value ? accent : theme.text }}>
+                  {option.label}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
         )}
 
-        {/* What kind of money? */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="molecule" size={18} color="#90A4AE" />
-            <Text style={styles.sectionLabel}>WHAT KIND OF MONEY?</Text>
-          </View>
-          <View style={[styles.tabContainer, { backgroundColor: accentSurface }]}>
-            {['Expense', 'Income'].map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[
-                  styles.tab,
-                  type === t && [styles.activeTab, { backgroundColor: theme.card }],
-                ]}
-                onPress={() => setType(t)}>
-                <Text style={[styles.tabText, type === t && { color: theme.accent }]}>{t}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* How much was it? */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="cash-multiple" size={18} color="#90A4AE" />
-            <Text style={styles.sectionLabel}>HOW MUCH WAS IT?</Text>
-            <View style={styles.amountBadge}>
-              <Text style={styles.amountBadgeText}>
-                ₹{minAmount} - ₹{maxAmount === maxPossibleAmount ? '10k+' : maxAmount}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.sliderContainer}>
-            <View style={[styles.sliderTrack, { backgroundColor: accentSurface }]}>
-              {/* Track Fill */}
-              <View
-                style={[
-                  styles.sliderFill,
-                  {
-                    left: `${(minAmount / maxPossibleAmount) * 100}%`,
-                    width: `${((maxAmount - minAmount) / maxPossibleAmount) * 100}%`,
-                    backgroundColor: theme.accent,
-                  },
-                ]}
-              />
-
-              {/* Min Thumb */}
-              <View
-                style={[
-                  styles.sliderThumb,
-                  { left: `${(minAmount / maxPossibleAmount) * 100}%`, backgroundColor: theme.accent },
-                ]}
-                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                {...minPanResponder.panHandlers}
-              />
-
-              {/* Max Thumb */}
-              <View
-                style={[
-                  styles.sliderThumb,
-                  { left: `${(maxAmount / maxPossibleAmount) * 100}%`, backgroundColor: theme.accent },
-                ]}
-                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                {...maxPanResponder.panHandlers}
-              />
-            </View>
-            <View style={styles.sliderLabels}>
-              <Text style={styles.sliderLabelText}>₹0</Text>
-              <Text style={styles.sliderLabelText}>₹10k+</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* What was it for? */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="tag-outline" size={18} color="#90A4AE" />
-            <Text style={styles.sectionLabel}>WHAT WAS IT FOR?</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.chipsScroll}
-            contentContainerStyle={styles.chipsScrollContent}>
-            {[
-              { name: 'Coffee', icon: 'coffee' },
-              { name: 'Groceries', icon: 'clover' },
-              { name: 'Gas', icon: 'gas-station' },
-              { name: 'Fun', icon: 'movie' },
-              { name: 'Home', icon: 'home' },
-            ].map((cat) => (
-              <TouchableOpacity
-                key={cat.name}
-                style={[
-                  styles.chip,
-                  category === cat.name && {
-                    backgroundColor: accentSurface,
-                    borderColor: theme.accent,
-                  },
-                ]}
-                onPress={() => setCategory(cat.name)}>
-                <MaterialCommunityIcons
-                  name={cat.icon as any}
-                  size={16}
-                  color={category === cat.name ? theme.accent : '#546E7A'}
-                />
-                <Text style={[styles.chipText, category === cat.name && { color: theme.accent }]}>
-                  {cat.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={styles.addChip}>
-              <MaterialCommunityIcons name="plus" size={20} color="#90A4AE" />
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-
-        {/* Where from? */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="bank-outline" size={18} color="#90A4AE" />
-            <Text style={styles.sectionLabel}>WHERE FROM / WHERE TO?</Text>
-          </View>
-          <View style={styles.accountContainer}>
-            {accounts.map((account) => (
-              <TouchableOpacity
-                key={account.id}
-                style={[styles.accountChip, accountId === account.id && styles.activeAccountChip]}
-                onPress={() => setAccountId(accountId === account.id ? null : account.id)}>
-                <MaterialCommunityIcons
-                  name={account.type === 'credit_card' ? 'credit-card' : 'bank'}
-                  size={16}
-                  color="#42A5F5"
-                />
-                <Text style={styles.accountChipText}>{account.name}</Text>
-                {accountId === account.id && <View style={styles.activeDot} />}
-              </TouchableOpacity>
-            ))}
-            {accounts.length === 0 && (
-              <Text style={styles.accountChipText}>No accounts available</Text>
-            )}
-          </View>
-        </View>
-
-        {/* How did you pay? */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="wallet-outline" size={18} color="#90A4AE" />
-            <Text style={styles.sectionLabel}>HOW DID YOU PAY?</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollableRadioContainer}>
-            {[
-              { name: 'Credit Card', value: 'Credit Card' },
-              { name: 'Debit Card', value: 'Debit Card' },
-              { name: 'Cash', value: 'Cash' },
-              { name: 'UPI', value: 'UPI' },
-              { name: 'Wallets', value: 'Wallets' },
-            ].map((pm) => (
-              <TouchableOpacity
-                key={pm.value}
-                style={[styles.radioButton, paymentMethod === pm.value && styles.activeRadioButton]}
-                onPress={() => setPaymentMethod(pm.value)}>
-                <View
-                  style={[
-                    styles.radioCircle,
-                    paymentMethod === pm.value && {
-                      backgroundColor: accentSurface,
-                      borderColor: theme.accent,
-                    },
-                  ]}>
-                  {paymentMethod === pm.value && (
-                    <MaterialCommunityIcons name="check" size={12} color={theme.accent} />
-                  )}
+        {renderSection(
+          'dates',
+          'calendar-month-outline',
+          'When',
+          dateSummary,
+          <View className="flex-row gap-3">
+            {(['start', 'end'] as const).map((edge) => (
+              <Pressable
+                key={edge}
+                testID={`filter-date-${edge}`}
+                accessibilityRole="button"
+                onPress={() => setShowPicker(edge)}
+                className="flex-1 flex-row items-center justify-between rounded-2xl border px-4 py-3"
+                style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                <View>
+                  <ThemedText
+                    className="text-[10px] font-black uppercase"
+                    style={{ color: mutedText }}>
+                    {edge === 'start' ? 'From' : 'To'}
+                  </ThemedText>
+                  <ThemedText className="text-xs font-bold" style={{ color: theme.text }}>
+                    {formatDate(edge === 'start' ? draft.startDate : draft.endDate)}
+                  </ThemedText>
                 </View>
-                <Text
-                  style={[styles.radioText, paymentMethod === pm.value && { color: theme.accent }]}>
-                  {pm.name}
-                </Text>
-              </TouchableOpacity>
+                <MaterialCommunityIcons name="calendar-outline" size={18} color={accent} />
+              </Pressable>
             ))}
-          </ScrollView>
-        </View>
+          </View>
+        )}
 
-        <View style={styles.footer}>
-          <TouchableOpacity
-            onPress={() => {
-              setType('All');
-              setCategory(null);
-              setAccountId(null);
-              setPaymentMethod(null);
-              setStartDate(null);
-              setEndDate(null);
-              setMinAmount(0);
-              setMaxAmount(10000);
-            }}>
-            <Text style={styles.clearAllText}>Clear All</Text>
-          </TouchableOpacity>
+        {renderSection(
+          'type',
+          'swap-vertical',
+          'Type',
+          draft.type === 'All' ? 'Any' : draft.type,
+          <View className="flex-row gap-2">
+            {(['All', 'Expense', 'Income'] as const).map((option) => (
+              <Pressable
+                key={option}
+                testID={`filter-type-${option}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: draft.type === option }}
+                onPress={() => selectPatch({ type: option })}
+                className="flex-1 rounded-2xl border py-3 active:opacity-60"
+                style={chipStyle(draft.type === option)}>
+                <ThemedText
+                  className="text-center text-xs font-black"
+                  style={{ color: draft.type === option ? accent : theme.text }}>
+                  {option}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        )}
 
-          <TouchableOpacity
-            style={[styles.applyButton, { backgroundColor: theme.accent }]}
-            onPress={() =>
-              onApply({
-                type,
-                category,
-                mode: paymentMethod,
-                account_id: accountId,
-                min_amount: minAmount,
-                max_amount: maxAmount,
-                start_date: formatToApiDate(startDate),
-                end_date: formatToApiDate(endDate),
-              })
-            }>
-            <View style={styles.showMeContent}>
-              <Text style={styles.applyButtonText}>Show Me!</Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{count}</Text>
-              </View>
+        {renderSection(
+          'amount',
+          'cash-multiple',
+          'Amount',
+          amountSummary,
+          <View>
+            <View className="flex-row items-center gap-3">
+              {(['min', 'max'] as const).map((edge) => {
+                const value = edge === 'min' ? draft.minAmount : draft.maxAmount;
+                return (
+                  <View
+                    key={edge}
+                    className="flex-1 rounded-2xl border px-4 py-3"
+                    style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                    <ThemedText
+                      className="text-[10px] font-black uppercase"
+                      style={{ color: mutedText }}>
+                      {edge === 'min' ? 'Minimum' : 'Maximum'}
+                    </ThemedText>
+                    <TextInput
+                      testID={`filter-amount-${edge}`}
+                      value={value === null ? '' : String(value)}
+                      onChangeText={(text) =>
+                        patch(
+                          edge === 'min'
+                            ? { minAmount: toAmountValue(text) }
+                            : { maxAmount: toAmountValue(text) }
+                        )
+                      }
+                      keyboardType="number-pad"
+                      placeholder={edge === 'min' ? 'Any' : 'No limit'}
+                      placeholderTextColor={mutedText}
+                      selectionColor={accent}
+                      className="p-0 text-sm font-black"
+                      style={{ color: theme.text, minHeight: 24 }}
+                    />
+                  </View>
+                );
+              })}
             </View>
-          </TouchableOpacity>
-        </View>
+            <ThemedText className="mt-2 px-1 text-[11px]" style={{ color: mutedText }}>
+              Leave the maximum empty for no upper limit.
+            </ThemedText>
+          </View>
+        )}
+
+        {renderSection(
+          'category',
+          'tag-outline',
+          'Category',
+          draft.uncategorised ? 'Uncategorised' : (draft.category ?? 'Any'),
+          <View className="flex-row flex-wrap gap-2">
+            {CATEGORIES.map((name) => {
+              const selected = draft.category === name;
+              const visual = categoryVisual(name);
+              const matches = categoryCounts[name] ?? 0;
+              // A chip that can only return nothing is the bug this task exists
+              // for. Zero-result categories stay visible but say so.
+              const empty = matches === 0;
+              return (
+                <Pressable
+                  key={name}
+                  testID={`filter-category-${name}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${name}, ${matches} ${matches === 1 ? 'entry' : 'entries'}`}
+                  onPress={() =>
+                    selectPatch({ category: selected ? null : name, uncategorised: false })
+                  }
+                  className="flex-row items-center gap-2 rounded-full border px-3.5 py-2.5 active:opacity-60"
+                  style={{ ...chipStyle(selected), opacity: empty && !selected ? 0.45 : 1 }}>
+                  <MaterialCommunityIcons name={visual.icon} size={14} color={visual.color} />
+                  <ThemedText
+                    className="text-xs font-black"
+                    style={{ color: selected ? accent : theme.text }}>
+                    {name}
+                  </ThemedText>
+                  <ThemedText className="text-[11px] font-bold" style={{ color: mutedText }}>
+                    {matches}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {renderSection(
+          'account',
+          'bank-outline',
+          'Account',
+          accountName ?? 'Any',
+          accounts.length === 0 ? (
+            <ThemedText className="px-1 text-xs" style={{ color: mutedText }}>
+              No accounts yet.
+            </ThemedText>
+          ) : (
+            <View className="flex-row flex-wrap gap-2">
+              {accounts.map((account) => {
+                const selected = draft.accountId === account.id;
+                return (
+                  <Pressable
+                    key={account.id}
+                    testID={`filter-account-${account.id}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => selectPatch({ accountId: selected ? null : account.id })}
+                    className="flex-row items-center gap-2 rounded-full border px-3.5 py-2.5 active:opacity-60"
+                    style={chipStyle(selected)}>
+                    <MaterialCommunityIcons
+                      name={account.type === 'credit_card' ? 'credit-card-outline' : 'bank-outline'}
+                      size={14}
+                      color={selected ? accent : '#42A5F5'}
+                    />
+                    <ThemedText
+                      className="text-xs font-black"
+                      style={{ color: selected ? accent : theme.text }}>
+                      {account.name}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )
+        )}
+
+        {renderSection(
+          'mode',
+          'wallet-outline',
+          'Paid via',
+          draft.mode ?? 'Any',
+          <View className="flex-row flex-wrap gap-2">
+            {PAYMENT_MODES.map((mode) => {
+              const selected = draft.mode === mode;
+              const visual = paymentModeVisual(mode);
+              return (
+                <Pressable
+                  key={mode}
+                  testID={`filter-mode-${mode}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => selectPatch({ mode: selected ? null : mode })}
+                  className="flex-row items-center gap-2 rounded-full border px-3.5 py-2.5 active:opacity-60"
+                  style={chipStyle(selected)}>
+                  <MaterialCommunityIcons name={visual.icon} size={14} color={visual.color} />
+                  <ThemedText
+                    className="text-xs font-black"
+                    style={{ color: selected ? accent : theme.text }}>
+                    {mode}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
+
+      {showPicker && (
+        <DateTimePicker
+          value={
+            parseDateLabel(showPicker === 'start' ? draft.startDate : draft.endDate) ?? new Date()
+          }
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onValueChange={(_event, selected) => onDateChange(selected)}
+          onDismiss={() => setShowPicker(null)}
+        />
+      )}
+
+      <View
+        className="flex-row items-center gap-4 border-t px-6 pb-6 pt-4"
+        style={{ borderColor: theme.border }}>
+        <Pressable
+          testID="filter-clear-all"
+          accessibilityRole="button"
+          onPress={() => {
+            haptics.select();
+            setDraft({ ...emptyFilterState, sort: draft.sort });
+          }}
+          className="py-3 active:opacity-50">
+          <ThemedText className="text-sm font-bold" style={{ color: mutedText }}>
+            Clear all
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          testID="filter-apply"
+          accessibilityRole="button"
+          onPress={() => onApply(draft)}
+          className="h-14 flex-1 flex-row items-center justify-center gap-2 rounded-3xl"
+          style={{ backgroundColor: accent }}>
+          <ThemedText className="text-base font-black text-white">Show results</ThemedText>
+          <View className="rounded-full bg-white/25 px-2 py-0.5">
+            <ThemedText className="text-xs font-bold text-white">{count}</ThemedText>
+          </View>
+        </Pressable>
+      </View>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingTop: 8,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    fontFamily: Fonts.title,
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#90A4AE',
-    letterSpacing: 1,
-    marginLeft: 8,
-    flex: 1,
-  },
-  dateContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  dateCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FCEFEF',
-    padding: 16,
-    borderRadius: 24,
-  },
-  dateHeader: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#9E9E9E',
-    marginBottom: 4,
-  },
-  dateValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FCEFEF',
-    borderRadius: 30,
-    padding: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 26,
-  },
-  activeTab: {
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#9E9E9E',
-  },
-  activeTabText: {
-    color: '#546E7A',
-  },
-  amountBadge: {
-    backgroundColor: '#FFECB3',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  amountBadgeText: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#FF8F00',
-  },
-  sliderContainer: {
-    marginTop: 8,
-  },
-  sliderTrack: {
-    height: 4,
-    backgroundColor: '#FFEBEE',
-    borderRadius: 2,
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  sliderFill: {
-    height: '100%',
-    backgroundColor: '#90A4AE',
-    borderRadius: 2,
-    position: 'absolute',
-  },
-  sliderThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#90A4AE',
-    borderWidth: 4,
-    borderColor: 'white',
-    position: 'absolute',
-    top: -10,
-    transform: [{ translateX: -12 }],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  sliderLabelText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#B0BEC5',
-  },
-  chipsScroll: {
-    marginHorizontal: -24,
-  },
-  chipsScrollContent: {
-    paddingHorizontal: 24,
-    gap: 10,
-    paddingRight: 40, // Ensure + button is visible
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 24,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  activeChip: {
-    backgroundColor: '#FBE9E7',
-    borderColor: '#FFCCBC',
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#455A64',
-    marginLeft: 8,
-  },
-  activeChipText: {
-    color: '#BF360C',
-  },
-  addChip: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#CFD8DC',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  accountContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  accountChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ECEFF1',
-  },
-  activeAccountChip: {
-    borderColor: '#90CAF9',
-    backgroundColor: '#E3F2FD',
-  },
-  accountChipText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#455A64',
-    marginLeft: 8,
-  },
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#2196F3',
-    marginLeft: 8,
-  },
-  radioContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  radioButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#ECEFF1',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  activeRadioButton: {
-    backgroundColor: '#F3E5F5',
-    borderColor: '#D1C4E9',
-  },
-  radioCircle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: '#CFD8DC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  radioText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#78909C',
-  },
-  activeRadioText: {
-    color: '#673AB7',
-  },
-  scrollableRadioContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingRight: 24,
-  },
-  applyButton: {
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 4,
-  },
-  applyButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-    fontFamily: Fonts.title,
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  clearAllText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#90A4AE',
-  },
-  showMeContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  countBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    marginLeft: 8,
-  },
-  countBadgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-});

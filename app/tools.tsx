@@ -14,11 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { ThemedText } from '@/components/themed-text';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { StateView } from '@/components/ui/StateView';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatMoney } from '@/lib/money';
 import { calculateEMI, type EMICalculation, type EMIScheduleMonth } from '@/lib/emi';
 import {
   calculateSIP,
@@ -51,12 +54,6 @@ const toolOptions: {
   { id: 'itr', label: 'ITR', caption: 'Tax filing', icon: 'file-document-outline', available: false },
   { id: 'more', label: 'More', caption: 'Planned', icon: 'dots-grid', available: false },
 ];
-
-const formatMoney = (value: number) =>
-  `₹${value.toLocaleString('en-IN', {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-  })}`;
 
 const parseDecimalInput = (value: string) => Number(value.replace(/,/g, '').trim());
 
@@ -335,9 +332,7 @@ export default function ToolsScreen() {
                 />
 
                 {sipError ? (
-                  <View className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-3">
-                    <ThemedText className="text-sm text-red-600">{sipError}</ThemedText>
-                  </View>
+                  <ErrorBanner message={sipError} style={{ marginTop: 16 }} />
                 ) : null}
 
                 <Pressable
@@ -511,11 +506,7 @@ export default function ToolsScreen() {
               textColor={theme.text}
             />
 
-            {error ? (
-              <View className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-3">
-                <ThemedText className="text-sm text-red-600">{error}</ThemedText>
-              </View>
-            ) : null}
+            {error ? <ErrorBanner message={error} style={{ marginTop: 16 }} /> : null}
 
             <Pressable
               accessibilityRole="button"
@@ -642,7 +633,7 @@ type InputProps = {
 };
 
 function MoneyInput(props: InputProps) {
-  return <LabeledInput {...props} prefix="₹" />;
+  return <LabeledInput {...props} prefix={CURRENCY_SYMBOL} />;
 }
 
 function LabeledInput({

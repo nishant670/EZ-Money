@@ -6,19 +6,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { SkeletonCards, SkeletonFrame } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatMoney } from '@/lib/money';
 import { DashboardResponse, fetchDashboard } from '@/lib/insights';
 
 const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
-
-const formatMoney = (value: number) =>
-  `₹${Math.round(value).toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
 
 const toApiDate = (date: Date) => {
   const year = date.getFullYear();
@@ -144,9 +141,12 @@ export default function WeeklyReviewScreen() {
       <AppHeader title="Weekly review" subtitle={label} onBack={() => router.back()} rightIcon="refresh" onRightPress={load} />
 
       {loading && !dashboard ? (
-        <View className="flex-1 justify-center">
-          <StateView icon="file-chart" title="Loading weekly review" message="Building your review from confirmed transactions." loading />
-        </View>
+        <SkeletonFrame
+          label="Loading weekly review"
+          testID="weekly-review-skeleton"
+          style={{ paddingHorizontal: 20, paddingTop: 16, gap: 16 }}>
+          <SkeletonCards count={4} lines={3} radius={28} />
+        </SkeletonFrame>
       ) : !dashboard ? (
         <View className="flex-1 justify-center">
           <StateView icon={error ? 'wifi-off' : 'file-chart'} title={error ? 'Review did not load' : 'No review yet'} message={error || 'Add transactions to generate a weekly review.'} actionLabel="Try again" onAction={load} />
@@ -154,9 +154,7 @@ export default function WeeklyReviewScreen() {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 110, gap: 16 }}>
           {error && (
-            <View className="rounded-2xl border border-red-100 bg-red-50 p-3">
-              <ThemedText className="text-center text-sm text-red-600">{error}</ThemedText>
-            </View>
+            <ErrorBanner message={error} onRetry={load} />
           )}
 
           <View className="rounded-[28px] border p-5 shadow-sm" style={{ backgroundColor: colors.card, borderColor: colors.border }}>

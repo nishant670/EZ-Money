@@ -1,16 +1,18 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatTime } from '@/lib/datetime';
 import { fetchAIUsage, type AIUsageEvent } from '@/lib/billing';
 
 const actionLabels: Record<string, string> = {
@@ -31,12 +33,11 @@ const statusLabels: Record<string, string> = {
 const formatUsageDate = (value: string) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  // The date is locale-formatted; the clock is not, or this screen would show
+  // a different convention from every other timestamp in the app.
+  const day = parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const time = formatTime(parsed);
+  return time ? `${day}, ${time}` : day;
 };
 
 export default function AIUsageScreen() {
@@ -110,9 +111,9 @@ export default function AIUsageScreen() {
           </Card>
 
           {isLoading ? (
-            <View style={{ paddingVertical: 36, alignItems: 'center' }}>
-              <ActivityIndicator color={colors.accent} />
-            </View>
+            <SkeletonFrame label="Loading AI usage" testID="ai-usage-skeleton">
+              <SkeletonRows count={5} showAmount lines={2} />
+            </SkeletonFrame>
           ) : error ? (
             <Card compact style={{ padding: theme.spacing.lg }}>
               <ThemedText style={{ color: colors.text }}>{error}</ThemedText>

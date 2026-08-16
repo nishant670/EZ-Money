@@ -8,7 +8,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  Switch,
   TextInput,
   View,
 } from 'react-native';
@@ -17,6 +16,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -206,7 +206,7 @@ export default function SecurityScreen() {
                     </TText>
                   </View>
                 </View>
-                <Switch
+                <HapticSwitch
                   value={!!user?.has_pin}
                   onValueChange={(enabled) => void toggleLock(enabled)}
                   disabled={isCheckingLock}
@@ -285,7 +285,7 @@ export default function SecurityScreen() {
                   </TText>
                 </View>
               </View>
-              <Switch
+              <HapticSwitch
                 value={!!user?.biometrics_enabled}
                 onValueChange={(enabled) => void toggleBiometrics(enabled)}
                 disabled={isCheckingBiometrics}
@@ -338,7 +338,7 @@ export default function SecurityScreen() {
                   </TText>
                 </View>
               </View>
-              <Switch
+              <HapticSwitch
                 value={!!user?.stealth_mode}
                 onValueChange={toggleStealthMode}
                 trackColor={{ false: '#E0E0E0', true: theme.accent }}

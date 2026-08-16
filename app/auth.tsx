@@ -1,13 +1,14 @@
 import { OnboardingScreenWrapper } from '@/components/onboarding/OnboardingScreenWrapper';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { useMotion } from '@/hooks/use-motion';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { BackHandler, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   SlideInLeft,
   SlideInRight,
@@ -21,10 +22,10 @@ import {
   AuthPinSetupScreen,
   AuthScreen1,
   AuthScreen2,
-  AuthScreen3,
   AuthScreen4,
   AuthSecuritySetupScreen
 } from '@/components/auth';
+import type { ClaimTokenResult } from '@/components/auth/AuthOTPVerificationScreen';
 import {
   authOtpSend,
   getFriendlyAuthErrorMessage,
@@ -35,6 +36,13 @@ import {
   registerUser,
   resetPin,
 } from '@/lib/auth';
+import {
+  clearAuthProgress,
+  loadAuthProgress,
+  previousAuthStep,
+  saveAuthProgress,
+  type AuthStep,
+} from '@/lib/auth-progress';
 import { getDeviceId } from '@/lib/device';
 import { saveLocalSecurityPin } from '@/lib/security';
 
@@ -45,6 +53,11 @@ const googleDiscovery = {
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
 };
 
+// Read from the app config so it cannot drift from the package name Google has
+// registered against the Android OAuth client; a mismatch fails the whole flow.
+const GOOGLE_NATIVE_REDIRECT_SCHEME =
+  Constants.expoConfig?.android?.package ?? 'com.finnri.app';
+
 export default function AuthFlow() {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: string }>();
@@ -52,10 +65,11 @@ export default function AuthFlow() {
   const theme = Colors[colorScheme];
   const { user, setAuth } = useAuthStore();
   const isGuestLinking = params.mode === 'link' && !!user?.is_guest;
-  const [step, setStep] = useState(() => (isGuestLinking ? 2 : 1));
+  const [step, setStep] = useState<AuthStep>(() => (isGuestLinking ? 'identifier' : 'welcome'));
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [identifier, setIdentifier] = useState('');
   const [claimToken, setClaimToken] = useState<string | null>(null);
+  const [claimTokenExpiresAt, setClaimTokenExpiresAt] = useState<number | null>(null);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
@@ -68,14 +82,86 @@ export default function AuthFlow() {
   const [isResettingPin, setIsResettingPin] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
 
-  const handleFinish = () => {
+  /**
+   * Restoring runs once and only forwards. Until it settles, nothing is written
+   * back — otherwise the initial `welcome` would overwrite the very progress
+   * being read.
+   */
+  const [hasRestoredProgress, setHasRestoredProgress] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    // Guest linking starts from a known place and carries no half-finished
+    // state; restoring an older signup over it would swap the user's identifier
+    // out from under them.
+    if (isGuestLinking) {
+      setHasRestoredProgress(true);
+      return;
+    }
+    void loadAuthProgress().then((progress) => {
+      if (!isMounted) return;
+      if (progress) {
+        setIdentifier(progress.identifier);
+        setClaimToken(progress.claimToken);
+        setClaimTokenExpiresAt(progress.claimTokenExpiresAt);
+        setStep(progress.step);
+      }
+      setHasRestoredProgress(true);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [isGuestLinking]);
+
+  /**
+   * Every completed step is written straight after it completes, so a kill at
+   * any point resumes where it left off rather than at Welcome. The claim token
+   * goes with it — re-entering an OTP you already answered correctly is the
+   * thing this exists to prevent.
+   */
+  useEffect(() => {
+    if (!hasRestoredProgress) return;
+    void saveAuthProgress({ step, identifier, claimToken, claimTokenExpiresAt });
+  }, [claimToken, claimTokenExpiresAt, hasRestoredProgress, identifier, step]);
+
+  const changeStep = useCallback(
+    (newStep: AuthStep, transitionDirection: 'forward' | 'back' = 'forward') => {
+      setDirection(transitionDirection);
+      setStep(newStep);
+    },
+    []
+  );
+
+  const finish = useCallback(() => {
+    void clearAuthProgress();
     router.replace('/(tabs)');
+  }, [router]);
+
+  /**
+   * Kept in a ref so the Back subscription can read the current handler without
+   * being torn down and re-registered on every keystroke-driven re-render.
+   */
+  const handleBackRef = useRef<() => boolean>(() => false);
+  handleBackRef.current = () => {
+    // A guest linking an account entered from Home, not from Welcome, so Back
+    // at the first step belongs to the screen they came from.
+    if (isGuestLinking && step === 'identifier') {
+      finish();
+      return true;
+    }
+    const previous = previousAuthStep(step);
+    if (!previous) return false;
+    if (step === 'existing-account') setIdentifier('');
+    changeStep(previous, 'back');
+    return true;
   };
 
-  const changeStep = (newStep: number, transitionDirection: 'forward' | 'back' = 'forward') => {
-    setDirection(transitionDirection);
-    setStep(newStep);
-  };
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () =>
+      handleBackRef.current()
+    );
+    return () => subscription.remove();
+  }, []);
 
   const handleGuestContinue = async () => {
     setGuestError(null);
@@ -89,7 +175,7 @@ export default function AuthFlow() {
       if (response?.user) {
         setAuth(response.user, response.token);
       }
-      router.replace('/(tabs)');
+      finish();
     } catch (error) {
       setGuestError(getFriendlyAuthErrorMessage(error, 'Unable to continue as guest.'));
     } finally {
@@ -116,10 +202,14 @@ export default function AuthFlow() {
     setGuestError(null);
     setIsGoogleChecking(true);
     const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-    const redirectUri = AuthSession.makeRedirectUri({
-      scheme: 'ezmoney',
-      path: 'auth/google',
-    });
+    // Google's Android clients only accept a redirect whose scheme is the
+    // package name, with a single slash: "com.finnri.app:/oauth2redirect".
+    // makeRedirectUri emits "scheme://path", and Google rejects that double
+    // slash, so this one is spelled out rather than generated. The app's own
+    // "ezmoney" scheme stays registered for split-group invite links.
+    const redirectUri = Platform.OS === 'web'
+      ? AuthSession.makeRedirectUri({ path: 'auth/google' })
+      : `${GOOGLE_NATIVE_REDIRECT_SCHEME}:/oauth2redirect`;
 
     try {
       const request = await AuthSession.loadAsync(
@@ -167,7 +257,7 @@ export default function AuthFlow() {
         biometrics_enabled: false,
       });
       setAuth(response.user, response.token);
-      handleFinish();
+      finish();
     } catch (error) {
       setIdentifyError(getFriendlyAuthErrorMessage(error, 'Google sign-in failed.'));
     } finally {
@@ -175,30 +265,40 @@ export default function AuthFlow() {
     }
   };
 
-  const handleRegister = async (data: { pin: string; biometricsEnabled: boolean }) => {
+  const handleClaimToken = (result: ClaimTokenResult, nextStep: AuthStep) => {
+    setClaimToken(result.claimToken);
+    setClaimTokenExpiresAt(result.expiresAt);
+    changeStep(nextStep, 'forward');
+  };
+
+  const handleRegister = async (data: { pin: string | null; biometricsEnabled: boolean }) => {
     if (!claimToken) return;
     setIsRegistering(true);
     try {
       const deviceId = await getDeviceId();
       const response = await registerUser({
         claim_token: claimToken,
-        pin: data.pin,
+        pin: data.pin ?? undefined,
         guest_uuid: user?.is_guest ? user.uuid : undefined,
         device_id: deviceId,
         biometrics_enabled: data.biometricsEnabled,
       });
-      await saveLocalSecurityPin(response.user.uuid, data.pin);
+      if (data.pin) {
+        await saveLocalSecurityPin(response.user.uuid, data.pin);
+      }
       setAuth(
         {
           ...response.user,
-          has_pin: true,
+          has_pin: !!data.pin,
           biometrics_enabled: data.biometricsEnabled,
           email: identifier.includes('@') ? identifier : undefined,
           phone: identifier.includes('@') ? undefined : identifier,
         },
         response.token
       );
-      changeStep(6, 'forward');
+      // `signup-done` is not a resumable step, so reaching it is what clears the
+      // stored progress — the account exists, there is nothing left to resume.
+      changeStep('signup-done', 'forward');
     } catch (error) {
       setIdentifyError(getFriendlyAuthErrorMessage(error, 'Registration failed.'));
     } finally {
@@ -208,7 +308,7 @@ export default function AuthFlow() {
 
   const handleLogin = async (pin: string) => {
     if (pin === 'biometric_success') {
-      handleFinish();
+      finish();
       return;
     }
     setLoginError(null);
@@ -230,7 +330,7 @@ export default function AuthFlow() {
         },
         response.token
       );
-      handleFinish();
+      finish();
     } catch (error) {
       setLoginError(getFriendlyAuthErrorMessage(error, 'Login failed.'));
     } finally {
@@ -240,17 +340,18 @@ export default function AuthFlow() {
 
   const handleForgotPin = async () => {
     if (!identifier) {
-      changeStep(2, 'back');
+      changeStep('identifier', 'back');
       return;
     }
 
     setLoginError(null);
     setResetError(null);
     setClaimToken(null);
+    setClaimTokenExpiresAt(null);
     setIsSendingResetOtp(true);
     try {
       await authOtpSend(identifier);
-      changeStep(8, 'forward');
+      changeStep('reset-otp', 'forward');
     } catch (error) {
       setLoginError(getFriendlyAuthErrorMessage(error, 'Unable to send reset code.'));
     } finally {
@@ -258,7 +359,12 @@ export default function AuthFlow() {
     }
   };
 
-  const handleResetPin = async (pin: string) => {
+  /**
+   * Shared by the forgot-PIN reset and by an account that never set a PIN
+   * signing in on a new device. Both have proved control of the identifier by
+   * OTP; the only difference is whether a PIN comes out the other end.
+   */
+  const completeClaimSignIn = async (pin: string | null, biometricsEnabled?: boolean) => {
     if (!claimToken) return;
     setResetError(null);
     setIsResettingPin(true);
@@ -266,22 +372,26 @@ export default function AuthFlow() {
       const deviceId = await getDeviceId();
       const response = await resetPin({
         claim_token: claimToken,
-        pin,
+        pin: pin ?? undefined,
         device_id: deviceId,
+        biometrics_enabled: biometricsEnabled,
       });
-      await saveLocalSecurityPin(response.user.uuid, pin);
+      if (pin) {
+        await saveLocalSecurityPin(response.user.uuid, pin);
+      }
       setAuth(
         {
           ...response.user,
-          has_pin: true,
+          has_pin: !!pin,
+          biometrics_enabled: biometricsEnabled,
           email: identifier.includes('@') ? identifier : undefined,
           phone: identifier.includes('@') ? undefined : identifier,
         },
         response.token
       );
-      handleFinish();
+      finish();
     } catch (error) {
-      setResetError(getFriendlyAuthErrorMessage(error, 'Unable to reset PIN.'));
+      setResetError(getFriendlyAuthErrorMessage(error, 'Unable to sign in.'));
     } finally {
       setIsResettingPin(false);
     }
@@ -292,16 +402,24 @@ export default function AuthFlow() {
     setLoginError(null);
     setResetError(null);
     setClaimToken(null);
+    setClaimTokenExpiresAt(null);
     setIsIdentifying(true);
     try {
       const result = await identifyUser(id);
       setIdentifier(id);
       if (!result.exists) {
         await authOtpSend(id);
-        changeStep(3, 'forward');
+        changeStep('signup-otp', 'forward');
         return;
       }
-      changeStep(isGuestLinking ? 10 : 7, 'forward');
+      // An account that skipped PIN setup has no keypad to be sent to. Send the
+      // code straight away and verify by OTP instead.
+      if (result.has_pin === false) {
+        await authOtpSend(id);
+        changeStep('otp-login', 'forward');
+        return;
+      }
+      changeStep(isGuestLinking ? 'existing-account' : 'pin-login', 'forward');
     } catch (error) {
       setIdentifyError(getFriendlyAuthErrorMessage(error, 'Unable to verify that identifier.'));
     } finally {
@@ -311,125 +429,144 @@ export default function AuthFlow() {
 
   const renderScreen = () => {
     switch (step) {
-      case 1:
+      case 'welcome':
         return (
           <AuthScreen1
             onGoogle={handleGoogleContinue}
-            onContinue={() => {
+            onGuest={handleGuestContinue}
+            onIdentifier={() => {
               setGuestError(null);
-              changeStep(2, 'forward');
+              changeStep('identifier', 'forward');
             }}
-            onSecondary={() => {
-              setGuestError(null);
-              changeStep(5, 'forward');
-            }}
-            errorMessage={identifyError}
-            isLoading={isGoogleChecking}
+            errorMessage={guestError ?? identifyError}
+            isGuestLoading={isGuestChecking}
+            isGoogleLoading={isGoogleChecking}
           />
         );
-      case 2:
+      case 'identifier':
         return (
           <AuthScreen2
             onContinue={handleIdentify}
             onSecondary={() => {
               if (isGuestLinking) {
-                router.replace('/(tabs)');
+                finish();
                 return;
               }
               setGuestError(null);
-              changeStep(5, 'forward');
+              changeStep('welcome', 'back');
             }}
             onInputChange={() => setIdentifyError(null)}
             errorMessage={identifyError}
             isLoading={isIdentifying}
-            secondaryLabel={isGuestLinking ? 'Keep using guest' : 'Continue as Guest'}
+            secondaryLabel={isGuestLinking ? 'Keep using guest' : 'Back'}
           />
         );
-      case 10:
+      case 'existing-account':
         return (
           <ExistingAccountPrompt
             identifier={identifier}
-            onContinue={() => changeStep(7, 'forward')}
+            onContinue={() => changeStep('pin-login', 'forward')}
             onDifferent={() => {
               setIdentifier('');
-              changeStep(2, 'back');
+              changeStep('identifier', 'back');
             }}
             theme={theme}
           />
         );
-      case 7:
+      case 'pin-login':
         return (
           <AuthPinLoginScreen
             onContinue={handleLogin}
-            onSecondary={() => changeStep(2, 'back')}
+            onSecondary={() => changeStep('identifier', 'back')}
             onForgotPin={handleForgotPin}
             errorMessage={loginError}
             isLoading={isLoggingIn || isSendingResetOtp}
           />
         );
-      case 3:
+      case 'signup-otp':
         return (
           <AuthOTPVerificationScreen
             data={identifier}
-            onContinue={(token: string) => {
-              setClaimToken(token);
-              changeStep(4, 'forward');
-            }}
-            onSecondary={() => changeStep(2, 'back')}
+            onContinue={(result) => handleClaimToken(result, 'signup-security')}
+            onSecondary={() => changeStep('identifier', 'back')}
           />
         );
-      case 8:
+      case 'otp-login':
         return (
           <AuthOTPVerificationScreen
             data={identifier}
-            onContinue={(token: string) => {
-              setClaimToken(token);
-              changeStep(9, 'forward');
-            }}
-            onSecondary={() => changeStep(7, 'back')}
+            continueLabel="Sign in"
+            onContinue={(result) => handleClaimToken(result, 'otp-login-security')}
+            onSecondary={() => changeStep('identifier', 'back')}
           />
         );
-      case 9:
+      case 'otp-login-security':
+        // The account is verified at this point; the screen is an offer, and
+        // "Set up later" finishes the sign-in with no PIN, same as before.
+        return (
+          <AuthSecuritySetupScreen
+            onContinue={(data: { pin: string | null; biometricsEnabled: boolean }) =>
+              completeClaimSignIn(data.pin, data.biometricsEnabled)
+            }
+            isLoading={isResettingPin}
+            errorMessage={resetError}
+            continueLabel="Sign in"
+          />
+        );
+      case 'reset-otp':
+        return (
+          <AuthOTPVerificationScreen
+            data={identifier}
+            onContinue={(result) => handleClaimToken(result, 'reset-pin')}
+            onSecondary={() => changeStep('pin-login', 'back')}
+          />
+        );
+      case 'reset-pin':
+        // No skip here on purpose: this user is resetting a PIN they could not
+        // remember, so leaving the old one in place locks them out again.
         return (
           <AuthPinSetupScreen
-            onComplete={handleResetPin}
-            onCancel={() => changeStep(7, 'back')}
+            onComplete={(pin) => completeClaimSignIn(pin)}
+            onCancel={() => changeStep('pin-login', 'back')}
             isLoading={isResettingPin}
             errorMessage={resetError}
           />
         );
-      case 4:
+      case 'signup-security':
         return (
           <AuthSecuritySetupScreen
             onContinue={handleRegister}
-            onSecondary={() => changeStep(3, 'back')}
+            onSecondary={() => changeStep('signup-otp', 'back')}
             isLoading={isRegistering}
             errorMessage={identifyError}
           />
         );
-      case 5:
+      case 'signup-done':
         return (
-          <AuthScreen3
-            onContinue={handleGuestContinue}
-            onSecondary={() => {
-              setGuestError(null);
-              changeStep(2, 'back');
-            }}
-            errorMessage={guestError}
-            isLoading={isGuestChecking}
-          />
-        );
-      case 6:
-        return (
-          <AuthScreen4 onContinue={handleFinish} />
+          <AuthScreen4 onContinue={finish} />
         );
       default:
         return null;
     }
   };
 
-  const enteringAnimation = direction === 'forward' ? SlideInRight.duration(400) : SlideInLeft.duration(400);
-  const exitingAnimation = direction === 'forward' ? SlideOutLeft.duration(400) : SlideOutRight.duration(400);
+  const motion = useMotion();
+
+  // A screen push, on the `sheet` token. These used to run 400ms flat in both
+  // directions and honoured nothing — the outgoing screen is already gone as
+  // far as the user is concerned, and reduced motion could not switch them off.
+  const enterMs = motion.duration('sheet');
+  const exitMs = motion.exitDuration('sheet');
+  const enteringAnimation =
+    direction === 'forward' ? SlideInRight.duration(enterMs) : SlideInLeft.duration(enterMs);
+  const exitingAnimation =
+    direction === 'forward' ? SlideOutLeft.duration(exitMs) : SlideOutRight.duration(exitMs);
+
+  // Rendering the Welcome screen for a frame and then swapping it for a restored
+  // step would read as a glitch, so nothing renders until the restore settles.
+  if (!hasRestoredProgress) {
+    return <OnboardingScreenWrapper><View style={styles.container} /></OnboardingScreenWrapper>;
+  }
 
   return (
     <OnboardingScreenWrapper>

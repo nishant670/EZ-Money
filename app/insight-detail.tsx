@@ -5,26 +5,45 @@ import { ActivityIndicator, ScrollView, TouchableOpacity, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { formatChangeMagnitude } from '@/lib/insights';
+import { formatMoney, toAmount } from '@/lib/money';
 import { loadTransactions, resolveCategoryMetadata } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
 const toParam = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
-const formatMoney = (value?: string | number | null) => {
-  const parsed = Number(String(value ?? '').replace(/,/g, ''));
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return `₹${Math.round(parsed).toLocaleString('en-IN')}`;
+/**
+ * The same magnitude rule the card that led here uses, so the drill-down never
+ * contradicts it. A decrease keeps its sign; an increase past 300% becomes a
+ * multiplier rather than four digits.
+ */
+const formatChangeMetric = (change: number) => {
+  if (!Number.isFinite(change)) return '—';
+  return change < 0 ? `-${formatChangeMagnitude(change)}` : formatChangeMagnitude(change);
+};
+
+/**
+ * An amount only if there is one worth showing. These cards drop a metric
+ * entirely rather than print a hollow zero.
+ */
+const formatPositiveMoney = (value?: string | number | null) => {
+  const parsed = toAmount(value);
+  return parsed > 0 ? formatMoney(parsed) : null;
 };
 
 const insightExplainer: Record<string, string> = {
+  // Fallbacks only — the backend sends the exact window it compared, and that
+  // wins. These must not contradict it: a month-to-date range is compared with
+  // the same days of the previous month, not with the days just before it.
   period_comparison:
-    'This compares confirmed expense totals in the selected period against the immediately preceding period of the same length.',
+    'This compares confirmed expense totals against a matching earlier window, and only when that window held enough activity to divide by.',
   category_increase:
-    'This appears when a category with previous-period activity rises by at least 20% in the selected period.',
+    'This appears when a category rises by at least 20% against a matching earlier window that held enough activity to divide by.',
   top_merchant:
     'This identifies the merchant with the highest confirmed expense total in the selected period.',
   account_usage:
@@ -143,7 +162,7 @@ export default function InsightDetailScreen() {
     }, [load])
   );
 
-  const primaryStat = formatMoney(amount);
+  const primaryStat = formatPositiveMoney(amount);
   const confidencePercent = confidence ? Math.round(Number(confidence) * 100) : null;
   const isBudgetInsight = kind === 'budget_watch' || kind === 'budget_exceeded';
   const sourceTitle = isBudgetInsight ? 'Budget Source Transactions' : 'Source Transactions';
@@ -218,9 +237,9 @@ export default function InsightDetailScreen() {
 
           <View className="mt-5 flex-row gap-3">
             {primaryStat && <Metric label="Amount" value={primaryStat} />}
-            {limitAmount && <Metric label="Limit" value={formatMoney(limitAmount) ?? '₹0'} />}
-            {remainingAmount && <Metric label="Left" value={formatMoney(remainingAmount) ?? '₹0'} />}
-            {change && <Metric label="Change" value={`${Math.round(Number(change))}%`} />}
+            {limitAmount && <Metric label="Limit" value={formatPositiveMoney(limitAmount) ?? formatMoney(0)} />}
+            {remainingAmount && <Metric label="Left" value={formatPositiveMoney(remainingAmount) ?? formatMoney(0)} />}
+            {change && <Metric label="Change" value={formatChangeMetric(Number(change))} />}
             {percentage && <Metric label="Share" value={`${Math.round(Number(percentage))}%`} />}
             {accountName && <Metric label="Account" value={accountName} />}
             {confidencePercent != null && <Metric label="Match" value={`${confidencePercent}%`} />}
@@ -277,7 +296,9 @@ export default function InsightDetailScreen() {
           {error ? (
             <StateView icon="wifi-off" title="Sources did not load" message={error} compact />
           ) : loading && transactions.length === 0 ? (
-            <ActivityIndicator color={colors.accent} />
+            <SkeletonFrame label="Loading source rows" testID="insight-detail-skeleton">
+              <SkeletonRows count={4} />
+            </SkeletonFrame>
           ) : transactions.length === 0 ? (
             <StateView
               icon="text-search"
@@ -308,7 +329,7 @@ export default function InsightDetailScreen() {
                     </ThemedText>
                   </View>
                   <ThemedText className="text-sm font-black">
-                    {formatMoney(Math.abs(transaction.amount)) ?? '₹0'}
+                    {formatPositiveMoney(Math.abs(transaction.amount)) ?? formatMoney(0)}
                   </ThemedText>
                 </TouchableOpacity>
               ))}

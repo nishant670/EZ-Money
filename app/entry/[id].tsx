@@ -1,7 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Image } from 'expo-image';
+import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   Pressable,
   ScrollView,
   View,
@@ -9,21 +12,25 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
+import { DEFAULT_CURRENCY } from '@/constants/Currency';
 import {
   TransactionFormModal,
   type EntryForm,
 } from '@/components/transactions/TransactionFormModal';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { EntryDetailSkeleton } from '@/components/transactions/TransactionListSkeleton';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { decodeFrame, useSharedElementTarget } from '@/hooks/use-shared-element';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { deleteEntry, fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
+import { isPdfAttachment, resolveAttachmentForSave } from '@/lib/uploads';
 import {
   fetchNewUnreadBudgetNotification,
   fetchUnreadBudgetNotificationIds,
@@ -45,7 +52,8 @@ import {
   toTitleCase,
   resolveCategoryMetadata,
 } from '@/lib/transactions';
-import { formatDisplayTime } from '@/lib/datetime';
+import { formatTime, toApiTime } from '@/lib/datetime';
+import { formatMoney, toAmountInputValue } from '@/lib/money';
 
 export default function TransactionDetailsScreen() {
   const router = useRouter();
@@ -62,6 +70,8 @@ export default function TransactionDetailsScreen() {
     dateLabel?: string;
     tag?: string;
     edit?: string;
+    originIcon?: string;
+    originAmount?: string;
     reviewFocus?: 'category' | 'account' | '';
     reviewFields?: string;
     categorySuggestions?: string;
@@ -85,11 +95,88 @@ export default function TransactionDetailsScreen() {
   const theme = Colors[colorScheme];
   const entryID = Number(params.id);
 
+  /**
+   * Arriving with `edit=1` — from the row's swipe action — opens the sheet, but
+   * only once this screen has finished being pushed.
+   *
+   * **Not a nicety: without the wait the sheet does not open at all.** The push
+   * runs for `motion.exitDuration('sheet')`, and the entry that satisfies this
+   * condition (the fetch landing) reliably falls inside it. The sheet's own
+   * entrance is a Reanimated spring assigned to a shared value, and a spring
+   * started while the native stack is still animating the screen it lives on is
+   * lost — `visible` goes true, the modal mounts, and the panel stays parked at
+   * `SCREEN_HEIGHT` off the bottom of the screen. What you get is the detail
+   * screen with an invisible sheet on top of it, which is what C5's Edit action
+   * did on every tap.
+   *
+   * `transitionEnd` rather than a timeout, because the number would be a second
+   * copy of the navigator's duration — and the two would drift the first time
+   * C6's 240ms is retuned. `e.data.closing` is checked so a *pop* cannot open
+   * a sheet on the way out.
+   */
+  const navigation = useNavigation();
+  const [pushSettled, setPushSettled] = useState(false);
+
+  /**
+   * C9 — the icon and the amount arrive from the row that was tapped.
+   *
+   * Two elements rather than one, and they are not the same kind of thing: the
+   * icon is a box and scales by width, the amount is *text* and scales by
+   * height. The row says `-₹150` and this screen says `₹150`, so a width ratio
+   * would scale the figure by the width of a minus sign.
+   *
+   * Both degrade to nothing when the screen was reached any other way — a deep
+   * link, the Edit action, the notification feed — because there is no frame to
+   * come from and a transition out of nowhere is worse than none.
+   */
+  const heroIconRef = useRef<View>(null);
+  const heroAmountRef = useRef<View>(null);
+  const originIcon = useMemo(() => decodeFrame(params.originIcon), [params.originIcon]);
+  const originAmount = useMemo(() => decodeFrame(params.originAmount), [params.originAmount]);
+  const iconTravel = useSharedElementTarget(heroIconRef, originIcon, 'width', pushSettled);
+  const amountTravel = useSharedElementTarget(heroAmountRef, originAmount, 'height', pushSettled);
+
+  /**
+   * Going back plays the travel in reverse, then pops.
+   *
+   * Both halves are asked to reverse and the *pop* waits for the icon only —
+   * they run on the same clock and finish together, and threading two
+   * completions into one navigation is a race with nothing to gain. The amount
+   * is simply told to go home at the same moment.
+   */
+  const dismiss = useCallback(() => {
+    amountTravel.reverse(() => {});
+    iconTravel.reverse(() => router.back());
+  }, [amountTravel, iconTravel, router]);
+
+  // The hardware and gesture back have to play it too, or the one route out
+  // that most people use is the one that snaps.
   useEffect(() => {
-    if (params.edit === '1' && transaction && !isLoading) {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!iconTravel.active) return false;
+      dismiss();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [dismiss, iconTravel.active]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener(
+      // @ts-expect-error — `transitionEnd` is a native-stack event and is not in
+      // the base navigation event map that expo-router's types expose.
+      'transitionEnd',
+      (event: { data?: { closing?: boolean } }) => {
+        if (!event?.data?.closing) setPushSettled(true);
+      }
+    );
+    return unsubscribe;
+  }, [navigation]);
+
+  useEffect(() => {
+    if (params.edit === '1' && transaction && !isLoading && pushSettled) {
       setIsEditModalVisible(true);
     }
-  }, [isLoading, params.edit, transaction]);
+  }, [isLoading, params.edit, pushSettled, transaction]);
 
   // Hydrate state from params initially, then update with API data
   const displayData = transaction || {
@@ -119,7 +206,7 @@ export default function TransactionDetailsScreen() {
         amount: Number(data.amount),
         date: data.date ? normalizeDateLabel(data.date) : params.dateLabel,
         rawDate: data.date,
-        time: data.time,
+        time: formatTime(data.time),
         tag: data.tag ? toTitleCase(data.tag) : data.tag,
       };
       setTransaction(normalized);
@@ -185,6 +272,17 @@ export default function TransactionDetailsScreen() {
   const iconColor = meta.color;
   const bgColor = meta.bgColor;
 
+  const receiptUrl = displayData.attachment || null;
+
+  const handleOpenReceipt = async () => {
+    if (!receiptUrl) return;
+    try {
+      await WebBrowser.openBrowserAsync(receiptUrl);
+    } catch {
+      Alert.alert('Receipt unavailable', 'This receipt could not be opened right now.');
+    }
+  };
+
   const handleEdit = () => {
     setIsEditModalVisible(true);
   };
@@ -220,11 +318,14 @@ export default function TransactionDetailsScreen() {
 
   const handleSaveUpdate = async (formData: EntryForm) => {
     try {
-      // Transform EntryForm back to backend payload
-      // Assuming we only update text fields here. File upload usually handled separately or multipart.
-      // For MVP, focus on data fields.
+      if (!token) throw new Error('Missing session.');
+
+      // Uploads a newly picked file and passes an existing receipt URL through
+      // untouched. Throwing here aborts the update instead of saving a local URI.
+      const attachmentUrl = await resolveAttachmentForSave(token, formData.attachment);
 
       const payload: EntryMutationPayload = {
+        attachment: attachmentUrl,
         title: formData.title,
         amount: formData.amount.trim(),
         currency: formData.currency || DEFAULT_CURRENCY,
@@ -243,8 +344,11 @@ export default function TransactionDetailsScreen() {
       if (parsedDate) {
         payload.date = formatApiDate(parsedDate);
       }
-      if (formData.time) {
-        payload.time = formData.time; // "10:30 PM" - backend stores as string
+      // Store the canonical HH:MM the parser also writes, not the display
+      // string — two clocks on disk is what S6 exists to end.
+      const apiTime = toApiTime(formData.time);
+      if (apiTime) {
+        payload.time = apiTime;
       }
       if (formData.splitEnabled && formData.type === 'Expense') {
         payload.split = {
@@ -313,7 +417,7 @@ export default function TransactionDetailsScreen() {
     mode: displayData.mode || 'Cash',
     category: isReviewEdit ? (displayData.category ?? '') : displayData.category || 'Food',
     date: displayData.date || formatDateLabel(new Date()),
-    time: displayData.time || formatDisplayTime(new Date()),
+    time: displayData.time || formatTime(new Date()) || '',
     notes: displayData.notes || '',
     tag: displayData.tag || 'General',
     currency: displayData.currency || DEFAULT_CURRENCY,
@@ -323,14 +427,14 @@ export default function TransactionDetailsScreen() {
       accounts.find((account) => account.id === displayData.account_id)?.name ||
       '',
     merchant: displayData.merchant || '',
-    attachment: null,
+    attachment: displayData.attachment || null,
     splitEnabled: Boolean(splitBill),
     splitGroupId: splitBill?.group_id ?? null,
     splitGroupName: '',
     splitParticipants: splitParticipants.map((participant) => ({
       friendId: participant.friend_id,
       friendName: participant.friend?.name ?? '',
-      shareAmount: Number(participant.share_amount || 0).toFixed(2),
+      shareAmount: toAmountInputValue(participant.share_amount),
       direction: participant.direction,
     })),
     subscriptionEnabled: false,
@@ -347,16 +451,29 @@ export default function TransactionDetailsScreen() {
     subscriptionNotes: '',
   };
 
-  if (isLoading && !transaction) {
+  /**
+   * The skeleton is for arriving with *nothing*, which on this screen is rarer
+   * than it looks.
+   *
+   * A tap on a row hands over the title, the amount, the category and the date
+   * as params — that is what `displayData` hydrates from, and it is why the
+   * hero can be drawn in the first frame. Gating the whole screen on the fetch
+   * replaces content the screen already has with placeholders for it, which is
+   * a slower screen wearing the costume of a faster one. It also breaks C9
+   * outright: the icon the row travels into does not exist until the fetch
+   * lands, by which point the screen has finished arriving and the travel plays
+   * to an audience that has already looked away.
+   *
+   * A deep link from a notification carries only an id, and that is the case
+   * the skeleton is for.
+   */
+  const hasPreview = Boolean(params.name || params.amount);
+
+  if (isLoading && !transaction && !hasPreview) {
     return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: theme.background,
-        }}>
-        <ActivityIndicator color={theme.accent} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <EntryDetailSkeleton />
       </SafeAreaView>
     );
   }
@@ -368,7 +485,7 @@ export default function TransactionDetailsScreen() {
       {/* Custom Header */}
       <View className="flex-row items-center px-6 py-4">
         <Pressable
-          onPress={() => router.back()}
+          onPress={dismiss}
           className="h-10 w-10 items-center justify-center rounded-full bg-white dark:bg-gray-800">
           <MaterialCommunityIcons name="chevron-left" size={28} color={theme.text} />
         </Pressable>
@@ -382,23 +499,34 @@ export default function TransactionDetailsScreen() {
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }}>
         {/* HERO SECTION */}
         <View className="items-center mb-10">
-          <View
+          <Animated.View
+            ref={heroIconRef}
+            collapsable={false}
+            onLayout={iconTravel.onLayout}
             className="h-28 w-28 rounded-[32px] items-center justify-center shadow-lg mb-6"
-            style={{
-              shadowColor: theme.accent,
-              shadowOpacity: 0.1,
-              shadowRadius: 15,
-              backgroundColor: bgColor || 'white',
-            }}>
+            style={[
+              {
+                shadowColor: theme.accent,
+                shadowOpacity: 0.1,
+                shadowRadius: 15,
+                backgroundColor: bgColor || 'white',
+              },
+              iconTravel.style,
+            ]}>
             <MaterialCommunityIcons name={icon as any} size={52} color={iconColor} />
-          </View>
+          </Animated.View>
 
-          <ThemedText
-            className="text-4xl font-black mb-2 tracking-tight"
-            style={{ color: theme.text }}>
-            {CURRENCY_SYMBOL}
-            {amountValue.toFixed(2)}
-          </ThemedText>
+          <Animated.View
+            ref={heroAmountRef}
+            collapsable={false}
+            onLayout={amountTravel.onLayout}
+            style={amountTravel.style}>
+            <ThemedText
+              className="text-4xl font-black mb-2 tracking-tight"
+              style={{ color: theme.text }}>
+              {formatMoney(amountValue, { sign: 'never' })}
+            </ThemedText>
+          </Animated.View>
 
           <ThemedText className="text-lg font-black mb-3" style={{ color: '#1E293B' }}>
             {displayData.title || 'Untitled Transaction'}
@@ -519,16 +647,24 @@ export default function TransactionDetailsScreen() {
                   <ThemedText className="text-[9px] uppercase font-black text-gray-300 mb-2">
                     TAGS
                   </ThemedText>
+                  {/* An untagged entry showed a "Personal" chip that looked like a
+                      real tag but was never stored and was not in the tag picker. */}
                   <View className="flex-row gap-2">
-                    <View
-                      className="rounded-full border px-3 py-1"
-                      style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
-                      <ThemedText
-                        className="text-[10px] font-black"
-                        style={{ color: theme.accent }}>
-                        {displayData.tag || 'Personal'}
+                    {displayData.tag ? (
+                      <View
+                        className="rounded-full border px-3 py-1"
+                        style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+                        <ThemedText
+                          className="text-[10px] font-black"
+                          style={{ color: theme.accent }}>
+                          {displayData.tag}
+                        </ThemedText>
+                      </View>
+                    ) : (
+                      <ThemedText className="text-[11px]" style={{ color: `${theme.text}66` }}>
+                        No tag
                       </ThemedText>
-                    </View>
+                    )}
                   </View>
                 </View>
               </View>
@@ -579,8 +715,7 @@ export default function TransactionDetailsScreen() {
                 </View>
               </View>
               <ThemedText className="text-sm font-black" style={{ color: theme.accent }}>
-                {CURRENCY_SYMBOL}
-                {Number(splitBill.total_amount || amountValue).toFixed(2)}
+                {formatMoney(splitBill.total_amount || amountValue, { sign: 'never' })}
               </ThemedText>
             </View>
 
@@ -598,8 +733,7 @@ export default function TransactionDetailsScreen() {
                     </ThemedText>
                   </View>
                   <ThemedText className="text-sm font-black text-slate-700 dark:text-gray-100">
-                    {CURRENCY_SYMBOL}
-                    {Number(participant.share_amount || 0).toFixed(2)}
+                    {formatMoney(participant.share_amount, { sign: 'never' })}
                   </ThemedText>
                 </View>
               ))}
@@ -611,8 +745,7 @@ export default function TransactionDetailsScreen() {
                   EXPECTED BACK
                 </ThemedText>
                 <ThemedText className="mt-1 text-base font-black text-emerald-700">
-                  {CURRENCY_SYMBOL}
-                  {splitExpectedBack.toFixed(2)}
+                  {formatMoney(splitExpectedBack, { sign: 'never' })}
                 </ThemedText>
               </View>
               <View className="flex-1 rounded-2xl bg-rose-50 p-4">
@@ -620,13 +753,58 @@ export default function TransactionDetailsScreen() {
                   YOU OWE
                 </ThemedText>
                 <ThemedText className="mt-1 text-base font-black text-rose-700">
-                  {CURRENCY_SYMBOL}
-                  {splitYouOwe.toFixed(2)}
+                  {formatMoney(splitYouOwe, { sign: 'never' })}
                 </ThemedText>
               </View>
             </View>
           </View>
         )}
+        {/* PAPER TRAIL */}
+        {receiptUrl ? (
+          <View className="mb-8">
+            <ThemedText className="text-[10px] font-black uppercase tracking-[2px] text-gray-300 mb-4 ml-6">
+              THE PAPER TRAIL
+            </ThemedText>
+            {isPdfAttachment(receiptUrl) ? (
+              <Pressable
+                onPress={handleOpenReceipt}
+                accessibilityRole="button"
+                accessibilityLabel="Open receipt PDF"
+                className="rounded-[32px] p-6 flex-row items-center justify-between border"
+                style={{ backgroundColor: theme.card, borderColor: theme.border }}
+              >
+                <View className="flex-row items-center gap-4">
+                  <View className="h-14 w-14 rounded-full items-center justify-center bg-rose-50">
+                    <MaterialCommunityIcons name="file-pdf-box" size={28} color="#E11D48" />
+                  </View>
+                  <View>
+                    <ThemedText className="text-base font-black" style={{ color: theme.text }}>
+                      Receipt PDF
+                    </ThemedText>
+                    <ThemedText className="text-xs font-bold text-gray-400">Tap to open</ThemedText>
+                  </View>
+                </View>
+                <MaterialCommunityIcons name="open-in-new" size={22} color={theme.accent} />
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={handleOpenReceipt}
+                accessibilityRole="imagebutton"
+                accessibilityLabel="Open receipt image"
+                className="rounded-[32px] overflow-hidden border"
+                style={{ borderColor: theme.border }}
+              >
+                <Image
+                  source={{ uri: receiptUrl }}
+                  style={{ width: '100%', height: 220 }}
+                  contentFit="cover"
+                  transition={150}
+                />
+              </Pressable>
+            )}
+          </View>
+        ) : null}
+
         {/* ACTIONS */}
         <Pressable
           onPress={handleEdit}
@@ -661,7 +839,7 @@ export default function TransactionDetailsScreen() {
         accounts={accounts}
         splitFriends={splitFriends}
         splitGroups={splitGroups}
-        onManageAccounts={() => router.push('/accounts')}
+        onManageAccounts={() => router.push('/money?segment=accounts')}
         initialFocus={params.reviewFocus || undefined}
         categorySuggestions={categorySuggestions}
         aiReview={
@@ -717,8 +895,7 @@ export default function TransactionDetailsScreen() {
                 </ThemedText>
               </View>
               <ThemedText className="text-base font-black" style={{ color: theme.text }}>
-                {CURRENCY_SYMBOL}
-                {amountValue.toFixed(2)}
+                {formatMoney(amountValue, { sign: 'never' })}
               </ThemedText>
             </View>
           </View>

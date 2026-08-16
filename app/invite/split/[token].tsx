@@ -4,10 +4,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { UpgradeSheet } from '@/components/billing/UpgradeSheet';
 import { ThemedText } from '@/components/themed-text';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { Shimmer } from '@/components/ui/Shimmer';
+import { SkeletonFrame } from '@/components/ui/Skeleton';
 import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
 import {
@@ -27,6 +32,13 @@ export default function SplitInviteScreen() {
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const inviteToken = Array.isArray(routeToken) ? routeToken[0] : routeToken;
+  const {
+    entitlement,
+    sheetVisible: upgradeSheetVisible,
+    capture: captureEntitlement,
+    present: presentUpgrade,
+    dismiss: dismissUpgrade,
+  } = useEntitlementGate();
 
   const loadInvite = useCallback(async () => {
     if (!authToken || !inviteToken) {
@@ -38,11 +50,13 @@ export default function SplitInviteScreen() {
     try {
       setInvite(await fetchSplitGroupInvite(authToken, inviteToken));
     } catch (loadError) {
+      // The invite endpoints sit inside the entitlement-gated split group.
+      if (captureEntitlement(loadError)) return;
       setError(getFriendlyErrorMessage(loadError, 'Unable to load this invite.'));
     } finally {
       setLoading(false);
     }
-  }, [authToken, inviteToken]);
+  }, [authToken, captureEntitlement, inviteToken]);
 
   useEffect(() => {
     void loadInvite();
@@ -56,6 +70,10 @@ export default function SplitInviteScreen() {
       await acceptSplitGroupInvite(authToken, inviteToken);
       router.replace('/(tabs)/split');
     } catch (acceptError) {
+      if (captureEntitlement(acceptError)) {
+        presentUpgrade();
+        return;
+      }
       setError(getFriendlyErrorMessage(acceptError, 'Unable to join this group.'));
     } finally {
       setAccepting(false);
@@ -85,21 +103,34 @@ export default function SplitInviteScreen() {
             style={{ backgroundColor: theme.secondary }}>
             <MaterialCommunityIcons name="account-group-outline" size={34} color={theme.accent} />
           </View>
-          <ThemedText
-            className="mt-5 text-center text-2xl"
-            style={{ color: theme.text, fontFamily: Fonts.title }}>
-            {invite ? `Join ${invite.group.name}` : 'Split group invite'}
-          </ThemedText>
-          <ThemedText className="mt-3 text-center text-base leading-6 text-black/55 dark:text-white/55">
-            {invite
-              ? `${invite.owner_name} invited you to track shared expenses with ${invite.member_count} people on Finnri.`
-              : 'Open this invite while signed in to Finnri.'}
-          </ThemedText>
+          {/* The group's name and who is inviting you are the whole content of
+              this card, so they are what waits — a spinner underneath two lines
+              of fallback copy was the card claiming to be finished. */}
+          {loading ? (
+            <SkeletonFrame
+              label="Loading invite"
+              testID="split-invite-skeleton"
+              style={{ marginTop: 20, width: '100%', alignItems: 'center', gap: 12 }}>
+              <Shimmer width="70%" height={26} radius={8} index={0} />
+              <Shimmer width="92%" height={14} index={1} />
+              <Shimmer width="64%" height={14} index={2} />
+            </SkeletonFrame>
+          ) : (
+            <>
+              <ThemedText
+                className="mt-5 text-center text-2xl"
+                style={{ color: theme.text, fontFamily: Fonts.title }}>
+                {invite ? `Join ${invite.group.name}` : 'Split group invite'}
+              </ThemedText>
+              <ThemedText className="mt-3 text-center text-base leading-6 text-black/55 dark:text-white/55">
+                {invite
+                  ? `${invite.owner_name} invited you to track shared expenses with ${invite.member_count} people on Finnri.`
+                  : 'Open this invite while signed in to Finnri.'}
+              </ThemedText>
+            </>
+          )}
 
-          {loading ? <ActivityIndicator className="mt-6" color={theme.accent} /> : null}
-          {error ? (
-            <ThemedText className="mt-5 text-center text-sm text-red-500">{error}</ThemedText>
-          ) : null}
+          {error ? <ErrorBanner message={error} style={{ marginTop: 20, width: '100%' }} /> : null}
 
           <Pressable
             accessibilityRole="button"
@@ -117,6 +148,12 @@ export default function SplitInviteScreen() {
           </Pressable>
         </Card>
       </View>
+
+      <UpgradeSheet
+        visible={upgradeSheetVisible}
+        entitlement={entitlement}
+        onClose={dismissUpgrade}
+      />
     </SafeAreaView>
   );
 }

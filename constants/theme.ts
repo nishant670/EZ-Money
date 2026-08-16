@@ -335,6 +335,25 @@ export const Typography = {
   },
 } as const;
 
+/**
+ * The ratio every preset above is drawn at, and the one a size override is
+ * given when it does not bring a line height of its own.
+ *
+ * A `lineHeight` smaller than the glyphs need does not overflow — it *clips*,
+ * at the bottom of the line box, which on a money screen is not cosmetic:
+ * digits have no descenders but the grouping comma does, so `₹40,486` loses
+ * the comma's tail and reads as `₹40.486`. Inter needs about 1.21x its font
+ * size; 1.3 is that plus the leading the presets already sit at (they run
+ * 1.26-1.5, and the two display sizes that were hand-tuned on a handset landed
+ * at 1.26 and 1.33).
+ */
+export const LineHeightRatio = 1.3;
+
+/** The line height a given font size wants, absent an explicit one. */
+export function derivedLineHeight(fontSize: number): number {
+  return Math.round(fontSize * LineHeightRatio);
+}
+
 export const Spacing = {
   none: 0,
   xxs: 2,
@@ -374,6 +393,76 @@ export const Shadows = {
     elevation: 7,
   },
 } as const;
+
+/**
+ * Motion tokens — the shared timing vocabulary.
+ *
+ * Every animation in the app was tuned by hand and none of them matched: the
+ * bottom sheet entered over 240ms, the save toast over 180ms, the mic ring over
+ * 260ms, and nothing chose those numbers for a reason. These are the numbers to
+ * choose from now. New animation reads a token; it does not invent a duration.
+ *
+ * Pure data on purpose — no Reanimated import, so this file stays usable from
+ * legacy `Animated`, from Reanimated worklets, and from the CSS animation API,
+ * all of which want the same curve in a different shape. `useMotion()` in
+ * `hooks/use-motion.ts` is the Reanimated-flavoured reader, and the one that
+ * applies the reduced-motion degrade.
+ *
+ * ## Why exits are derived rather than listed
+ *
+ * A leaving element is already gone as far as the user is concerned, so making
+ * them wait out an entrance-length curve reads as lag. That rule is worth more
+ * as structure than as a convention nobody remembers, so there is no
+ * `duration.sheetExit` to get out of step — exit durations come from
+ * `EXIT_RATIO` applied to the entry duration, and are therefore always faster.
+ */
+export const Motion = {
+  duration: {
+    /** Press states, chip selection, toggles. */
+    instant: 120,
+    /** Cards, list items, collapse/expand. */
+    base: 220,
+    /** Bottom sheets, modals, screen pushes. */
+    sheet: 320,
+  },
+  ease: {
+    /** Anything entering or moving. Cubic-bezier control points. */
+    standard: [0.22, 1, 0.36, 1],
+    /** Anything leaving. */
+    exit: [0.4, 0, 1, 1],
+  },
+  spring: {
+    /** Buttons, FAB, mic. */
+    press: { damping: 18, stiffness: 260 },
+  },
+  stagger: {
+    /**
+     * Feed and list entrance. `step` per row; `max` rows carry a distinct
+     * delay, and everything past that shares the last one — an 80-row feed
+     * staggered honestly would still be arriving two seconds later.
+     */
+    list: { step: 28, max: 8 },
+    /**
+     * Fields settling into a form. Slower per item than a list because there
+     * are far fewer of them and each is read rather than scanned, and capped
+     * low for the same reason — a draft that takes half a second to assemble
+     * has stopped being feedback and started being a wait.
+     */
+    fields: { step: 40, max: 6 },
+  },
+} as const;
+
+/** An exit is this fraction of the matching entry. See the note on `Motion`. */
+export const EXIT_RATIO = 0.75;
+
+export type MotionDurationToken = keyof typeof Motion.duration;
+export type MotionEaseToken = keyof typeof Motion.ease;
+export type EaseCurve = readonly [number, number, number, number];
+
+/** The same curve as a CSS timing function, for Reanimated's CSS animations. */
+export function cubicBezier(curve: EaseCurve): string {
+  return `cubic-bezier(${curve.join(',')})`;
+}
 
 export const Components = {
   screen: {
@@ -427,6 +516,7 @@ export function getThemeTokens(mode: ThemeMode, mood: AppMoodSettings = DefaultA
     spacing: Spacing,
     radius: Radius,
     shadows: Shadows,
+    motion: Motion,
     components: Components,
     mood,
     icon,
