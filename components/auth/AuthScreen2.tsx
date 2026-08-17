@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import { GoogleGlyph } from './GoogleGlyph';
 import { styles } from './styles';
 import { ScreenProps } from './types';
 
@@ -21,6 +22,15 @@ type AuthScreen2Props = ScreenProps & {
   isLoading?: boolean;
   onInputChange?: () => void;
   secondaryLabel?: string;
+  /**
+   * Google sign-in used to live only on Welcome, which a guest never sees: the
+   * upgrade path enters this screen directly from Profile, so the one account
+   * type most likely to want a one-tap sign-in was the one type that could not
+   * reach it. Omitted, the button is not drawn — callers that have no Google
+   * flow to offer keep the plain email/mobile screen.
+   */
+  onGoogle?: () => void;
+  isGoogleLoading?: boolean;
 };
 
 export const AuthScreen2 = ({
@@ -30,12 +40,16 @@ export const AuthScreen2 = ({
   isLoading,
   onInputChange,
   secondaryLabel = 'Continue as Guest',
+  onGoogle,
+  isGoogleLoading,
 }: AuthScreen2Props) => {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const [input, setInput] = React.useState('');
   const [touched, setTouched] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
+
+  const isBusy = !!isLoading || !!isGoogleLoading;
 
   const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   const isValidPhone = (value: string) => /^\d{10}$/.test(value);
@@ -68,7 +82,13 @@ export const AuthScreen2 = ({
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // Android's manifest already declares `adjustResize`, so the window is
+      // resized for the keyboard before this component sees it. `height` then
+      // subtracts the keyboard a second time, and the layout it settles on is
+      // not the one on screen when the touch starts — which is why a tap on a
+      // button near the keyboard lands on nothing and has to be repeated. The
+      // rest of the app passes `undefined` here for exactly that reason.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         <View style={styles.content}>
@@ -121,11 +141,12 @@ export const AuthScreen2 = ({
 
           <View style={styles.buttonSection}>
             <TouchableOpacity
+              accessibilityRole="button"
               style={[
                 styles.primaryButton,
-                { backgroundColor: theme.accent, opacity: isValid && !isLoading ? 1 : 0.6 },
+                { backgroundColor: theme.accent, opacity: isValid && !isBusy ? 1 : 0.6 },
               ]}
-              disabled={!isValid || !!isLoading}
+              disabled={!isValid || isBusy}
               onPress={handleContinue}
             >
               {isLoading ? (
@@ -135,7 +156,45 @@ export const AuthScreen2 = ({
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.textButton} onPress={() => onSecondary?.()}>
+            {onGoogle ? (
+              <>
+                <View style={styles.dividerRow}>
+                  <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+                  <Text style={[styles.dividerText, { color: theme.text, opacity: 0.4 }]}>or</Text>
+                  <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+                </View>
+
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  style={[
+                    styles.googleButton,
+                    { borderColor: theme.border, opacity: isBusy ? 0.6 : 1 },
+                  ]}
+                  disabled={isBusy}
+                  onPress={onGoogle}
+                >
+                  {isGoogleLoading ? (
+                    <ActivityIndicator color={theme.text} />
+                  ) : (
+                    <>
+                      <View style={styles.googleMark}>
+                        <GoogleGlyph size={20} />
+                      </View>
+                      <Text style={[styles.googleButtonText, { color: theme.text }]}>
+                        Continue with Google
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : null}
+
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.textButton}
+              disabled={isBusy}
+              onPress={() => onSecondary?.()}
+            >
               <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.6 }]}>
                 {secondaryLabel}
               </Text>

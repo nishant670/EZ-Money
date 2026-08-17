@@ -129,6 +129,20 @@ const FAB_BOTTOM_OFFSET = 40;
 const FAB_RIGHT_OFFSET = 24;
 /** The button's full footprint, plus a gap of air so the last row breathes. */
 const LIST_BOTTOM_PADDING = FAB_SIZE + FAB_BOTTOM_OFFSET + 24;
+/**
+ * The same gap of air, without the footprint — for the states where the FAB is
+ * not on screen at all.
+ *
+ * Reserving the button's height when there is no button is 104px of nothing at
+ * the bottom of the shortest Home there is, and on an empty or failed Home that
+ * is the difference between content that fits and content that scrolls. It
+ * matters more here than a stray gap normally would, because the capture card
+ * above does not collapse at these lengths (see `MIN_ENTRIES_FOR_COLLAPSE`):
+ * whatever scrolls up goes under an opaque block that will never move out of
+ * the way again, so the empty-state panel slides behind the card and stays
+ * there with the scroll already at its end.
+ */
+const EMPTY_BOTTOM_PADDING = 24;
 
 /**
  * How many entries the feed needs before the capture card is allowed to
@@ -1314,7 +1328,7 @@ export default function HomeScreen() {
           onLayout={(event) => setViewportHeight(Math.round(event.nativeEvent.layout.height))}
           contentContainerStyle={{
             paddingTop: pinnedTopHeight + captureExpandedHeight,
-            paddingBottom: LIST_BOTTOM_PADDING,
+            paddingBottom: hasTransactions ? LIST_BOTTOM_PADDING : EMPTY_BOTTOM_PADDING,
             // The card shrinks one pixel per pixel scrolled, so it needs a
             // scroll range of exactly its collapse distance to finish. A feed
             // that runs out before then leaves the card stranded halfway with

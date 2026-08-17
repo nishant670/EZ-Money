@@ -459,6 +459,12 @@ export default function AuthFlow() {
             errorMessage={identifyError}
             isLoading={isIdentifying}
             secondaryLabel={isGuestLinking ? 'Keep using guest' : 'Back'}
+            // Only the guest arrives here without having passed Welcome, so
+            // only the guest needs the button repeated. Offering it on the way
+            // *back* from Welcome would put the same choice on two consecutive
+            // screens, which reads as the first one not having worked.
+            onGoogle={isGuestLinking ? handleGoogleContinue : undefined}
+            isGoogleLoading={isGoogleChecking}
           />
         );
       case 'existing-account':

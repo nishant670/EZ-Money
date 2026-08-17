@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "com.finnri.app",
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#2D2D2D",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

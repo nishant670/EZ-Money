@@ -166,7 +166,13 @@ export const AuthOTPVerificationScreen = ({
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // Android's manifest already declares `adjustResize`, so the window is
+      // resized for the keyboard before this component sees it. `height` then
+      // subtracts the keyboard a second time, and the layout it settles on is
+      // not the one on screen when the touch starts — which is why a tap on a
+      // button near the keyboard lands on nothing and has to be repeated. The
+      // rest of the app passes `undefined` here for exactly that reason.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         contentContainerStyle={[styles.authScrollContent, { flexGrow: 1, justifyContent: 'center' }]}

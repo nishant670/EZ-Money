@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/hooks/use-auth-store';
 
+import { fetchWithRetry } from './api-retry';
 import { API_BASE_URL } from './transactions';
 
 type UnauthorizedHandler = () => void;
@@ -112,7 +113,11 @@ export const installApiSessionGuard = (handler: UnauthorizedHandler) => {
   if (!originalFetch) {
     originalFetch = globalThis.fetch.bind(globalThis);
     globalThis.fetch = async (input, init) => {
-      const response = await originalFetch!(input, init);
+      // One wrapper around fetch, not two. The retry has to sit inside this one
+      // rather than patch over it: a second patch would have to be installed in
+      // a guaranteed order to see the same requests, and the 401 check below
+      // needs the *final* response, not the first attempt's.
+      const response = await fetchWithRetry(originalFetch!, input, init);
 
       if (
         response.status === 401 &&
