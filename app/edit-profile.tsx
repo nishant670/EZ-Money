@@ -189,7 +189,8 @@ export default function EditProfileScreen() {
         <AppHeader title="Edit Profile" onBack={() => router.back()} />
 
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          // `adjustResize` already handles Android; see the note in AuthScreen2.
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           className="flex-1">
           <ScrollView
             showsVerticalScrollIndicator={false}
