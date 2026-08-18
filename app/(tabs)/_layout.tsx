@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import React, { useEffect } from 'react';
 import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { SplitInvitePrompt } from '@/components/split/SplitInvitePrompt';
@@ -59,6 +60,18 @@ function TabIcon({ activeName, inactiveName, route, focused, color, iconStyle }:
 }
 
 export default function TabLayout() {
+  /**
+   * The room the system's own bar takes at the bottom of the window.
+   *
+   * Android has been edge-to-edge since SDK 54 and there is no opting out, so
+   * the tab bar is laid out over the gesture pill or the three-button bar
+   * rather than above it. React Navigation already adds this inset itself — but
+   * only when `tabBarStyle` names neither a `height` nor a `paddingBottom`, and
+   * this bar names both, so the library's version was being overwritten and the
+   * labels ended up underneath the system buttons. Adding it back here is what
+   * keeps the bar tappable; the same applies to the iPhone home indicator.
+   */
+  const insets = useSafeAreaInsets();
   const theme = useThemeTokens();
   const colors = theme.colors;
   const iconStyle = theme.mood.iconStyle;
@@ -89,9 +102,9 @@ export default function TabLayout() {
           ios: {
             borderTopWidth: StyleSheet.hairlineWidth,
             elevation: 0,
-            height: 70,
+            height: 70 + insets.bottom,
             paddingTop: 6,
-            paddingBottom: 10,
+            paddingBottom: 10 + insets.bottom,
             backgroundColor: colors.card,
             borderTopColor: colors.border,
             shadowColor: '#1D1420',
@@ -104,9 +117,9 @@ export default function TabLayout() {
             borderTopWidth: StyleSheet.hairlineWidth,
             borderTopColor: colors.border,
             elevation: 8,
-            height: 64,
+            height: 64 + insets.bottom,
             paddingTop: 5,
-            paddingBottom: 7,
+            paddingBottom: 7 + insets.bottom,
           },
         }),
       }}>
