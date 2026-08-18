@@ -268,10 +268,31 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   };
 };
 
+/**
+ * Where the API lives, decided when the bundle is built.
+ *
+ * `EXPO_PUBLIC_API_URL` is inlined by Expo at build time, so a build that had
+ * it set carries the real host and a build that did not carries nothing at
+ * all. The `hostUri` fallback below resolves to the machine serving Metro on
+ * the local network, which is only meaningful while that dev server is the
+ * thing running this bundle. Shipped, it points the app at whatever address
+ * the developer's laptop had — reachable on their WiFi and nowhere else, so
+ * the app works at home and fails everywhere else with a connection error.
+ *
+ * A release build missing the URL therefore fails here, loudly, rather than
+ * quietly at a user's house.
+ */
 const resolveApiBaseUrl = () => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl) {
     return envUrl;
+  }
+
+  if (!__DEV__) {
+    throw new Error(
+      'EXPO_PUBLIC_API_URL is missing from this release build. Set it in the ' +
+        'EAS build profile (or .env for a local release build) and rebuild.',
+    );
   }
 
   const manifest = Constants.manifest as { hostUri?: string; debuggerHost?: string } | null;

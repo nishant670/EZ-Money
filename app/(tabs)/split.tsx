@@ -27,7 +27,7 @@ import { ThemedView } from '@/components/themed-view';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
-import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
+import { ThemedConfirmDialog, ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
@@ -568,6 +568,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [groupBalanceAlertById, setGroupBalanceAlertById] = useState<
     Record<number, { enabled: boolean; amount: string }>
   >({});
+  const [soloGroupPromptId, setSoloGroupPromptId] = useState<number | null>(null);
   const [defaultSplitGroupId, setDefaultSplitGroupId] = useState<number | null>(null);
   const [defaultSplitScreen, setDefaultSplitScreen] = useState<'choice' | 'adjust'>('choice');
   const [defaultSplitDraft, setDefaultSplitDraft] = useState<SplitSelection | null>(null);
@@ -975,6 +976,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       return [friend?.phone, friend?.email].filter(Boolean).join(' • ');
     },
     [friendById]
+  );
+
+  const soloGroupPromptSummary = useMemo(
+    () => groupSummaries.find((summary) => summary.group.id === soloGroupPromptId) ?? null,
+    [groupSummaries, soloGroupPromptId]
   );
 
   const defaultSplitSummary = useMemo(
@@ -1918,21 +1924,35 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
   };
 
-  const openBillForGroup = (groupId: number) => {
-    const group = groups.find((candidate) => candidate.id === groupId) ?? null;
-    const groupHasMembers = Boolean(
-      group?.members?.some((member) => friendById.has(member.friend_id))
-    );
-    if (!groupHasMembers && friends.length === 0) {
-      setSelectedGroupDetailId(null);
-      openModal('friend');
-      return;
-    }
+  const startBillForGroup = (groupId: number) => {
     resetBillForm();
     handleSelectBillGroup(groupId);
     setIsBillGroupLocked(true);
     setSelectedGroupDetailId(null);
     setModal('bill');
+  };
+
+  const openBillForGroup = (groupId: number) => {
+    const group = groups.find((candidate) => candidate.id === groupId) ?? null;
+    const groupHasMembers = Boolean(
+      group?.members?.some((member) => friendById.has(member.friend_id))
+    );
+    /**
+     * An expense in a group of one is a valid thing to record, and sometimes
+     * exactly what somebody means to do. But far more often it means they have
+     * not finished making the group — so it is worth asking once, with adding
+     * people offered rather than demanded.
+     */
+    if (!groupHasMembers && group?.viewer_can_manage) {
+      setSoloGroupPromptId(groupId);
+      return;
+    }
+    if (!groupHasMembers && friends.length === 0) {
+      setSelectedGroupDetailId(null);
+      openModal('friend');
+      return;
+    }
+    startBillForGroup(groupId);
   };
 
   const openBillForFriend = (friendId: number) => {
@@ -2486,6 +2506,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onClose={() => setSelectedGroupDetailId(null)}
           onAddExpense={(groupId) => openBillForGroup(groupId)}
           onManageMembers={openMemberPicker}
+          onInviteViaLink={(summary) => void shareGroupInviteLink(summary)}
           onOpenExpense={(bill) => setSelectedBillId(bill.id)}
           onOpenAction={openGroupAction}
           onOpenSettings={(summary) => setGroupSettingsId(summary.group.id)}
@@ -2572,6 +2593,25 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             onClose={closeDefaultSplitEditor}
           />
         ) : null}
+
+        <ThemedConfirmDialog
+          visible={Boolean(soloGroupPromptSummary)}
+          title="You are the only person in this group."
+          message="Do you need to add anyone to your group before you start adding expenses?"
+          iconName="account-multiple-plus-outline"
+          confirmLabel="Start adding expenses"
+          cancelLabel="Add group members"
+          onCancel={() => {
+            const summary = soloGroupPromptSummary;
+            setSoloGroupPromptId(null);
+            if (summary) openMemberPicker(summary);
+          }}
+          onConfirm={() => {
+            const groupId = soloGroupPromptId;
+            setSoloGroupPromptId(null);
+            if (groupId) startBillForGroup(groupId);
+          }}
+        />
 
         <ThemedDeleteDialog
           visible={Boolean(pendingGroupLeave)}
@@ -3803,6 +3843,7 @@ function GroupDetailModal({
   onClose,
   onAddExpense,
   onManageMembers,
+  onInviteViaLink,
   onOpenExpense,
   onOpenAction,
   onOpenSettings,
@@ -3813,6 +3854,7 @@ function GroupDetailModal({
   onClose: () => void;
   onAddExpense: (groupId: number) => void;
   onManageMembers: (summary: SplitGroupSummary) => void;
+  onInviteViaLink: (summary: SplitGroupSummary) => void;
   onOpenExpense: (bill: SplitBill) => void;
   onOpenAction: (summary: SplitGroupSummary, mode: GroupActionMode) => void;
   onOpenSettings: (summary: SplitGroupSummary) => void;
@@ -4023,6 +4065,47 @@ function GroupDetailModal({
               onPress={() => onOpenAction(summary, 'export')}
             />
           </ScrollView>
+
+          {/*
+            * A group of one is the state every group starts in, and the only
+            * way out of it used to be the settings cog — a place you go to
+            * change something, not to finish making it. Both routes in belong
+            * here, on the screen that is telling you nobody else is in.
+            */}
+          {memberNames.length === 0 && canManageGroup ? (
+            <View
+              className="mt-6 rounded-3xl border p-5"
+              style={{ backgroundColor: '#F8FAFC', borderColor: 'rgba(15,23,42,0.10)' }}>
+              <TText
+                className="text-center text-lg"
+                style={{ color: '#202124', fontFamily: Fonts.title }}>
+                You&apos;re the only one here
+              </TText>
+              <TText className="mt-2 text-center text-base leading-6 text-black/55">
+                Add the people you split with, or send them a link to join.
+              </TText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onManageMembers(summary)}
+                className="mt-5 min-h-14 flex-row items-center justify-center gap-3 rounded-full"
+                style={{ backgroundColor: '#155B6D' }}>
+                <MaterialCommunityIcons name="account-plus-outline" size={22} color="#FFFFFF" />
+                <TText className="text-lg text-white" style={{ fontFamily: Fonts.title }}>
+                  Add group members
+                </TText>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onInviteViaLink(summary)}
+                className="mt-3 min-h-14 flex-row items-center justify-center gap-3 rounded-full border"
+                style={{ borderColor: 'rgba(15,23,42,0.18)' }}>
+                <MaterialCommunityIcons name="link-variant" size={22} color="#155B6D" />
+                <TText className="text-lg" style={{ color: '#155B6D', fontFamily: Fonts.title }}>
+                  Share group link
+                </TText>
+              </Pressable>
+            </View>
+          ) : null}
 
           <View className="mt-6">
             {filteredBills.length > 0 ? (
@@ -6441,9 +6524,17 @@ function SplitModal({
   const theme = useThemeTokens().colors;
   return (
     <AnimatedBottomSheet visible={visible} onClose={onClose} avoidKeyboard>
+      {/*
+        * `flexShrink` rather than a percentage max-height: a percentage
+        * resolves against a parent that has no height of its own, which is what
+        * left a three-field form clipping its last input and scrolling for no
+        * reason. Shrinking means the sheet is exactly as tall as its content
+        * until the keyboard leaves it less room, and only then does the list
+        * inside start to scroll.
+        */}
       <View
-        className="max-h-[88%] rounded-t-[28px] border px-5 pb-8 pt-5"
-        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+        className="rounded-t-[28px] border px-5 pb-8 pt-5"
+        style={{ backgroundColor: theme.card, borderColor: theme.border, flexShrink: 1 }}>
         <View className="mb-4 flex-row items-center justify-between">
           <TText className="text-lg" style={{ fontFamily: Fonts.title }}>
             {title}
@@ -6462,6 +6553,8 @@ function SplitModal({
         <ScrollView
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          bounces={false}
+          style={{ flexGrow: 0, flexShrink: 1 }}
           contentContainerStyle={{ gap: 12, paddingBottom: footer ? 12 : 0 }}>
           {children}
         </ScrollView>

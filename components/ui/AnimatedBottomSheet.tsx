@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -47,6 +47,7 @@ export function AnimatedBottomSheet({
   onDismiss,
 }: AnimatedBottomSheetProps) {
   const [isMounted, setIsMounted] = useState(visible);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const progress = useRef(new Animated.Value(0)).current;
   const motion = useMotion();
   const enterDuration = motion.duration('sheet');
@@ -81,6 +82,34 @@ export function AnimatedBottomSheet({
     });
   }, [enterDuration, exitDurationMs, onDismiss, progress, visible]);
 
+  /**
+   * The sheet lifts itself rather than delegating to `KeyboardAvoidingView`.
+   *
+   * A sheet lives inside a `Modal`, which on Android is its own window that
+   * `adjustResize` never reaches — and `KeyboardAvoidingView` has no Android
+   * behavior to fall back on, so the keyboard simply covered the form and the
+   * user typed into fields they could not see. Measuring the keyboard and
+   * padding the sheet up by it is the one approach that behaves the same on
+   * both platforms and inside a modal.
+   */
+  useEffect(() => {
+    if (!avoidKeyboard) {
+      setKeyboardInset(0);
+      return;
+    }
+    // iOS reports the keyboard before it animates, Android only once it is up.
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardInset(event.endCoordinates?.height ?? 0);
+    });
+    const onHide = Keyboard.addListener(hideEvent, () => setKeyboardInset(0));
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [avoidKeyboard]);
+
   if (!isMounted) return null;
 
   const translateY = progress.interpolate({
@@ -89,7 +118,12 @@ export function AnimatedBottomSheet({
   });
 
   const content = (
-    <View style={[{ flex: 1, justifyContent: 'flex-end' }, containerStyle]}>
+    <View
+      testID="bottom-sheet-container"
+      style={[
+        { flex: 1, justifyContent: 'flex-end', paddingBottom: keyboardInset },
+        containerStyle,
+      ]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Close sheet"
@@ -101,6 +135,9 @@ export function AnimatedBottomSheet({
           {
             opacity: progress,
             transform: [{ translateY }],
+            // Never taller than the room left above the keyboard: whatever
+            // inside the sheet is allowed to shrink is what gives way.
+            flexShrink: 1,
           },
           sheetStyle,
         ]}>
@@ -126,15 +163,7 @@ export function AnimatedBottomSheet({
           }),
         }}
       />
-      {avoidKeyboard ? (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}>
-          {content}
-        </KeyboardAvoidingView>
-      ) : (
-        content
-      )}
+      {content}
     </Modal>
   );
 }

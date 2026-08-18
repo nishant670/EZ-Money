@@ -21,7 +21,11 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ez-money-be-production.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "23289902813-s2bo6vb4p0icbimr9b5vs3an1v6ftj3p.apps.googleusercontent.com"
+      }
     }
   }
 }
