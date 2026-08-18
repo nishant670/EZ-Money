@@ -25,6 +25,48 @@ export type AccountSummary = {
     credit_utilisation?: number;
     /** Non-card accounts with an opening balance only. */
     running_balance?: number;
+    /** Credit cards only. The limit breakdown a card screen leads with. */
+    limit?: CardLimitSummary;
+    /** Credit cards with at least one priced statement. The bill to pay. */
+    current_statement?: CurrentStatementSummary;
+};
+
+/**
+ * How much of a card is spoken for.
+ *
+ *     available_limit = credit_limit - outstanding - emi_blocked_principal
+ *
+ * `outstanding_source` says which side of the card the figure came from.
+ * `statement` means the bank told us and the number is exact; `ledger` means
+ * the card has no bill yet and this is what Finnri's own transactions imply.
+ * Worth surfacing — a card reading from the ledger is under-counting whatever
+ * the user has not logged.
+ */
+export type CardLimitSummary = {
+    outstanding: number;
+    outstanding_source: 'statement' | 'ledger';
+    /** Principal on EMI plans not yet billed to a statement. */
+    emi_blocked_principal: number;
+    credit_limit: number;
+    /** Absent when the user has not entered a limit. Negative when over it. */
+    available_limit?: number;
+    /** Percent of the limit committed. Can exceed 100. */
+    utilisation_pct?: number;
+};
+
+/** The bill, as the accounts list needs it. */
+export type CurrentStatementSummary = {
+    id: number;
+    statement_date: string;
+    due_date: string;
+    total_due: number;
+    minimum_due: number;
+    paid_amount: number;
+    remaining_due: number;
+    status: 'draft' | 'unpaid' | 'partial' | 'paid';
+    is_overdue: boolean;
+    /** Negative once the due date has passed. */
+    days_to_due: number;
 };
 
 export type Account = {
@@ -36,6 +78,15 @@ export type Account = {
     identifier?: string;
     credit_limit?: number;
     due_day?: number;
+    /** Day of month a card bills on. 0 until the first statement infers it. */
+    statement_day?: number;
+    /** Lead time on the "bill due soon" reminder. */
+    reminder_days_before?: number;
+    /**
+     * Only changes how the due-date reminder is worded. A payment is never
+     * recorded without the user confirming it.
+     */
+    autopay_enabled?: boolean;
     /**
      * Opening balance — what the account held (or, on a card, owed) before the
      * first logged transaction. Read `summary` for anything current.
@@ -56,6 +107,9 @@ export type AccountPayload = {
     identifier?: string;
     credit_limit?: number;
     due_day?: number;
+    statement_day?: number;
+    reminder_days_before?: number;
+    autopay_enabled?: boolean;
     fee_month?: string;
     balance?: number;
     is_default?: boolean;
@@ -248,6 +302,19 @@ export const toAccountPayload = (account: Account): AccountPayload => ({
     identifier: account.identifier,
     credit_limit: account.credit_limit,
     due_day: account.due_day,
+    // Sent back only when known. The server treats these three as
+    // leave-as-is when absent, so an edit that says nothing about a card's
+    // billing cycle cannot wipe the statement day it inferred from the
+    // user's first bill.
+    ...(typeof account.statement_day === 'number'
+        ? { statement_day: account.statement_day }
+        : {}),
+    ...(typeof account.reminder_days_before === 'number'
+        ? { reminder_days_before: account.reminder_days_before }
+        : {}),
+    ...(typeof account.autopay_enabled === 'boolean'
+        ? { autopay_enabled: account.autopay_enabled }
+        : {}),
     fee_month: account.fee_month,
     balance: account.balance,
     is_default: account.is_default,

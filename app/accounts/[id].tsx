@@ -6,7 +6,14 @@ import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccountDetailSkeleton } from '@/components/accounts/AccountSkeletons';
+import { CardLimitRing } from '@/components/accounts/CardLimitRing';
 import { CreditUsageBar } from '@/components/accounts/CreditUsageBar';
+import { EMIPlanFormSheet } from '@/components/statements/EMIPlanFormSheet';
+import { EMIPlansSection } from '@/components/statements/EMIPlansSection';
+import { ItemizationBanner } from '@/components/statements/ItemizationBanner';
+import { PaymentFormSheet } from '@/components/statements/PaymentFormSheet';
+import { StatementFormSheet } from '@/components/statements/StatementFormSheet';
+import { StatementSummaryCard } from '@/components/statements/StatementSummaryCard';
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
@@ -19,8 +26,10 @@ import {
   accountVisuals,
   formatAccountIdentifier,
   getAccountHeadline,
+  getCardLimit,
   getCreditDueLabel,
   getCreditUsage,
+  getCurrentStatement,
   getLastActivityLabel,
   getRunningBalance,
 } from '@/lib/account-display';
@@ -35,6 +44,20 @@ import {
   updateAccount,
 } from '@/lib/accounts';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import {
+  EMIPlan,
+  EMIPlanPayload,
+  createCardEMIPlan,
+  fetchCardEMIPlans,
+} from '@/lib/emi-plans';
+import {
+  CardStatement,
+  CardStatementPayload,
+  StatementPaymentPayload,
+  fetchStatement,
+  recordStatementPayment,
+  saveCardStatement,
+} from '@/lib/statements';
 import { loadTransactions } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 
@@ -102,6 +125,55 @@ type SetupItem = {
   complete: boolean;
 };
 
+/**
+ * The prompt on a card that has never had a bill entered.
+ *
+ * Says what the user gets rather than what Finnri wants: without a statement
+ * the card's outstanding is only as complete as what they remembered to log,
+ * and the whole point of entering the bill is that the number stops being an
+ * estimate.
+ */
+function NoStatementCard({ onAdd }: { onAdd: () => void }) {
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
+
+  return (
+    <View
+      className="mt-7 rounded-[26px] border px-5 py-5"
+      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+      <View className="flex-row items-start gap-3">
+        <View
+          className="h-10 w-10 items-center justify-center rounded-full"
+          style={{ backgroundColor: themeTokens.mode === 'light' ? '#EFF6FF' : '#12233A' }}>
+          <MaterialCommunityIcons name="file-document-outline" size={20} color="#3B82F6" />
+        </View>
+        <View className="min-w-0 flex-1">
+          <TText className="text-base" style={{ fontFamily: Fonts.title, color: theme.text }}>
+            Track your bill
+          </TText>
+          <TText
+            className="mt-1 text-sm"
+            style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
+            Add the total from your statement and Finnri will track what&apos;s due, what
+            you&apos;ve paid, and how much of your limit is free.
+          </TText>
+        </View>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={onAdd}
+        className="mt-4 h-12 flex-row items-center justify-center gap-2 rounded-full"
+        style={{ backgroundColor: theme.accent }}>
+        <MaterialCommunityIcons name="plus" size={16} color="#FFFFFF" />
+        <TText className="text-sm" style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
+          Add statement
+        </TText>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function AccountDetailsScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const accountId = Number(id);
@@ -117,6 +189,18 @@ export default function AccountDetailsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isActionsSheetVisible, setIsActionsSheetVisible] = useState(false);
   const [isDeleteDialogVisible, setIsDeleteDialogVisible] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+
+  // The account list carries the bill, but not its reconciliation — that is
+  // computed per statement on the detail endpoint. Fetched separately so the
+  // card can say what it cannot account for.
+  const [statement, setStatement] = useState<CardStatement | null>(null);
+  const [isStatementSheetVisible, setIsStatementSheetVisible] = useState(false);
+  const [isPaymentSheetVisible, setIsPaymentSheetVisible] = useState(false);
+  const [isSubmittingStatement, setIsSubmittingStatement] = useState(false);
+  const [statementError, setStatementError] = useState<string | null>(null);
+  const [emiPlans, setEmiPlans] = useState<EMIPlan[]>([]);
+  const [isEmiSheetVisible, setIsEmiSheetVisible] = useState(false);
 
   const loadDetails = useCallback(async () => {
     if (!token || !Number.isFinite(accountId) || accountId <= 0) {
@@ -137,7 +221,30 @@ export default function AccountDetailsScreen() {
         throw new Error('Account not found.');
       }
       setAccount(matchedAccount);
+      setAccounts(accounts);
       setActivity(transactions.slice(0, 5));
+
+      if (normalizeAccountType(matchedAccount.type) === 'credit_card') {
+        // A failure here costs the EMI section, not the screen.
+        try {
+          setEmiPlans(await fetchCardEMIPlans(token, accountId));
+        } catch {
+          setEmiPlans([]);
+        }
+      }
+
+      const currentStatement = getCurrentStatement(matchedAccount);
+      if (currentStatement) {
+        // A failure here costs the reconciliation banner, not the screen, so
+        // it is swallowed rather than thrown.
+        try {
+          setStatement(await fetchStatement(token, currentStatement.id));
+        } catch {
+          setStatement(null);
+        }
+      } else {
+        setStatement(null);
+      }
     } catch (loadError) {
       setError(getFriendlyErrorMessage(loadError, 'Unable to load account.'));
     } finally {
@@ -163,6 +270,8 @@ export default function AccountDetailsScreen() {
   // a stale manual figure, or on a card the credit limit itself.
   const headline = account ? getAccountHeadline(account) : null;
   const creditUsage = account ? getCreditUsage(account) : null;
+  const cardLimit = account ? getCardLimit(account) : null;
+  const currentStatement = account ? getCurrentStatement(account) : null;
   const runningBalance = account ? getRunningBalance(account) : null;
   const lastActivity = account ? getLastActivityLabel(account) : null;
   const setupItems = useMemo<SetupItem[]>(() => {
@@ -254,6 +363,74 @@ export default function AccountDetailsScreen() {
   const openSettings = () => {
     if (!account) return;
     setIsActionsSheetVisible(true);
+  };
+
+  const handleSaveStatement = async (payload: CardStatementPayload) => {
+    if (!token || !account) return;
+    setIsSubmittingStatement(true);
+    setStatementError(null);
+    try {
+      const saved = await saveCardStatement(token, account.id, payload);
+      setStatement(saved);
+      setIsStatementSheetVisible(false);
+      // The bill changes the card's outstanding and available limit, both of
+      // which live on the account, so the whole screen is refetched.
+      await loadDetails();
+    } catch (saveError) {
+      setStatementError(getFriendlyErrorMessage(saveError, 'Unable to save this statement.'));
+    } finally {
+      setIsSubmittingStatement(false);
+    }
+  };
+
+  const handleRecordPayment = async (payload: StatementPaymentPayload) => {
+    if (!token || !statement) return;
+    setIsSubmittingStatement(true);
+    setStatementError(null);
+    try {
+      const updated = await recordStatementPayment(token, statement.id, payload);
+      setStatement(updated);
+      setIsPaymentSheetVisible(false);
+      await loadDetails();
+    } catch (paymentError) {
+      setStatementError(getFriendlyErrorMessage(paymentError, 'Unable to record this payment.'));
+    } finally {
+      setIsSubmittingStatement(false);
+    }
+  };
+
+  const openCycleTransactions = () => {
+    if (!account) return;
+    router.push({
+      pathname: '/transactions',
+      params: {
+        accountId: String(account.id),
+        ...(statement
+          ? { start_date: statement.cycle_start, end_date: statement.cycle_end }
+          : {}),
+      },
+    });
+  };
+
+  const handleCreateEMIPlan = async (payload: EMIPlanPayload) => {
+    if (!token || !account) return;
+    setIsSubmittingStatement(true);
+    setStatementError(null);
+    try {
+      await createCardEMIPlan(token, account.id, payload);
+      setIsEmiSheetVisible(false);
+      // A new plan blocks limit immediately, so the card's headline changes.
+      await loadDetails();
+    } catch (createError) {
+      setStatementError(getFriendlyErrorMessage(createError, 'Unable to create this EMI plan.'));
+    } finally {
+      setIsSubmittingStatement(false);
+    }
+  };
+
+  const openStatementHistory = () => {
+    if (!account) return;
+    router.push({ pathname: '/statements', params: { accountId: String(account.id) } });
   };
 
   const openAllTransactions = () => {
@@ -406,18 +583,27 @@ export default function AccountDetailsScreen() {
               {formatAccountIdentifier(account)}
             </TText>
 
-            <TText
-              className="mt-6 text-xs uppercase"
-              style={{ fontFamily: Fonts.title, color: '#8EA0B8', letterSpacing: 1.4 }}>
-              {headline?.label}
-            </TText>
-            <TText
-              className="mt-2 text-[38px]"
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              style={{ fontFamily: Fonts.title, color: theme.text }}>
-              {headline?.placeholder ?? formatMoney(headline?.amount ?? 0)}
-            </TText>
+            {/* A card leads with what it has left to spend — the number people
+                open a card screen to find. Everything else keeps the
+                spent-this-month headline it already had. */}
+            {cardLimit ? (
+              <CardLimitRing limit={cardLimit} />
+            ) : (
+              <>
+                <TText
+                  className="mt-6 text-xs uppercase"
+                  style={{ fontFamily: Fonts.title, color: '#8EA0B8', letterSpacing: 1.4 }}>
+                  {headline?.label}
+                </TText>
+                <TText
+                  className="mt-2 text-[38px]"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={{ fontFamily: Fonts.title, color: theme.text }}>
+                  {headline?.placeholder ?? formatMoney(headline?.amount ?? 0)}
+                </TText>
+              </>
+            )}
 
             <TText
               className="mt-2 text-xs"
@@ -426,13 +612,18 @@ export default function AccountDetailsScreen() {
               {lastActivity ? `Last activity ${lastActivity}` : 'No transactions yet'}
             </TText>
 
-            {creditUsage && (
+            {/* The ring already carries utilisation, so the bar would be the
+                same fact twice. Non-card accounts never had one. */}
+            {creditUsage && !cardLimit && (
               <View className="w-full px-2">
                 <CreditUsageBar usage={creditUsage} trackColor={theme.secondary} />
               </View>
             )}
 
-            {isCreditCard && dueLabel && (
+            {/* Superseded by the statement card once a real bill exists, which
+                knows the actual due date rather than inferring it from the
+                card's due day. */}
+            {isCreditCard && dueLabel && !currentStatement && (
               <View className="mt-6 flex-row items-center gap-2 rounded-full border border-red-200 bg-red-50 px-5 py-3">
                 <MaterialCommunityIcons name="clock-outline" size={16} color="#F43F5E" />
                 <TText className="text-sm" style={{ fontFamily: Fonts.title, color: '#F43F5E' }}>
@@ -441,6 +632,73 @@ export default function AccountDetailsScreen() {
               </View>
             )}
           </View>
+
+          {isCreditCard &&
+            (currentStatement ? (
+              <>
+                <StatementSummaryCard
+                  statement={currentStatement}
+                  onRecordPayment={() => {
+                    setStatementError(null);
+                    setIsPaymentSheetVisible(true);
+                  }}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/statements/[id]',
+                      params: { id: String(currentStatement.id) },
+                    })
+                  }
+                />
+                {statement?.reconciliation && (
+                  <ItemizationBanner
+                    reconciliation={statement.reconciliation}
+                    onReview={openCycleTransactions}
+                  />
+                )}
+                <View className="mt-3 flex-row items-center justify-between">
+                  <Pressable accessibilityRole="button" onPress={openStatementHistory}>
+                    <TText
+                      className="text-sm"
+                      style={{ fontFamily: Fonts.title, color: theme.accent }}>
+                      All statements
+                    </TText>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setStatementError(null);
+                      setIsStatementSheetVisible(true);
+                    }}>
+                    <TText
+                      className="text-sm"
+                      style={{ fontFamily: Fonts.title, color: theme.accent }}>
+                      Add a statement
+                    </TText>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <NoStatementCard
+                onAdd={() => {
+                  setStatementError(null);
+                  setIsStatementSheetVisible(true);
+                }}
+              />
+            ))}
+
+          {isCreditCard && (
+            <EMIPlansSection
+              plans={emiPlans}
+              blockedPrincipal={cardLimit?.emi_blocked_principal ?? 0}
+              onAdd={() => {
+                setStatementError(null);
+                setIsEmiSheetVisible(true);
+              }}
+              onOpenPlan={(plan) =>
+                router.push({ pathname: '/emi-plans/[id]', params: { id: String(plan.id) } })
+              }
+            />
+          )}
 
           {account.summary && <AccountFigures account={account} runningBalance={runningBalance} />}
 
@@ -647,6 +905,38 @@ export default function AccountDetailsScreen() {
           onCancel={() => setIsDeleteDialogVisible(false)}
           onConfirm={handleDelete}
         />
+
+        {isCreditCard && (
+          <>
+            <StatementFormSheet
+              visible={isStatementSheetVisible}
+              card={account}
+              submitting={isSubmittingStatement}
+              error={statementError}
+              onClose={() => setIsStatementSheetVisible(false)}
+              onSubmit={handleSaveStatement}
+            />
+            <EMIPlanFormSheet
+              visible={isEmiSheetVisible}
+              cardName={account.name}
+              submitting={isSubmittingStatement}
+              error={statementError}
+              onClose={() => setIsEmiSheetVisible(false)}
+              onSubmit={handleCreateEMIPlan}
+            />
+            <PaymentFormSheet
+              visible={isPaymentSheetVisible}
+              remainingDue={currentStatement?.remaining_due ?? 0}
+              minimumDue={currentStatement?.minimum_due ?? 0}
+              accounts={accounts}
+              cardId={account.id}
+              submitting={isSubmittingStatement}
+              error={statementError}
+              onClose={() => setIsPaymentSheetVisible(false)}
+              onSubmit={handleRecordPayment}
+            />
+          </>
+        )}
       </View>
     </SafeAreaView>
   );

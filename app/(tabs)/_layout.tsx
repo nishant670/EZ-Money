@@ -4,6 +4,7 @@ import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { SplitInvitePrompt } from '@/components/split/SplitInvitePrompt';
 import {
   MARKER_LANE,
   TabMarker,
@@ -68,6 +69,12 @@ export default function TabLayout() {
     // the marker — the icons and the bar background — are on different branches
     // of what the navigator renders, and this is their nearest common ancestor.
     <TabMarkerProvider>
+    {/*
+      * Mounted here rather than at the root so an invite can only interrupt
+      * somebody already inside the app — never over the lock screen, auth, or
+      * onboarding.
+      */}
+    <SplitInvitePrompt />
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
