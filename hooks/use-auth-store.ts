@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resetDismissedPaywalls } from '@/hooks/use-entitlement-gate';
+import { resetDeferredSplitInvites } from '@/lib/split-invite-deferrals';
 
 export type User = {
   uuid: string;
@@ -34,8 +35,10 @@ export const useAuthStore = create<AuthState>()(
           user: state.user ? { ...state.user, ...updates } : null,
         })),
       clearAuth: () => {
-        // A dismissed paywall must not follow one account into the next.
+        // A dismissed paywall must not follow one account into the next, and
+        // neither must a "check later" on somebody else's group invite.
         resetDismissedPaywalls();
+        resetDeferredSplitInvites();
         set({ user: null, token: null });
       },
     }),

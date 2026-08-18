@@ -4,7 +4,7 @@ import { useMotion } from '@/hooks/use-motion';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
     SlideInLeft,
     SlideInRight,
@@ -120,34 +120,22 @@ export default function OnboardingScreen() {
   return (
     <OnboardingScreenWrapper>
       <View style={styles.container}>
-        {/* Progress Bar */}
-        <View style={styles.header}>
-            {/* Skip is offered from the first slide. Hiding it there only made
-                the one user who wanted out sit through a slide to find it. */}
-            <TouchableOpacity
-                onPress={handleFinish}
-                style={styles.skipButton}
-                accessibilityRole="button"
-                hitSlop={12}>
-                <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
-            </TouchableOpacity>
+        {/* Progress Bar. Decorative only, and above the slide by `zIndex`
+            because the slide reaches up into this row.
 
-            {/* Centred by the layout rather than by lying a full-width absolute
-                view across the row.
-
-                Two fixes were already spent trying to keep these dots on top of
-                Skip without eating its tap: `zIndex: -1`, which on Android
-                reorders painting but not touch dispatch, and then
-                `pointerEvents="none"`, which is the correct spelling of "not a
-                target" and *still* left the button dead on the first slide in
-                build 47da4506. Rather than guess at a third mechanism, the
-                overlap is gone: a view that does not lie over the button cannot
-                swallow its tap by any mechanism at all.
-
-                The spacer opposite Skip is what keeps the dots centred on the
-                header rather than on the space left over beside it. The footer's
-                nav row already centres itself this way. */}
-            <View pointerEvents="none" style={styles.progressContainer}>
+            That reach is what four builds of a dead Skip button were actually
+            about. It was read as the dots covering Skip, and the three fixes
+            aimed at the dots — absolute positioning, `zIndex: -1`,
+            `pointerEvents="none"` — all missed, because the thing on top was
+            the animated slide below: giving `screenContainer` a background
+            tints this whole row, and swapping `Animated.View` for a plain
+            `View` brings the button back to life. The slide has no background
+            of its own, so the overlap was invisible and only ever showed up as
+            a control that would not respond. Skip now lives in the footer,
+            which the slide does not reach, and this keeps the dots out from
+            under it too. */}
+        <View style={styles.header} pointerEvents="none">
+            <View style={styles.progressContainer} testID="onboarding-progress">
                 {SCREENS.map((_, index) => (
                     <View 
                         key={index} 
@@ -161,8 +149,6 @@ export default function OnboardingScreen() {
                     />
                 ))}
             </View>
-
-            <View style={styles.headerSpacer} />
         </View>
 
         {/* Content Area */}
@@ -179,13 +165,14 @@ export default function OnboardingScreen() {
         <View style={styles.footer}>
             <View style={styles.navRow}>
                 {activeIndex > 0 ? (
-                    <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                    <Pressable onPress={handleBack} style={styles.backButton} accessibilityRole="button" hitSlop={12}>
                         <Text style={[styles.footerBtnText, { color: theme.text, opacity: 0.6 }]}>Back</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                 ) : <View style={styles.footerBtnPlaceholder} />}
 
-                <TouchableOpacity
+                <Pressable
                     onPress={handleNext}
+                    accessibilityRole="button"
                     style={[
                         styles.primaryButton,
                         { backgroundColor: activeIndex === SCREENS.length - 1 ? theme.accent : theme.text }
@@ -200,8 +187,31 @@ export default function OnboardingScreen() {
                         color={activeIndex === SCREENS.length - 1 ? 'white' : theme.background}
                         style={{ marginLeft: 8 }}
                     />
-                </TouchableOpacity>
+                </Pressable>
             </View>
+
+            {/* Skip lives here, on its own row under the nav, because this is
+                the part of the screen whose buttons demonstrably work: the same
+                `handleFinish` reached through "Get started" has always taken
+                people to Welcome. Down here it is also thumb-reachable on a
+                tall phone, which top-left never was.
+
+                Hidden on the last slide: "Get started" already runs
+                `handleFinish`, and two controls doing the same thing a finger's
+                width apart is a worse offer than one. */}
+            {activeIndex < SCREENS.length - 1 ? (
+                <Pressable
+                    onPress={handleFinish}
+                    style={styles.skipButton}
+                    accessibilityRole="button"
+                    hitSlop={12}>
+                    <Text style={[styles.skipText, { color: theme.text, opacity: 0.5 }]}>Skip</Text>
+                </Pressable>
+            ) : (
+                // Holding the row keeps "Get started" where "Next" was standing
+                // a moment ago, rather than dropping it 48px on the last slide.
+                <View style={styles.skipButton} />
+            )}
         </View>
 
       </View>
@@ -214,15 +224,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+      // Above the animated slide, which overlaps this row from below.
+      zIndex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: 24,
       paddingTop: 10,
   },
+  // 48 tall and full-width across the footer: a target you cannot miss with a
+  // thumb, where the old one was 60x33 in the corner hardest to reach.
   skipButton: {
-      padding: 8,
-      width: 60,
+      alignSelf: 'stretch',
+      minHeight: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
   },
   skipText: {
       fontSize: 14,
@@ -235,9 +251,6 @@ const styles = StyleSheet.create({
       gap: 6,
       justifyContent: 'center',
   },
-  headerSpacer: {
-      width: 60,
-  },
   progressDot: {
       height: 4,
       borderRadius: 2,
@@ -247,7 +260,7 @@ const styles = StyleSheet.create({
   },
   footer: {
       paddingHorizontal: 24,
-      paddingBottom: 40,
+      paddingBottom: 24,
   },
   navRow: {
       flexDirection: 'row',
@@ -259,8 +272,9 @@ const styles = StyleSheet.create({
       width: 60,
   },
   backButton: {
-      padding: 8,
+      minHeight: 48,
       width: 60,
+      justifyContent: 'center',
   },
   footerBtnText: {
       fontSize: 16,

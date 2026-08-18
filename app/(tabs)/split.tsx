@@ -36,8 +36,31 @@ import { fetchAccounts, getPreferredAccountForPaymentMode } from '@/lib/accounts
 import { userDisplayName } from '@/lib/display-name';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { createEntry } from '@/lib/entries';
-import { formatMoney, roundToPaise, toAmountString } from '@/lib/money';
+import { formatMoney, toAmountString } from '@/lib/money';
 import {
+  buildSeedWeights,
+  computeSplitShares,
+  CURRENT_USER_KEY,
+  defaultSplitToComposerKeys,
+  defaultSplitToSelection,
+  describeGroupDefaultSplit,
+  describeMemberInvites,
+  describeSplitTab,
+  friendSplitKey,
+  groupSplitSlots,
+  isDefaultSplitTab,
+  selectionToDefaultSplit,
+  splitParticipantKeys,
+  sumSplitWeights,
+  viewerSplitSlot,
+  type AdjustSplitTab,
+  type GroupKind,
+  type SplitSelection,
+  type SplitSlotPerson,
+  type SplitWeights,
+} from '@/lib/split-preferences';
+import {
+  SPLIT_GROUP_OWNER_SLOT,
   archiveSplitGroup,
   archiveSplitFriend,
   createSplitBill,
@@ -58,6 +81,7 @@ import {
   splitScreenState,
   updateSplitBill,
   updateSplitFriend,
+  setSplitGroupDefaultSplit,
   updateSplitGroup,
   type SettlementDirection,
   type SplitActivityItem,
@@ -68,6 +92,7 @@ import {
   type SplitFriend,
   type SplitGroup,
   type SplitGroupDirectInvite,
+  type SplitGroupMemberInvite,
 } from '@/lib/splits';
 
 const TView = cssInterop(ThemedView, { className: 'style' });
@@ -76,27 +101,15 @@ const TText = cssInterop(ThemedText, { className: 'style' });
 type ModalKind = 'friend' | 'group' | 'bill' | 'settlement' | 'group_invite' | null;
 type ActiveSection = 'groups' | 'friends' | 'activity';
 type BalanceFilter = 'all' | 'open' | 'owed_to_me' | 'i_owe' | 'settled';
-type GroupKind = 'trip' | 'home' | 'couple' | 'other';
 type ExpenseFlowScreen = 'expense' | 'split_choice' | 'adjust_split';
-type SplitChoiceMode =
-  | 'you_paid_equal'
-  | 'you_paid_full'
-  | 'friend_paid_equal'
-  | 'friend_paid_full';
-type AdjustSplitTab = 'equally' | 'unequally' | 'percentages' | 'shares';
 type GroupActionMode = 'settle' | 'totals' | 'balances' | 'export';
-type GroupMetadata = {
-  kind: GroupKind;
-  balanceAlertEnabled: boolean;
-  balanceAlertAmount: string;
-};
 type SplitGroupSummary = {
   group: SplitGroup;
   billCount: number;
   bills: SplitBill[];
   detailLines: string[];
   latestBill?: SplitBill;
-  metadata: GroupMetadata;
+  kind: GroupKind;
   memberIds: number[];
   netBalance: number;
 };
@@ -119,8 +132,6 @@ type DeviceContactOption = {
   email?: string;
   imageUri?: string;
 };
-
-const isPaidByCurrentUserMode = (mode: SplitChoiceMode) => mode.startsWith('you_paid');
 
 const groupKindOptions: {
   kind: GroupKind;
@@ -220,16 +231,58 @@ const getBalanceTone = (value: number) => {
   return { label: 'settled up', color: '#6B7280' };
 };
 
+type BuiltParticipants =
+  | { ok: true; participants: ParticipantDraft[] }
+  | { ok: false; error: string };
+
+/**
+ * A bill only records debts against the signed-in user, so a split they paid
+ * becomes one row per friend, and a split a friend paid collapses to the single
+ * row for what the user owes them. Keys here are always the composer's own:
+ * `me` for the author, friend ids for everybody else.
+ */
+const buildParticipantsFromSelection = (
+  selection: SplitSelection,
+  amount: number
+): BuiltParticipants => {
+  const keys = splitParticipantKeys(selection);
+  const computed = computeSplitShares({
+    amount,
+    tab: selection.tab,
+    keys,
+    weights: selection.weights,
+  });
+  if (!computed.ok) return computed;
+
+  if (selection.payerKey === CURRENT_USER_KEY) {
+    const participants = keys
+      .filter((key) => key !== CURRENT_USER_KEY)
+      .map((key) => ({
+        friend_id: Number(key),
+        share_amount: computed.shares[key] ?? 0,
+        direction: 'friend_owes_user' as SplitDirection,
+      }))
+      .filter((participant) => participant.friend_id > 0 && participant.share_amount > 0);
+    if (participants.length === 0) {
+      return { ok: false, error: 'Choose at least one friend for this split.' };
+    }
+    return { ok: true, participants };
+  }
+
+  const payerId = Number(selection.payerKey);
+  if (!payerId) return { ok: false, error: 'Choose who paid for this expense.' };
+  const userShare = computed.shares[CURRENT_USER_KEY] ?? 0;
+  if (userShare <= 0) {
+    return { ok: false, error: 'Add yourself to the split to record what you owe.' };
+  }
+  return {
+    ok: true,
+    participants: [{ friend_id: payerId, share_amount: userShare, direction: 'user_owes_friend' }],
+  };
+};
+
 const getGroupKindConfig = (kind: GroupKind) =>
   groupKindOptions.find((option) => option.kind === kind) ?? groupKindOptions[3];
-
-const inferGroupKind = (name: string): GroupKind => {
-  const normalized = name.toLowerCase();
-  if (/(trip|travel|stay|hotel|goa|bengaluru|himachal|vrindavan)/.test(normalized)) return 'trip';
-  if (/(home|rent|flat|house|room|roommate)/.test(normalized)) return 'home';
-  if (/(couple|partner|date|wedding)/.test(normalized)) return 'couple';
-  return 'other';
-};
 
 const getActivityIcon = (
   type: SplitActivityItem['type']
@@ -508,7 +561,17 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [deviceContacts, setDeviceContacts] = useState<DeviceContactOption[]>([]);
   const [pendingFriendGroupId, setPendingFriendGroupId] = useState<number | null>(null);
-  const [groupMetadataById, setGroupMetadataById] = useState<Record<number, GroupMetadata>>({});
+  /**
+   * Balance alerts are still only a form field — nothing acts on them yet — so
+   * they stay in memory rather than pretending to be saved.
+   */
+  const [groupBalanceAlertById, setGroupBalanceAlertById] = useState<
+    Record<number, { enabled: boolean; amount: string }>
+  >({});
+  const [defaultSplitGroupId, setDefaultSplitGroupId] = useState<number | null>(null);
+  const [defaultSplitScreen, setDefaultSplitScreen] = useState<'choice' | 'adjust'>('choice');
+  const [defaultSplitDraft, setDefaultSplitDraft] = useState<SplitSelection | null>(null);
+  const [defaultSplitError, setDefaultSplitError] = useState<string | null>(null);
 
   const [friendName, setFriendName] = useState('');
   const [friendPhone, setFriendPhone] = useState('');
@@ -538,11 +601,16 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [selectedBillId, setSelectedBillId] = useState<number | null>(null);
   const [pendingBillDelete, setPendingBillDelete] = useState<SplitBill | null>(null);
   const [expenseFlowScreen, setExpenseFlowScreen] = useState<ExpenseFlowScreen>('expense');
-  const [splitChoiceMode, setSplitChoiceMode] = useState<SplitChoiceMode>('you_paid_equal');
-  const [payerFriendId, setPayerFriendId] = useState<number | null>(null);
-  const [equalSplitFriendIds, setEqualSplitFriendIds] = useState<number[]>([]);
-  const [includeCurrentUserInSplit, setIncludeCurrentUserInSplit] = useState(true);
+  /**
+   * The expense split, in the composer's own key space: `me` for the author and
+   * a friend id for everybody else. The group's shared default is translated
+   * into these keys when a group is picked.
+   */
+  const [splitPayerKey, setSplitPayerKey] = useState<string>(CURRENT_USER_KEY);
+  const [splitFullAmount, setSplitFullAmount] = useState(false);
+  const [splitSelectedKeys, setSplitSelectedKeys] = useState<string[]>([]);
   const [adjustSplitTab, setAdjustSplitTab] = useState<AdjustSplitTab>('equally');
+  const [splitWeights, setSplitWeights] = useState<SplitWeights>({});
   const [simplifyGroupDebts, setSimplifyGroupDebts] = useState(false);
 
   const [settlementFriendId, setSettlementFriendId] = useState<number | null>(null);
@@ -616,6 +684,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       void loadSplitData();
     }, [loadSplitData])
   );
+
 
   const loadDeviceContacts = useCallback(async () => {
     setContactsLoading(true);
@@ -723,11 +792,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const groupSummaries = useMemo<SplitGroupSummary[]>(() => {
     return groups.map((group) => {
-      const metadata = groupMetadataById[group.id] ?? {
-        kind: inferGroupKind(group.name),
-        balanceAlertAmount: '',
-        balanceAlertEnabled: false,
-      };
+      const kind = group.kind ?? 'other';
       const memberIds = (group.members ?? []).map((member) => member.friend_id);
       const groupBills = bills.filter((bill) => bill.group_id === group.id);
       const groupBalancesByFriendId = new Map<number, number>();
@@ -763,12 +828,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         bills: [...groupBills].sort((a, b) => b.date.localeCompare(a.date)),
         detailLines,
         latestBill,
-        metadata,
+        kind,
         memberIds,
         netBalance,
       };
     });
-  }, [bills, friendById, groupMetadataById, groups]);
+  }, [bills, friendById, groups]);
 
   const selectedGroupSummary = useMemo(
     () => groupSummaries.find((summary) => summary.group.id === selectedGroupDetailId) ?? null,
@@ -894,6 +959,59 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     [billGroupId, groups]
   );
 
+  const reportMemberInvites = useCallback((invites: SplitGroupMemberInvite[]) => {
+    const message = describeMemberInvites(invites);
+    if (message) Alert.alert('Added to the group', message);
+  }, []);
+
+  const resolveFriendName = useCallback(
+    (friendId: number) => friendById.get(friendId)?.name ?? 'Friend',
+    [friendById]
+  );
+
+  const resolveFriendContact = useCallback(
+    (friendId: number) => {
+      const friend = friendById.get(friendId);
+      return [friend?.phone, friend?.email].filter(Boolean).join(' • ');
+    },
+    [friendById]
+  );
+
+  const defaultSplitSummary = useMemo(
+    () => groupSummaries.find((summary) => summary.group.id === defaultSplitGroupId) ?? null,
+    [defaultSplitGroupId, groupSummaries]
+  );
+
+  const defaultSplitPeople = useMemo<SplitSlotPerson[]>(
+    () =>
+      defaultSplitSummary
+        ? groupSplitSlots(
+            defaultSplitSummary.group,
+            resolveFriendName,
+            resolveFriendContact,
+            currentUserName,
+            currentUserContact
+          )
+        : [],
+    [
+      currentUserContact,
+      currentUserName,
+      defaultSplitSummary,
+      resolveFriendContact,
+      resolveFriendName,
+    ]
+  );
+
+  /** How one slot of a shared group reads in a sentence for this viewer. */
+  const resolveSlotLabel = useCallback(
+    (group: SplitGroup, slot: string) => {
+      if (slot === viewerSplitSlot(group)) return currentUserName;
+      if (slot === SPLIT_GROUP_OWNER_SLOT) return group.owner_name || 'Group owner';
+      return resolveFriendName(Number(slot));
+    },
+    [currentUserName, resolveFriendName]
+  );
+
   const billFriendOptions = useMemo(() => {
     if (selectedBillGroup?.members?.length) {
       return selectedBillGroup.members
@@ -902,6 +1020,18 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
     return friends;
   }, [friendById, friends, selectedBillGroup]);
+
+  const billSplitPeople = useMemo<SplitSlotPerson[]>(
+    () => [
+      { key: CURRENT_USER_KEY, label: currentUserName, subtitle: currentUserContact },
+      ...billFriendOptions.map((friend) => ({
+        key: friendSplitKey(friend.id),
+        label: friend.name,
+        subtitle: [friend.phone, friend.email].filter(Boolean).join(' • '),
+      })),
+    ],
+    [billFriendOptions, currentUserContact, currentUserName]
+  );
 
   const recentActivity = useMemo(() => {
     return activity.map((item) => {
@@ -1007,11 +1137,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setIsBillGroupLocked(false);
     setEditingBillId(null);
     setExpenseFlowScreen('expense');
-    setSplitChoiceMode('you_paid_equal');
-    setPayerFriendId(friends[0]?.id ?? null);
-    setEqualSplitFriendIds(friends.map((friend) => friend.id));
-    setIncludeCurrentUserInSplit(true);
+    setSplitPayerKey(CURRENT_USER_KEY);
+    setSplitFullAmount(false);
+    setSplitSelectedKeys([CURRENT_USER_KEY, ...friends.map((friend) => friendSplitKey(friend.id))]);
     setAdjustSplitTab('equally');
+    setSplitWeights({});
   };
 
   const resetSettlementForm = () => {
@@ -1081,6 +1211,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           ];
           await updateSplitGroup(token, group.id, {
             name: group.name,
+            kind: group.kind ?? 'other',
             friend_ids: nextFriendIds,
           });
           setSelectedGroupDetailId(group.id);
@@ -1120,17 +1251,18 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     try {
       const payload = {
         name: groupName.trim(),
+        kind: groupKind,
         friend_ids: selectedGroupFriendIds,
       };
       const savedGroup = editingGroupId
         ? await updateSplitGroup(token, editingGroupId, payload)
         : await createSplitGroup(token, payload);
-      setGroupMetadataById((current) => ({
+      reportMemberInvites(savedGroup.member_invites ?? []);
+      setGroupBalanceAlertById((current) => ({
         ...current,
         [savedGroup.id]: {
-          kind: groupKind,
-          balanceAlertEnabled: groupBalanceAlertEnabled,
-          balanceAlertAmount: groupBalanceAlertAmount.trim(),
+          enabled: groupBalanceAlertEnabled,
+          amount: groupBalanceAlertAmount.trim(),
         },
       }));
       closeModal();
@@ -1212,81 +1344,70 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const handleSelectBillGroup = (groupId: number | null) => {
     const nextGroup = groups.find((group) => group.id === groupId) ?? null;
-    const nextFriendIds =
-      nextGroup?.members?.map((member) => member.friend_id).filter(Boolean) ??
-      friends.map((friend) => friend.id);
-    const firstMemberId = nextFriendIds[0] ?? friends[0]?.id ?? null;
+    const memberKeys = [
+      ...new Set(
+        nextGroup?.members?.map((member) => friendSplitKey(member.friend_id)).filter(Boolean) ??
+          friends.map((friend) => friendSplitKey(friend.id))
+      ),
+    ];
     setBillGroupId(groupId);
-    setPayerFriendId(firstMemberId);
-    setEqualSplitFriendIds([...new Set(nextFriendIds)]);
-    setIncludeCurrentUserInSplit(true);
+
+    /**
+     * The whole point of a group default is that the split screen stops being a
+     * stop on the way to saving an expense — so it is applied the moment the
+     * group is known, not asked for again.
+     */
+    const groupDefault = nextGroup?.default_split ?? null;
+    const translated = nextGroup && groupDefault
+      ? defaultSplitToComposerKeys(nextGroup, groupDefault)
+      : null;
+    // The default names people by the owner's friend rows. Anything that no
+    // longer maps — a member who has left, or the owner themselves seen from
+    // another member's expense composer, which can only name that member's own
+    // friends — falls back to an equal split of the group rather than a
+    // half-applied one.
+    const usable =
+      translated != null &&
+      translated.participantKeys.every(
+        (key) => key === CURRENT_USER_KEY || memberKeys.includes(key)
+      ) &&
+      (translated.payerKey === CURRENT_USER_KEY || memberKeys.includes(translated.payerKey));
+
+    if (!usable || !groupDefault) {
+      setSplitPayerKey(CURRENT_USER_KEY);
+      setSplitFullAmount(false);
+      setSplitSelectedKeys([CURRENT_USER_KEY, ...memberKeys]);
+      setAdjustSplitTab('equally');
+      setSplitWeights({});
+      return;
+    }
+
+    setSplitPayerKey(translated.payerKey);
+    setSplitFullAmount(Boolean(groupDefault.full_amount));
+    setSplitSelectedKeys(translated.participantKeys);
+    setAdjustSplitTab(groupDefault.tab);
+    setSplitWeights(translated.weights);
   };
 
+  const billSplitSelection = useMemo<SplitSelection>(
+    () => ({
+      selfKey: CURRENT_USER_KEY,
+      payerKey: splitPayerKey,
+      fullAmount: splitFullAmount,
+      participantKeys: splitSelectedKeys,
+      tab: adjustSplitTab,
+      weights: splitWeights,
+    }),
+    [adjustSplitTab, splitFullAmount, splitPayerKey, splitSelectedKeys, splitWeights]
+  );
+
   const buildParticipantsFromSplitChoice = (): ParticipantDraft[] | null => {
-    const amount = parseAmount(billAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Enter a bill amount before choosing the split.');
+    const built = buildParticipantsFromSelection(billSplitSelection, parseAmount(billAmount));
+    if (!built.ok) {
+      setError(built.error);
       return null;
     }
-
-    const selectedFriendIds = equalSplitFriendIds;
-    const uniqueFriendIds = [...new Set(selectedFriendIds)];
-
-    if (splitChoiceMode === 'friend_paid_equal' || splitChoiceMode === 'friend_paid_full') {
-      const payerId = payerFriendId ?? uniqueFriendIds[0] ?? null;
-      if (!payerId) {
-        setError('Choose who paid for this expense.');
-        return null;
-      }
-      const splitPersonCount =
-        splitChoiceMode === 'friend_paid_full'
-          ? 1
-          : Math.max(uniqueFriendIds.length + (includeCurrentUserInSplit ? 1 : 0), 1);
-      return [
-        {
-          friend_id: payerId,
-          share_amount:
-            splitChoiceMode === 'friend_paid_full'
-              ? amount
-              : roundToPaise(amount / splitPersonCount),
-          direction: 'user_owes_friend',
-        },
-      ];
-    }
-
-    if (uniqueFriendIds.length === 0) {
-      setError('Choose at least one friend for this split.');
-      return null;
-    }
-
-    if (splitChoiceMode === 'you_paid_full') {
-      const baseShare = Math.floor((amount / uniqueFriendIds.length) * 100) / 100;
-      let allocated = 0;
-      return uniqueFriendIds.map((friendId, index) => {
-        const share =
-          index === uniqueFriendIds.length - 1
-            ? roundToPaise(amount - allocated)
-            : baseShare;
-        allocated += share;
-        return {
-          friend_id: friendId,
-          share_amount: share,
-          direction: 'friend_owes_user',
-        };
-      });
-    }
-
-    const splitPersonCount = uniqueFriendIds.length + (includeCurrentUserInSplit ? 1 : 0);
-    if (splitPersonCount <= 0) {
-      setError('Choose at least one person for this split.');
-      return null;
-    }
-    const perPersonShare = roundToPaise(amount / splitPersonCount);
-    return uniqueFriendIds.map((friendId) => ({
-      friend_id: friendId,
-      share_amount: perPersonShare,
-      direction: 'friend_owes_user',
-    }));
+    return built.participants;
   };
 
   const applySplitChoice = () => {
@@ -1367,8 +1488,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         group_id: billGroupId,
         participants: finalParticipants,
       };
-      const shouldMirrorToTransaction =
-        !editingBillId && isPaidByCurrentUserMode(splitChoiceMode);
+      const shouldMirrorToTransaction = !editingBillId && splitPayerKey === CURRENT_USER_KEY;
       const savedBill = editingBillId
         ? await updateSplitBill(token, editingBillId, payload)
         : shouldMirrorToTransaction
@@ -1456,13 +1576,110 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     if (!summary.group.viewer_can_manage) return;
     setGroupSettingsId(null);
     setGroupName(summary.group.name);
-    setGroupKind(summary.metadata.kind);
-    setGroupBalanceAlertEnabled(summary.metadata.balanceAlertEnabled);
-    setGroupBalanceAlertAmount(summary.metadata.balanceAlertAmount);
+    setGroupKind(summary.kind);
+    setGroupBalanceAlertEnabled(groupBalanceAlertById[summary.group.id]?.enabled ?? false);
+    setGroupBalanceAlertAmount(groupBalanceAlertById[summary.group.id]?.amount ?? '');
     setSelectedGroupFriendIds(summary.memberIds);
     setEditingGroupId(summary.group.id);
     setError(null);
     setModal('group');
+  };
+
+  const openDefaultSplitEditor = (summary: SplitGroupSummary) => {
+    const group = summary.group;
+    const slotKeys = groupSplitSlots(
+      group,
+      resolveFriendName,
+      resolveFriendContact,
+      currentUserName,
+      currentUserContact
+    ).map((person) => person.key);
+    const stored = group.default_split ?? null;
+    // A stored default written against a roster that has since changed cannot
+    // be edited meaningfully, so it opens as a fresh equal split of who is in
+    // the group now.
+    const storedMatchesRoster =
+      stored != null &&
+      slotKeys.includes(stored.payer) &&
+      stored.participants.every((participant) => slotKeys.includes(participant.slot));
+
+    setDefaultSplitGroupId(group.id);
+    setDefaultSplitDraft(
+      storedMatchesRoster && stored
+        ? defaultSplitToSelection(group, stored)
+        : {
+            selfKey: viewerSplitSlot(group),
+            payerKey: viewerSplitSlot(group),
+            fullAmount: false,
+            participantKeys: slotKeys,
+            tab: 'equally',
+            weights: {},
+          }
+    );
+    setDefaultSplitScreen('choice');
+    setDefaultSplitError(null);
+    setGroupSettingsId(null);
+  };
+
+  const closeDefaultSplitEditor = () => {
+    const returnToGroupId = defaultSplitGroupId;
+    setDefaultSplitGroupId(null);
+    setDefaultSplitDraft(null);
+    setDefaultSplitError(null);
+    setGroupSettingsId(returnToGroupId);
+  };
+
+  const saveDefaultSplit = async () => {
+    if (!token || !defaultSplitGroupId || !defaultSplitDraft || saving) return;
+    if (!isDefaultSplitTab(defaultSplitDraft.tab)) {
+      setDefaultSplitError('A default split has to be a ratio, not exact amounts.');
+      return;
+    }
+    const keys = splitParticipantKeys(defaultSplitDraft);
+    if (keys.length === 0) {
+      setDefaultSplitError('Choose at least one person for this split.');
+      return;
+    }
+    /**
+     * Checked here rather than on the next expense: a default whose percentages
+     * do not reach 100 would otherwise sit in settings looking saved and fail
+     * every time it was used.
+     */
+    const check = computeSplitShares({
+      amount: 100,
+      tab: defaultSplitDraft.tab,
+      keys,
+      weights: defaultSplitDraft.weights,
+    });
+    if (!check.ok) {
+      setDefaultSplitError(check.error);
+      return;
+    }
+    const payload = selectionToDefaultSplit(defaultSplitDraft);
+    setSaving(true);
+    try {
+      await setSplitGroupDefaultSplit(token, defaultSplitGroupId, payload);
+      closeDefaultSplitEditor();
+      await loadSplitData();
+    } catch (saveError) {
+      reportSplitError(saveError, 'Unable to save this default split.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetDefaultSplit = async () => {
+    if (!token || !defaultSplitGroupId || saving) return;
+    setSaving(true);
+    try {
+      await setSplitGroupDefaultSplit(token, defaultSplitGroupId, null);
+      closeDefaultSplitEditor();
+      await loadSplitData();
+    } catch (resetError) {
+      reportSplitError(resetError, 'Unable to remove this default split.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openMemberPicker = (summary: SplitGroupSummary) => {
@@ -1581,10 +1798,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSaving(true);
     setError(null);
     try {
-      await updateSplitGroup(token, memberPickerSummary.group.id, {
+      const savedGroup = await updateSplitGroup(token, memberPickerSummary.group.id, {
         name: memberPickerSummary.group.name,
+        kind: memberPickerSummary.kind,
         friend_ids: memberPickerFriendIds,
       });
+      reportMemberInvites(savedGroup.member_invites ?? []);
       const groupId = memberPickerSummary.group.id;
       closeMemberPicker(false);
       setSelectedGroupDetailId(groupId);
@@ -1608,9 +1827,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const confirmDeleteGroup = () => {
     if (!token || !pendingGroupDelete || saving) return;
+    const removedGroupId = pendingGroupDelete.group.id;
     setSaving(true);
     setError(null);
-    void archiveSplitGroup(token, pendingGroupDelete.group.id)
+    void archiveSplitGroup(token, removedGroupId)
       .then(async () => {
         setPendingGroupDelete(null);
         setGroupSettingsId(null);
@@ -1627,7 +1847,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     if (!token || !pendingGroupLeave || saving) return;
     setSaving(true);
     setError(null);
-    void leaveSplitGroup(token, pendingGroupLeave.group.id)
+    const leftGroupId = pendingGroupLeave.group.id;
+    void leaveSplitGroup(token, leftGroupId)
       .then(async () => {
         setPendingGroupLeave(null);
         setGroupSettingsId(null);
@@ -1719,9 +1940,9 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     if (!friend) return;
     resetBillForm();
     setBillGroupId(null);
-    setPayerFriendId(friend.id);
-    setEqualSplitFriendIds([friend.id]);
-    setIncludeCurrentUserInSplit(true);
+    setSplitPayerKey(CURRENT_USER_KEY);
+    setSplitFullAmount(false);
+    setSplitSelectedKeys([CURRENT_USER_KEY, friendSplitKey(friend.id)]);
     setSelectedFriendDetailId(null);
     setModal('bill');
   };
@@ -1748,23 +1969,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setIsBillGroupLocked(Boolean(groupId));
     setEditingBillId(bill.id);
     setExpenseFlowScreen('expense');
-    setPayerFriendId(userOwesParticipant?.friend_id ?? friendIds[0] ?? friends[0]?.id ?? null);
-    setEqualSplitFriendIds([...new Set(friendIds)]);
-    setIncludeCurrentUserInSplit(
-      userOwesParticipant
-        ? userOwesParticipant.share_amount < bill.total_amount
-        : friendOwesTotal < bill.total_amount
+    const includesCurrentUser = userOwesParticipant
+      ? userOwesParticipant.share_amount < bill.total_amount
+      : friendOwesTotal < bill.total_amount;
+    setSplitPayerKey(
+      userOwesParticipant ? friendSplitKey(userOwesParticipant.friend_id) : CURRENT_USER_KEY
     );
-    setSplitChoiceMode(
-      userOwesParticipant
-        ? userOwesParticipant.share_amount >= bill.total_amount
-          ? 'friend_paid_full'
-          : 'friend_paid_equal'
-        : friendOwesTotal >= bill.total_amount
-          ? 'you_paid_full'
-          : 'you_paid_equal'
-    );
+    setSplitFullAmount(!includesCurrentUser);
+    setSplitSelectedKeys([
+      ...(includesCurrentUser ? [CURRENT_USER_KEY] : []),
+      ...new Set(friendIds.map(friendSplitKey)),
+    ]);
     setAdjustSplitTab('equally');
+    setSplitWeights({});
     setSelectedBillId(null);
     setSelectedGroupDetailId(null);
     setError(null);
@@ -1941,9 +2158,9 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const renderGroupCard = (summary: SplitGroupSummary) => {
-    const { group, detailLines, memberIds, metadata, netBalance, billCount, latestBill } = summary;
+    const { group, detailLines, memberIds, kind, netBalance, billCount, latestBill } = summary;
     const tone = getBalanceTone(netBalance);
-    const kindConfig = getGroupKindConfig(metadata.kind);
+    const kindConfig = getGroupKindConfig(kind);
     const memberNames = memberIds
       .map((memberId) => friendById.get(memberId)?.name)
       .filter(Boolean)
@@ -2312,9 +2529,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           currentUserName={currentUserName}
           currentUserContact={currentUserContact}
           simplifyGroupDebts={simplifyGroupDebts}
+          defaultSplitLabel={
+            groupSettingsSummary
+              ? describeGroupDefaultSplit(
+                  groupSettingsSummary.group,
+                  groupSettingsSummary.group.default_split,
+                  (slot) => resolveSlotLabel(groupSettingsSummary.group, slot)
+                )
+              : ''
+          }
           pendingInvites={pendingGroupInvites}
           pendingInvitesLoading={pendingGroupInvitesLoading}
           onToggleSimplifyDebts={() => setSimplifyGroupDebts((current) => !current)}
+          onOpenDefaultSplit={openDefaultSplitEditor}
           onClose={() => setGroupSettingsId(null)}
           onAddPeople={openMemberPicker}
           onInvitePerson={openDirectGroupInvite}
@@ -2325,6 +2552,26 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onDeleteGroup={handleDeleteGroup}
           onLeaveGroup={handleLeaveGroup}
         />
+
+        {defaultSplitSummary && defaultSplitDraft ? (
+          <GroupDefaultSplitModal
+            groupName={defaultSplitSummary.group.name}
+            people={defaultSplitPeople}
+            draft={defaultSplitDraft}
+            screen={defaultSplitScreen}
+            saving={saving}
+            errorMessage={defaultSplitError}
+            hasSavedDefault={Boolean(defaultSplitSummary.group.default_split)}
+            onChangeDraft={(next) => {
+              setDefaultSplitDraft(next);
+              setDefaultSplitError(null);
+            }}
+            onChangeScreen={setDefaultSplitScreen}
+            onSave={() => void saveDefaultSplit()}
+            onReset={() => void resetDefaultSplit()}
+            onClose={closeDefaultSplitEditor}
+          />
+        ) : null}
 
         <ThemedDeleteDialog
           visible={Boolean(pendingGroupLeave)}
@@ -2474,15 +2721,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           selectedGroup={selectedBillGroup}
           selectedGroupId={billGroupId}
           isGroupLocked={isBillGroupLocked}
-          friends={billFriendOptions}
-          allFriends={friends}
-          currentUserName={currentUserName}
-          currentUserContact={currentUserContact}
-          splitChoiceMode={splitChoiceMode}
-          payerFriendId={payerFriendId}
-          equalSplitFriendIds={equalSplitFriendIds}
-          includeCurrentUserInSplit={includeCurrentUserInSplit}
-          adjustSplitTab={adjustSplitTab}
+          people={billSplitPeople}
+          selection={billSplitSelection}
           onChangeTitle={(value) => {
             setBillTitle(value);
           }}
@@ -2493,32 +2733,31 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onChangeNotes={setBillNotes}
           onSelectGroup={handleSelectBillGroup}
           onChangeFlowScreen={setExpenseFlowScreen}
-          onChangeSplitChoice={(mode) => {
-            setSplitChoiceMode(mode);
-            if (mode.startsWith('friend_paid') && !payerFriendId) {
-              setPayerFriendId(billFriendOptions[0]?.id ?? null);
-            }
+          onSelectPayer={(payerKey, fullAmount) => {
+            setSplitPayerKey(payerKey);
+            setSplitFullAmount(fullAmount);
           }}
-          onChangePayerFriend={setPayerFriendId}
-          onToggleEqualFriend={(friendId) => {
-            setEqualSplitFriendIds((current) =>
-              current.includes(friendId)
-                ? current.filter((currentId) => currentId !== friendId)
-                : [...current, friendId]
+          onToggleParticipant={(key) => {
+            setSplitSelectedKeys((current) =>
+              current.includes(key)
+                ? current.filter((currentKey) => currentKey !== key)
+                : [...current, key]
             );
           }}
-          onToggleCurrentUser={() => {
-            setIncludeCurrentUserInSplit((current) => !current);
+          onToggleAllParticipants={() => {
+            const allKeys = billSplitPeople.map((person) => person.key);
+            const allSelected = allKeys.every((key) => splitSelectedKeys.includes(key));
+            setSplitSelectedKeys(allSelected ? [] : allKeys);
           }}
-          onToggleAllEqualFriends={() => {
-            const allFriendIds = billFriendOptions.map((friend) => friend.id);
-            const allSelected = allFriendIds.every((friendId) =>
-              equalSplitFriendIds.includes(friendId)
+          onChangeAdjustSplitTab={(tab) => {
+            setAdjustSplitTab(tab);
+            setSplitWeights((current) =>
+              Object.keys(current).length > 0 ? current : buildSeedWeights(tab, billSplitSelection)
             );
-            setEqualSplitFriendIds(allSelected ? [] : allFriendIds);
-            setIncludeCurrentUserInSplit(!allSelected);
           }}
-          onChangeAdjustSplitTab={setAdjustSplitTab}
+          onChangeSplitWeight={(key, value) => {
+            setSplitWeights((current) => ({ ...current, [key]: value }));
+          }}
           onApplySplit={applySplitChoice}
           onSave={() => void handleCreateBill()}
           onClose={closeModal}
@@ -3500,7 +3739,7 @@ function FriendSharedGroupRow({
   onPress: () => void;
 }) {
   const theme = useThemeTokens().colors;
-  const kindConfig = getGroupKindConfig(summary.metadata.kind);
+  const kindConfig = getGroupKindConfig(summary.kind);
   const date = formatBillListDate(
     summary.latestBill?.date ?? summary.group.created_at ?? todayApiDate()
   );
@@ -3679,15 +3918,26 @@ function GroupDetailModal({
                 {summary.group.name}
               </TText>
               <View className="mt-5 flex-row gap-3">
-                <Pressable
-                  accessibilityRole="button"
-                  className="min-h-12 flex-row items-center rounded-full border px-4"
-                  style={{ borderColor: '#1BB99A', backgroundColor: 'rgba(0,0,0,0.08)' }}>
-                  <MaterialCommunityIcons name="calendar-blank-outline" size={19} color="#FFFFFF" />
-                  <TText className="ml-3 text-base text-white" style={{ fontFamily: Fonts.title }}>
-                    Add trip dates
-                  </TText>
-                </Pressable>
+                {/*
+                 * Dates are a trip's shape, not every group's: a home or couple
+                 * group runs indefinitely, so offering to bound it with a start
+                 * and end date is an invitation to describe it wrongly.
+                 */}
+                {summary.kind === 'trip' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    className="min-h-12 flex-row items-center rounded-full border px-4"
+                    style={{ borderColor: '#1BB99A', backgroundColor: 'rgba(0,0,0,0.08)' }}>
+                    <MaterialCommunityIcons
+                      name="calendar-blank-outline"
+                      size={19}
+                      color="#FFFFFF"
+                    />
+                    <TText className="ml-3 text-base text-white" style={{ fontFamily: Fonts.title }}>
+                      Add trip dates
+                    </TText>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   disabled={!canManageGroup}
@@ -4334,11 +4584,25 @@ function BillDetailModal({
   );
 }
 
-function getSplitChoiceLabel(mode: SplitChoiceMode, payerName?: string) {
-  if (mode === 'you_paid_equal') return 'Paid by you and split equally.';
-  if (mode === 'you_paid_full') return 'You are owed the full amount.';
-  if (mode === 'friend_paid_equal') return `${payerName ?? 'Friend'} paid, split equally.`;
-  return `${payerName ?? 'Friend'} is owed the full amount.`;
+/**
+ * How the chosen split reads on the expense screen, so the split screen is
+ * something to open when the default is wrong rather than a step to pass
+ * through every time.
+ */
+function describeSplitChoice(selection: SplitSelection, people: SplitSlotPerson[]) {
+  const payerLabel =
+    selection.payerKey === selection.selfKey
+      ? 'you'
+      : (people.find((person) => person.key === selection.payerKey)?.label ?? 'a friend');
+  if (selection.fullAmount) {
+    return selection.payerKey === selection.selfKey
+      ? 'You are owed the full amount.'
+      : `${payerLabel} is owed the full amount.`;
+  }
+  const tabLabel = describeSplitTab(selection.tab);
+  return selection.payerKey === selection.selfKey
+    ? `Paid by you and ${tabLabel}.`
+    : `${payerLabel} paid, ${tabLabel}.`;
 }
 
 function AddExpenseModal({
@@ -4354,27 +4618,19 @@ function AddExpenseModal({
   selectedGroup,
   selectedGroupId,
   isGroupLocked,
-  friends,
-  allFriends,
-  currentUserName,
-  currentUserContact,
-  splitChoiceMode,
-  payerFriendId,
-  equalSplitFriendIds,
-  includeCurrentUserInSplit,
-  adjustSplitTab,
+  people,
+  selection,
   onChangeTitle,
   onChangeAmount,
   onChangeDate,
   onChangeNotes,
   onSelectGroup,
   onChangeFlowScreen,
-  onChangeSplitChoice,
-  onChangePayerFriend,
-  onToggleEqualFriend,
-  onToggleCurrentUser,
-  onToggleAllEqualFriends,
+  onSelectPayer,
+  onToggleParticipant,
+  onToggleAllParticipants,
   onChangeAdjustSplitTab,
+  onChangeSplitWeight,
   onApplySplit,
   onSave,
   onClose,
@@ -4391,36 +4647,26 @@ function AddExpenseModal({
   selectedGroup: SplitGroup | null;
   selectedGroupId: number | null;
   isGroupLocked: boolean;
-  friends: SplitFriend[];
-  allFriends: SplitFriend[];
-  currentUserName: string;
-  currentUserContact: string;
-  splitChoiceMode: SplitChoiceMode;
-  payerFriendId: number | null;
-  equalSplitFriendIds: number[];
-  includeCurrentUserInSplit: boolean;
-  adjustSplitTab: AdjustSplitTab;
+  people: SplitSlotPerson[];
+  selection: SplitSelection;
   onChangeTitle: (value: string) => void;
   onChangeAmount: (value: string) => void;
   onChangeDate: (value: string) => void;
   onChangeNotes: (value: string) => void;
   onSelectGroup: (groupId: number | null) => void;
   onChangeFlowScreen: (screen: ExpenseFlowScreen) => void;
-  onChangeSplitChoice: (mode: SplitChoiceMode) => void;
-  onChangePayerFriend: (friendId: number | null) => void;
-  onToggleEqualFriend: (friendId: number) => void;
-  onToggleCurrentUser: () => void;
-  onToggleAllEqualFriends: () => void;
+  onSelectPayer: (payerKey: string, fullAmount: boolean) => void;
+  onToggleParticipant: (key: string) => void;
+  onToggleAllParticipants: () => void;
   onChangeAdjustSplitTab: (tab: AdjustSplitTab) => void;
+  onChangeSplitWeight: (key: string, value: string) => void;
   onApplySplit: () => void;
   onSave: () => void;
   onClose: () => void;
 }) {
   const theme = useThemeTokens().colors;
-  const payerFriend = friends.find((friend) => friend.id === payerFriendId) ?? friends[0] ?? null;
-  const payerName = payerFriend?.name;
   const groupLabel = selectedGroup ? `All of ${selectedGroup.name}` : 'All friends';
-  const splitLabel = getSplitChoiceLabel(splitChoiceMode, payerName);
+  const splitLabel = describeSplitChoice(selection, people);
 
   if (!visible) return null;
 
@@ -4560,35 +4806,25 @@ function AddExpenseModal({
           </View>
         ) : flowScreen === 'split_choice' ? (
           <SplitChoiceScreen
-            friends={friends}
-            currentUserName={currentUserName}
-            selectedMode={splitChoiceMode}
-            payerFriendId={payerFriendId}
+            people={people}
+            selection={selection}
             onBack={() => onChangeFlowScreen('expense')}
-            onSelectMode={onChangeSplitChoice}
-            onSelectPayer={onChangePayerFriend}
+            onSelectPayer={onSelectPayer}
             onMoreOptions={() => onChangeFlowScreen('adjust_split')}
           />
         ) : (
           <AdjustSplitScreen
-            friends={friends}
-            currentUserName={currentUserName}
-            currentUserContact={currentUserContact}
-            selectedMode={splitChoiceMode}
-            payerFriendId={payerFriendId}
-            selectedFriendIds={equalSplitFriendIds}
-            includeCurrentUser={includeCurrentUserInSplit}
+            people={people}
+            selection={selection}
             amount={parseAmount(amount)}
-            activeTab={adjustSplitTab}
-            allFriends={allFriends}
+            errorMessage={errorMessage}
             onBack={() => onChangeFlowScreen('split_choice')}
             onDone={onApplySplit}
-            onSelectPayer={onChangePayerFriend}
-            onSelectMode={onChangeSplitChoice}
-            onToggleFriend={onToggleEqualFriend}
-            onToggleCurrentUser={onToggleCurrentUser}
-            onToggleAll={onToggleAllEqualFriends}
+            onSelectPayer={onSelectPayer}
+            onToggleParticipant={onToggleParticipant}
+            onToggleAll={onToggleAllParticipants}
             onChangeTab={onChangeAdjustSplitTab}
+            onChangeWeight={onChangeSplitWeight}
           />
         )}
       </SafeAreaView>
@@ -4698,104 +4934,133 @@ function ExpenseBottomBar({
   );
 }
 
+/**
+ * The four shapes a split usually takes, offered before the full editor. Which
+ * "friend paid" it names is whoever is currently the payer, falling back to the
+ * first other person in the group.
+ */
 function SplitChoiceScreen({
-  friends,
-  currentUserName,
-  selectedMode,
-  payerFriendId,
+  people,
+  selection,
+  title,
   onBack,
-  onSelectMode,
+  onDone,
   onSelectPayer,
   onMoreOptions,
 }: {
-  friends: SplitFriend[];
-  currentUserName: string;
-  selectedMode: SplitChoiceMode;
-  payerFriendId: number | null;
+  people: SplitSlotPerson[];
+  selection: SplitSelection;
+  title?: string;
   onBack: () => void;
-  onSelectMode: (mode: SplitChoiceMode) => void;
-  onSelectPayer: (friendId: number | null) => void;
+  onDone?: () => void;
+  onSelectPayer: (payerKey: string, fullAmount: boolean) => void;
   onMoreOptions: () => void;
 }) {
   const theme = useThemeTokens().colors;
-  const firstFriend = friends.find((friend) => friend.id === payerFriendId) ?? friends[0] ?? null;
-  const payerName = firstFriend?.name ?? 'Friend';
-  const choices: { mode: SplitChoiceMode; label: string; payerId?: number | null }[] = [
-    { mode: 'you_paid_equal', label: 'You paid, split equally.', payerId: null },
-    { mode: 'you_paid_full', label: 'You are owed the full amount.', payerId: null },
+  const selfPerson = people.find((person) => person.key === selection.selfKey);
+  const selfName = selfPerson?.label ?? 'You';
+  const others = people.filter((person) => person.key !== selection.selfKey);
+  const activeOther =
+    others.find((person) => person.key === selection.payerKey) ?? others[0] ?? null;
+  const otherName = activeOther?.label ?? 'Friend';
+  const choices: { key: string; payerKey: string; fullAmount: boolean; label: string }[] = [
     {
-      mode: 'friend_paid_equal',
-      label: `${payerName} paid, split equally.`,
-      payerId: firstFriend?.id,
+      key: 'self_equal',
+      payerKey: selection.selfKey,
+      fullAmount: false,
+      label: 'You paid, split equally.',
     },
     {
-      mode: 'friend_paid_full',
-      label: `${payerName} is owed the full amount.`,
-      payerId: firstFriend?.id,
+      key: 'self_full',
+      payerKey: selection.selfKey,
+      fullAmount: true,
+      label: 'You are owed the full amount.',
     },
+    ...(activeOther
+      ? [
+          {
+            key: 'other_equal',
+            payerKey: activeOther.key,
+            fullAmount: false,
+            label: `${otherName} paid, split equally.`,
+          },
+          {
+            key: 'other_full',
+            payerKey: activeOther.key,
+            fullAmount: true,
+            label: `${otherName} is owed the full amount.`,
+          },
+        ]
+      : []),
   ];
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
       <ExpenseTopBar
-        title="How was this expense split?"
+        title={title ?? 'How was this expense split?'}
         saving={false}
         onBack={onBack}
-        onDone={onBack}
+        onDone={onDone ?? onBack}
       />
-      <View className="px-6 pt-5">
-        {choices.map((choice) => (
-          <Pressable
-            key={choice.mode}
-            accessibilityRole="button"
-            accessibilityState={{ selected: selectedMode === choice.mode }}
-            onPress={() => {
-              onSelectMode(choice.mode);
-              if (choice.payerId) onSelectPayer(choice.payerId);
-            }}
-            className="min-h-[92px] flex-row items-center gap-5">
-            <SplitAvatarStack
-              primaryLabel={choice.mode.startsWith('you') ? currentUserName : payerName}
-              secondaryLabel={choice.mode.startsWith('you') ? payerName : currentUserName}
-              tone={choice.mode.startsWith('you') ? 'green' : 'orange'}
-            />
-            <TText className="flex-1 text-xl" style={{ color: theme.text, fontFamily: Fonts.body }}>
-              {choice.label}
-            </TText>
-            {selectedMode === choice.mode ? (
-              <MaterialCommunityIcons name="check" size={30} color={theme.text} />
-            ) : null}
-          </Pressable>
-        ))}
-
-        {friends.length > 1 ? (
-          <View className="mt-2">
-            <TText className="mb-2 text-sm text-black/55 dark:text-white/55">
-              Paid by a friend
-            </TText>
-            <View className="flex-row flex-wrap gap-2">
-              {friends.map((friend) => (
-                <GroupChoiceChip
-                  key={friend.id}
-                  label={friend.name}
-                  selected={payerFriendId === friend.id}
-                  onPress={() => onSelectPayer(friend.id)}
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
+        <View className="px-6 pt-5">
+          {choices.map((choice) => {
+            const selected =
+              selection.payerKey === choice.payerKey && selection.fullAmount === choice.fullAmount;
+            const paidBySelf = choice.payerKey === selection.selfKey;
+            return (
+              <Pressable
+                key={choice.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => onSelectPayer(choice.payerKey, choice.fullAmount)}
+                className="min-h-[92px] flex-row items-center gap-5">
+                <SplitAvatarStack
+                  primaryLabel={paidBySelf ? selfName : otherName}
+                  secondaryLabel={paidBySelf ? otherName : selfName}
+                  tone={paidBySelf ? 'green' : 'orange'}
                 />
-              ))}
-            </View>
-          </View>
-        ) : null}
+                <TText
+                  className="flex-1 text-xl"
+                  style={{ color: theme.text, fontFamily: Fonts.body }}>
+                  {choice.label}
+                </TText>
+                {selected ? (
+                  <MaterialCommunityIcons name="check" size={30} color={theme.text} />
+                ) : null}
+              </Pressable>
+            );
+          })}
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={onMoreOptions}
-          className="mt-12 min-h-14 items-center justify-center self-center rounded border px-8"
-          style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-          <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
-            More options
-          </TText>
-        </Pressable>
-      </View>
+          {others.length > 1 ? (
+            <View className="mt-2">
+              <TText className="mb-2 text-sm text-black/55 dark:text-white/55">
+                Paid by someone else
+              </TText>
+              <View className="flex-row flex-wrap gap-2">
+                {others.map((person) => (
+                  <GroupChoiceChip
+                    key={person.key}
+                    label={person.label}
+                    selected={selection.payerKey === person.key}
+                    onPress={() => onSelectPayer(person.key, selection.fullAmount)}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={onMoreOptions}
+            className="mt-12 min-h-14 items-center justify-center self-center rounded border px-8"
+            style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+            <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              More options
+            </TText>
+          </Pressable>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -4820,68 +5085,139 @@ function SplitAvatarStack({
   );
 }
 
+const splitTabCopy: Record<AdjustSplitTab, { heading: string; caption: string }> = {
+  equally: { heading: 'Split equally', caption: 'Select which people owe an equal share.' },
+  unequally: {
+    heading: 'Split by exact amounts',
+    caption: 'Enter what each person owes. The amounts must add up to the total.',
+  },
+  percentages: {
+    heading: 'Split by percentages',
+    caption: 'Enter each share as a percentage. They must add up to 100%.',
+  },
+  shares: {
+    heading: 'Split by shares',
+    caption: 'Enter how many shares each person carries. Two shares owe twice one.',
+  },
+};
+
 function AdjustSplitScreen({
-  friends,
-  currentUserName,
-  currentUserContact,
-  selectedMode,
-  payerFriendId,
-  selectedFriendIds,
-  includeCurrentUser,
+  people,
+  selection,
   amount,
-  activeTab,
+  variant = 'expense',
+  title,
+  errorMessage,
   onBack,
   onDone,
   onSelectPayer,
-  onSelectMode,
-  onToggleFriend,
-  onToggleCurrentUser,
+  onToggleParticipant,
   onToggleAll,
   onChangeTab,
+  onChangeWeight,
 }: {
-  friends: SplitFriend[];
-  currentUserName: string;
-  currentUserContact: string;
-  selectedMode: SplitChoiceMode;
-  payerFriendId: number | null;
-  selectedFriendIds: number[];
-  includeCurrentUser: boolean;
+  people: SplitSlotPerson[];
+  selection: SplitSelection;
   amount: number;
-  activeTab: AdjustSplitTab;
-  allFriends: SplitFriend[];
+  /**
+   * A group default is written before any amount exists, so the exact-amounts
+   * tab has nothing to divide and the rupee previews have nothing to show.
+   */
+  variant?: 'expense' | 'default';
+  title?: string;
+  errorMessage?: string | null;
   onBack: () => void;
   onDone: () => void;
-  onSelectPayer: (friendId: number | null) => void;
-  onSelectMode: (mode: SplitChoiceMode) => void;
-  onToggleFriend: (friendId: number) => void;
-  onToggleCurrentUser: () => void;
+  onSelectPayer: (payerKey: string, fullAmount: boolean) => void;
+  onToggleParticipant: (key: string) => void;
   onToggleAll: () => void;
   onChangeTab: (tab: AdjustSplitTab) => void;
+  onChangeWeight: (key: string, value: string) => void;
 }) {
   const theme = useThemeTokens().colors;
   const [payerPickerVisible, setPayerPickerVisible] = useState(false);
-  const payerFriend = friends.find((friend) => friend.id === payerFriendId) ?? friends[0] ?? null;
-  const payerName = selectedMode.startsWith('friend_paid')
-    ? (payerFriend?.name ?? 'Friend')
-    : currentUserName;
-  const isFullAmountMode =
-    selectedMode === 'you_paid_full' || selectedMode === 'friend_paid_full';
-  const totalSelected = selectedFriendIds.length + (includeCurrentUser ? 1 : 0);
+  const isDefaultVariant = variant === 'default';
+  const activeTab = selection.tab;
+  const payerName =
+    people.find((person) => person.key === selection.payerKey)?.label ?? 'Somebody';
+  const activeKeys = splitParticipantKeys(selection);
+  const shareResult = computeSplitShares({
+    amount,
+    tab: activeTab,
+    keys: activeKeys,
+    weights: selection.weights,
+  });
+  const shares = shareResult.ok ? shareResult.shares : {};
+  const totalSelected = activeKeys.length;
   const perPerson =
     Number.isFinite(amount) && amount > 0 && totalSelected > 0 ? amount / totalSelected : 0;
-  const allSelected =
-    friends.every((friend) => selectedFriendIds.includes(friend.id)) && includeCurrentUser;
+  const allSelected = people.every((person) => selection.participantKeys.includes(person.key));
+  const weightTotal = sumSplitWeights(activeKeys, selection.weights);
   const tabs: { key: AdjustSplitTab; label: string }[] = [
     { key: 'equally', label: 'Equally' },
-    { key: 'unequally', label: 'Unequally' },
+    ...(isDefaultVariant
+      ? []
+      : ([{ key: 'unequally', label: 'Unequally' }] as { key: AdjustSplitTab; label: string }[])),
     { key: 'percentages', label: 'By percentages' },
     { key: 'shares', label: 'By shares' },
   ];
+  const copy = splitTabCopy[activeTab];
+
+  const renderPersonRow = (person: SplitSlotPerson) => {
+    const included = activeKeys.includes(person.key);
+    if (activeTab === 'equally') {
+      return (
+        <SplitPersonRow
+          key={person.key}
+          label={person.label}
+          subtitle={person.subtitle}
+          selected={included}
+          onPress={() => onToggleParticipant(person.key)}
+        />
+      );
+    }
+    return (
+      <SplitWeightRow
+        key={person.key}
+        label={person.label}
+        subtitle={person.subtitle}
+        selected={included}
+        value={selection.weights[person.key] ?? ''}
+        prefix={activeTab === 'unequally' ? CURRENCY_SYMBOL : ''}
+        suffix={activeTab === 'percentages' ? '%' : ''}
+        placeholder={activeTab === 'shares' ? '1' : '0'}
+        preview={
+          isDefaultVariant || !included || !shareResult.ok
+            ? null
+            : formatBalance(shares[person.key] ?? 0)
+        }
+        onPress={() => onToggleParticipant(person.key)}
+        onChangeValue={(value) => onChangeWeight(person.key, value)}
+      />
+    );
+  };
+
+  const footerSummary = () => {
+    if (activeTab === 'equally') {
+      return isDefaultVariant
+        ? `Equal share between ${totalSelected} ${totalSelected === 1 ? 'person' : 'people'}`
+        : `${formatBalance(perPerson)}/person`;
+    }
+    if (activeTab === 'percentages') return `${weightTotal.toFixed(2)}% of 100%`;
+    if (activeTab === 'shares') return `${weightTotal} ${weightTotal === 1 ? 'share' : 'shares'}`;
+    return `${formatBalance(weightTotal)} of ${formatBalance(amount)}`;
+  };
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <ExpenseTopBar title="Adjust split" saving={false} onBack={onBack} onDone={onDone} />
+      <ExpenseTopBar
+        title={title ?? 'Adjust split'}
+        saving={false}
+        onBack={onBack}
+        onDone={onDone}
+      />
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 110 }}>
         <View className="flex-row items-center gap-4 px-6 py-5">
@@ -4928,48 +5264,53 @@ function AdjustSplitScreen({
         </ScrollView>
 
         <View className="items-center px-6 py-8">
-          <View className="flex-row items-end gap-6">
-            <MaterialCommunityIcons name="cash-multiple" size={72} color="#14A986" />
-            <MaterialCommunityIcons name="elephant" size={74} color="#2F80ED" />
-            <MaterialCommunityIcons name="heart" size={64} color="#DB2777" />
-            <MaterialCommunityIcons name="glass-cocktail" size={66} color="#A855F7" />
-          </View>
+          {activeTab === 'equally' ? (
+            <View className="flex-row items-end gap-6">
+              <MaterialCommunityIcons name="cash-multiple" size={72} color="#14A986" />
+              <MaterialCommunityIcons name="elephant" size={74} color="#2F80ED" />
+              <MaterialCommunityIcons name="heart" size={64} color="#DB2777" />
+              <MaterialCommunityIcons name="glass-cocktail" size={66} color="#A855F7" />
+            </View>
+          ) : (
+            <MaterialCommunityIcons
+              name={activeTab === 'percentages' ? 'percent-outline' : 'scale-balance'}
+              size={64}
+              color="#14A986"
+            />
+          )}
           <TText className="mt-7 text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
-            Split equally
+            {copy.heading}
           </TText>
           <TText className="mt-2 text-center text-lg text-black/55 dark:text-white/55">
-            Select which people owe an equal share.
+            {copy.caption}
           </TText>
+          {selection.fullAmount ? (
+            <TText className="mt-3 text-center text-base text-black/50 dark:text-white/50">
+              {payerName} is owed the full amount and carries none of it.
+            </TText>
+          ) : null}
         </View>
 
-        <View className="px-6">
-          <SplitPersonRow
-            label={currentUserName}
-            subtitle={currentUserContact}
-            selected={includeCurrentUser}
-            onPress={onToggleCurrentUser}
-          />
-          {friends.map((friend) => (
-            <SplitPersonRow
-              key={friend.id}
-              label={friend.name}
-              subtitle={[friend.phone, friend.email].filter(Boolean).join(' • ')}
-              selected={selectedFriendIds.includes(friend.id)}
-              onPress={() => onToggleFriend(friend.id)}
-            />
-          ))}
-        </View>
+        {errorMessage ? (
+          <ErrorBanner message={errorMessage} style={{ marginHorizontal: 24, marginBottom: 16 }} />
+        ) : null}
+
+        <View className="px-6">{people.map(renderPersonRow)}</View>
       </ScrollView>
 
       <View
         className="absolute bottom-0 left-0 right-0 min-h-[88px] flex-row items-center border-t"
         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-        <View className="flex-1 items-center">
-          <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
-            {formatBalance(perPerson)}/person
+        <View className="flex-1 items-center px-3">
+          <TText
+            className="text-center text-lg"
+            style={{ color: theme.text, fontFamily: Fonts.title }}>
+            {footerSummary()}
           </TText>
-          <TText className="mt-1 text-base text-black/55 dark:text-white/55">
-            ({totalSelected} people)
+          <TText className="mt-1 text-center text-base text-black/55 dark:text-white/55">
+            {shareResult.ok || activeTab === 'equally'
+              ? `(${totalSelected} ${totalSelected === 1 ? 'person' : 'people'})`
+              : shareResult.error}
           </TText>
         </View>
         <View className="h-full w-px" style={{ backgroundColor: theme.border }} />
@@ -5006,25 +5347,14 @@ function AdjustSplitScreen({
             </Pressable>
           </View>
           <View className="gap-2">
-            <PayerOptionRow
-              label={currentUserName}
-              subtitle={currentUserContact}
-              selected={!selectedMode.startsWith('friend_paid')}
-              onPress={() => {
-                onSelectPayer(null);
-                onSelectMode(isFullAmountMode ? 'you_paid_full' : 'you_paid_equal');
-                setPayerPickerVisible(false);
-              }}
-            />
-            {friends.map((friend) => (
+            {people.map((person) => (
               <PayerOptionRow
-                key={friend.id}
-                label={friend.name}
-                subtitle={[friend.phone, friend.email].filter(Boolean).join(' • ')}
-                selected={selectedMode.startsWith('friend_paid') && payerFriendId === friend.id}
+                key={person.key}
+                label={person.label}
+                subtitle={person.subtitle}
+                selected={selection.payerKey === person.key}
                 onPress={() => {
-                  onSelectPayer(friend.id);
-                  onSelectMode(isFullAmountMode ? 'friend_paid_full' : 'friend_paid_equal');
+                  onSelectPayer(person.key, selection.fullAmount);
                   setPayerPickerVisible(false);
                 }}
               />
@@ -5109,15 +5439,231 @@ function SplitPersonRow({
   );
 }
 
+/**
+ * The group's default split, edited on the same two screens the expense
+ * composer uses. There is no amount yet, so the rupee previews stand down and
+ * the exact-amounts tab is withheld — a default has to be a ratio to survive
+ * until the next expense.
+ *
+ * The people here are the group's real roster, owner first, with "you" landing
+ * on whichever slot belongs to the viewer. The stored default names the same
+ * people for every member, so it has to be edited in those terms rather than in
+ * one member's private frame.
+ */
+function GroupDefaultSplitModal({
+  groupName,
+  people,
+  draft,
+  screen,
+  saving,
+  errorMessage,
+  hasSavedDefault,
+  onChangeDraft,
+  onChangeScreen,
+  onSave,
+  onReset,
+  onClose,
+}: {
+  groupName: string;
+  people: SplitSlotPerson[];
+  draft: SplitSelection;
+  screen: 'choice' | 'adjust';
+  saving: boolean;
+  errorMessage?: string | null;
+  hasSavedDefault: boolean;
+  onChangeDraft: (next: SplitSelection) => void;
+  onChangeScreen: (screen: 'choice' | 'adjust') => void;
+  onSave: () => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView
+        className="flex-1"
+        edges={['top', 'left', 'right']}
+        style={{ backgroundColor: theme.background }}>
+        {screen === 'choice' ? (
+          <View className="flex-1">
+            <SplitChoiceScreen
+              people={people}
+              selection={draft}
+              title={`Default split for ${groupName}`}
+              onBack={onClose}
+              onDone={onSave}
+              onSelectPayer={(payerKey, fullAmount) =>
+                onChangeDraft({ ...draft, payerKey, fullAmount, tab: 'equally', weights: {} })
+              }
+              onMoreOptions={() => onChangeScreen('adjust')}
+            />
+            {errorMessage ? (
+              <ErrorBanner message={errorMessage} style={{ marginHorizontal: 24, marginTop: 8 }} />
+            ) : null}
+            {hasSavedDefault ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={saving}
+                onPress={onReset}
+                className="mb-6 min-h-12 items-center justify-center self-center px-6">
+                <TText className="text-base" style={{ color: '#B00034', fontFamily: Fonts.title }}>
+                  Remove default split
+                </TText>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : (
+          <AdjustSplitScreen
+            people={people}
+            selection={draft}
+            /* A ratio needs some amount to divide; 100 keeps the maths honest
+             * while `variant="default"` keeps the rupee figures off screen. */
+            amount={100}
+            variant="default"
+            title="Default split"
+            errorMessage={errorMessage}
+            onBack={() => onChangeScreen('choice')}
+            onDone={onSave}
+            onSelectPayer={(payerKey, fullAmount) =>
+              onChangeDraft({ ...draft, payerKey, fullAmount })
+            }
+            onToggleParticipant={(key) =>
+              onChangeDraft({
+                ...draft,
+                participantKeys: draft.participantKeys.includes(key)
+                  ? draft.participantKeys.filter((currentKey) => currentKey !== key)
+                  : [...draft.participantKeys, key],
+              })
+            }
+            onToggleAll={() => {
+              const allKeys = people.map((person) => person.key);
+              const allSelected = allKeys.every((key) => draft.participantKeys.includes(key));
+              onChangeDraft({ ...draft, participantKeys: allSelected ? [] : allKeys });
+            }}
+            onChangeTab={(tab) =>
+              onChangeDraft({
+                ...draft,
+                tab,
+                weights:
+                  Object.keys(draft.weights).length > 0
+                    ? draft.weights
+                    : buildSeedWeights(tab, { ...draft, tab }),
+              })
+            }
+            onChangeWeight={(key, value) =>
+              onChangeDraft({ ...draft, weights: { ...draft.weights, [key]: value } })
+            }
+          />
+        )}
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+/**
+ * The weighted counterpart to `SplitPersonRow`. The checkbox still decides who
+ * is in the split — the field only says how heavily they carry it — so the two
+ * rows stay interchangeable as the tab changes under them.
+ */
+function SplitWeightRow({
+  label,
+  subtitle,
+  selected,
+  value,
+  prefix,
+  suffix,
+  placeholder,
+  preview,
+  onPress,
+  onChangeValue,
+}: {
+  label: string;
+  subtitle?: string;
+  selected: boolean;
+  value: string;
+  prefix: string;
+  suffix: string;
+  placeholder: string;
+  preview: string | null;
+  onPress: () => void;
+  onChangeValue: (value: string) => void;
+}) {
+  const theme = useThemeTokens().colors;
+  return (
+    <View className="min-h-[88px] flex-row items-center gap-4">
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: selected }}
+        accessibilityLabel={`Include ${label} in this split`}
+        onPress={onPress}
+        className="flex-1 flex-row items-center gap-4">
+        <AvatarCircle label={label} size={54} />
+        <View className="flex-1">
+          <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            {label}
+          </TText>
+          {preview ? (
+            <TText className="mt-1 text-base" style={{ color: theme.accent }}>
+              {preview}
+            </TText>
+          ) : subtitle ? (
+            <TText className="mt-1 text-sm text-black/50 dark:text-white/50" numberOfLines={1}>
+              {subtitle}
+            </TText>
+          ) : null}
+        </View>
+      </Pressable>
+      <View
+        className="min-h-12 w-28 flex-row items-center rounded-xl border px-3"
+        style={{
+          backgroundColor: selected ? theme.card : 'transparent',
+          borderColor: selected ? theme.border : 'rgba(120,120,120,0.25)',
+          opacity: selected ? 1 : 0.45,
+        }}>
+        {prefix ? (
+          <TText className="mr-1 text-lg" style={{ color: theme.text }}>
+            {prefix}
+          </TText>
+        ) : null}
+        <TextInput
+          value={value}
+          onChangeText={onChangeValue}
+          editable={selected}
+          keyboardType="decimal-pad"
+          placeholder={placeholder}
+          placeholderTextColor="rgba(120,120,120,0.7)"
+          accessibilityLabel={`Split value for ${label}`}
+          style={{
+            flex: 1,
+            minHeight: 48,
+            textAlign: 'right',
+            color: theme.text,
+            fontFamily: Fonts.title,
+            fontSize: 18,
+          }}
+        />
+        {suffix ? (
+          <TText className="ml-1 text-lg" style={{ color: theme.text }}>
+            {suffix}
+          </TText>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function GroupSettingsModal({
   summary,
   friends,
   currentUserName,
   currentUserContact,
   simplifyGroupDebts,
+  defaultSplitLabel,
   pendingInvites,
   pendingInvitesLoading,
   onToggleSimplifyDebts,
+  onOpenDefaultSplit,
   onClose,
   onAddPeople,
   onInvitePerson,
@@ -5133,9 +5679,11 @@ function GroupSettingsModal({
   currentUserName: string;
   currentUserContact: string;
   simplifyGroupDebts: boolean;
+  defaultSplitLabel: string;
   pendingInvites: SplitGroupDirectInvite[];
   pendingInvitesLoading: boolean;
   onToggleSimplifyDebts: () => void;
+  onOpenDefaultSplit: (summary: SplitGroupSummary) => void;
   onClose: () => void;
   onAddPeople: (summary: SplitGroupSummary) => void;
   onInvitePerson: (summary: SplitGroupSummary) => void;
@@ -5149,7 +5697,7 @@ function GroupSettingsModal({
   const theme = useThemeTokens().colors;
   if (!summary) return null;
 
-  const kindConfig = getGroupKindConfig(summary.metadata.kind);
+  const kindConfig = getGroupKindConfig(summary.kind);
   const canManageGroup = summary.group.viewer_can_manage === true;
   const roleLabel = summary.group.viewer_role === 'owner' ? 'Owner' : 'Shared member';
   const memberFriends = summary.memberIds
@@ -5272,7 +5820,11 @@ function GroupSettingsModal({
             </View>
             <SwitchControl selected={simplifyGroupDebts} onPress={onToggleSimplifyDebts} />
           </View>
-          <View className="flex-row items-start gap-5 px-6 py-4">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Set the default split for this group"
+            onPress={() => onOpenDefaultSplit(summary)}
+            className="flex-row items-start gap-5 px-6 py-4">
             <MaterialCommunityIcons name="format-list-bulleted" size={27} color="#7E3FB2" />
             <View className="flex-1">
               <View className="flex-row items-center gap-2">
@@ -5286,14 +5838,15 @@ function GroupSettingsModal({
                 </View>
               </View>
               <TText className="mt-2 text-base text-black/55 dark:text-white/55">
-                Paid by you and split equally
+                {defaultSplitLabel}
               </TText>
               <TText className="mt-7 text-base leading-6 text-black/50 dark:text-white/50">
-                New expenses you add to this group will default to this setting, which is personal,
-                not group-wide.
+                New expenses in this group start from this split. It belongs to the group, so every
+                member sees it and any of them can change it.
               </TText>
             </View>
-          </View>
+            <MaterialCommunityIcons name="chevron-right" size={26} color={theme.text} />
+          </Pressable>
           {!canManageGroup ? (
             <SettingsActionRow
               icon="exit-to-app"

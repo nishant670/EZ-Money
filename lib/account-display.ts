@@ -105,6 +105,33 @@ export const getCreditUsage = (account: Account): CreditUsage | null => {
 };
 
 /**
+ * The limit breakdown, when the card has one.
+ *
+ * The card detail screen leads with this instead of a bare outstanding figure:
+ * available limit is what a card user actually opens the app to find out.
+ * Rows in a list stay on `getAccountHeadline`, where there is only room for
+ * one number and "what you owe" is the more useful one at a glance.
+ */
+export const getCardLimit = (account: Account) =>
+  normalizeAccountType(account.type) === 'credit_card' ? (account.summary?.limit ?? null) : null;
+
+/** The bill to pay, when a statement has been entered. */
+export const getCurrentStatement = (account: Account) =>
+  normalizeAccountType(account.type) === 'credit_card'
+    ? (account.summary?.current_statement ?? null)
+    : null;
+
+/**
+ * Whether a card is being tracked from its bill or only from the ledger.
+ *
+ * A card with no statement is reporting what Finnri happens to know, which is
+ * only as complete as what the user has logged. Screens use this to say so
+ * rather than presenting an estimate as a fact.
+ */
+export const isCardTrackedFromStatement = (account: Account) =>
+  getCardLimit(account)?.outstanding_source === 'statement';
+
+/**
  * Opening balance plus everything logged since. Only exists when the user
  * actually entered an opening balance — otherwise this would be net flow
  * wearing a balance's clothes.

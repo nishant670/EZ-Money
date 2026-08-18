@@ -33,12 +33,61 @@ export type SplitGroupMember = {
   friend?: SplitFriend;
 };
 
+export type SplitGroupKind = 'trip' | 'home' | 'couple' | 'other';
+
+export type SplitGroupDefaultSplitTab = 'equally' | 'percentages' | 'shares';
+
+/**
+ * The slot naming the group owner in a default split. Every other slot is a
+ * member's friend id as a string.
+ */
+export const SPLIT_GROUP_OWNER_SLOT = 'owner';
+
+export type SplitGroupDefaultSplitShare = {
+  slot: string;
+  weight?: string;
+};
+
+/**
+ * A group-wide default split, anchored on the group owner rather than on
+ * whoever is reading it — the row is shared, so a viewer-relative "you" would
+ * mean a different person to each member.
+ */
+export type SplitGroupDefaultSplit = {
+  payer: string;
+  full_amount?: boolean;
+  tab: SplitGroupDefaultSplitTab;
+  participants: SplitGroupDefaultSplitShare[];
+};
+
+/**
+ * What happened to somebody just added to a group. Adding raises an invite; it
+ * never grants sight of the group, which still follows acceptance.
+ */
+export type SplitGroupMemberInvite = {
+  friend_id: number;
+  name: string;
+  /**
+   * `notified` — they have a Finnri account with an invite waiting in it.
+   * `invite_created` — no account yet, so the link has to be shared.
+   * `no_contact` — no email or phone on the friend, so nobody could be reached.
+   */
+  status: 'notified' | 'invite_created' | 'no_contact';
+};
+
 export type SplitGroup = {
   id: number;
   user_id: number;
   name: string;
   archived: boolean;
+  kind?: SplitGroupKind;
+  default_split?: SplitGroupDefaultSplit | null;
+  owner_name?: string;
+  /** Which member friend row is the caller. Absent for the group's owner. */
+  viewer_friend_id?: number | null;
   members?: SplitGroupMember[];
+  /** Returned only on a create or update, for the people just added. */
+  member_invites?: SplitGroupMemberInvite[];
   viewer_role?: 'owner' | 'member';
   viewer_can_add_expense?: boolean;
   viewer_can_manage?: boolean;
@@ -52,6 +101,16 @@ export type SplitGroupInvite = {
   deep_link: string;
   group: SplitGroup;
   expires_at?: string | null;
+};
+
+/** An invite waiting on the signed-in user, ready to be offered on app open. */
+export type PendingSplitGroupInvite = {
+  id: number;
+  token: string;
+  group_id: number;
+  group_name: string;
+  owner_name: string;
+  created_at: string;
 };
 
 export type SplitGroupDirectInvite = {
@@ -171,6 +230,7 @@ export type SplitBillPayload = {
 
 export type SplitGroupPayload = {
   name: string;
+  kind: SplitGroupKind;
   friend_ids: number[];
 };
 
@@ -340,6 +400,46 @@ export const updateSplitGroup = async (
     throw await readSplitError(response, 'Unable to update this split group right now.');
   }
   return response.json();
+};
+
+/**
+ * Any active member may set the group's default split, not only the owner: it
+ * describes how the group divides its costs. Passing null clears it.
+ */
+export const setSplitGroupDefaultSplit = async (
+  token: string,
+  groupId: number,
+  defaultSplit: SplitGroupDefaultSplit | null
+): Promise<SplitGroup> => {
+  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}/default-split`, {
+    method: 'PUT',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ default_split: defaultSplit }),
+  });
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to save this default split right now.');
+  }
+  return response.json();
+};
+
+/**
+ * Invites addressed to the caller. Returns an empty list rather than throwing:
+ * a failed poll must never block the app opening, and there is nothing to say
+ * when we cannot tell whether somebody was invited.
+ */
+export const fetchPendingSplitGroupInvites = async (
+  token: string
+): Promise<PendingSplitGroupInvite[]> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/v1/split/pending-invites`, {
+      headers: authHeaders(token),
+    });
+    if (!response.ok) return [];
+    const payload: unknown = await response.json();
+    return Array.isArray(payload) ? (payload as PendingSplitGroupInvite[]) : [];
+  } catch {
+    return [];
+  }
 };
 
 export const createSplitGroupInviteLink = async (
