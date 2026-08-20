@@ -96,6 +96,15 @@ type VoiceInputCardProps = {
   onProcess: () => void;
   onClear: () => void;
   isProcessing?: boolean;
+  /**
+   * The last attempt on this recording came back as a failure.
+   *
+   * It changes what the card offers, not what it does: the primary action is
+   * still `onProcess`, but a button labelled "Process" directly under an error
+   * about the thing it just failed to process reads as though the app did not
+   * notice. "Try again" is the same press, described honestly.
+   */
+  hasFailed?: boolean;
   isTextInputVisible?: boolean;
   onToggleTextInput?: () => void;
 };
@@ -110,6 +119,7 @@ export function VoiceInputCard({
   onProcess,
   onClear,
   isProcessing = false,
+  hasFailed = false,
   isTextInputVisible = false,
   onToggleTextInput,
 }: VoiceInputCardProps) {
@@ -295,10 +305,14 @@ export function VoiceInputCard({
               alignItems: 'center',
               justifyContent: 'center',
             }}>
-            <MaterialCommunityIcons name="waveform" size={30} color={colors.accent} />
+            <MaterialCommunityIcons
+              name={hasFailed ? 'microphone-message' : 'waveform'}
+              size={30}
+              color={hasFailed ? (isDark ? '#FCA5A5' : '#DC2626') : colors.accent}
+            />
           </View>
           <ThemedText variant="cardTitle" style={{ color: colors.text }}>
-            Recording ready
+            {hasFailed ? 'Recording kept' : 'Recording ready'}
           </ThemedText>
         </View>
 
@@ -340,7 +354,11 @@ export function VoiceInputCard({
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <>
-                  <MaterialCommunityIcons name="flash" size={14} color="#FFFFFF" />
+                  <MaterialCommunityIcons
+                    name={hasFailed ? 'refresh' : 'flash'}
+                    size={14}
+                    color="#FFFFFF"
+                  />
                   <ThemedText
                     numberOfLines={1}
                     style={{
@@ -350,7 +368,7 @@ export function VoiceInputCard({
                       fontFamily: theme.typography.button.fontFamily,
                       fontWeight: theme.typography.button.fontWeight,
                     }}>
-                    Process
+                    {hasFailed ? 'Try again' : 'Process'}
                   </ThemedText>
                 </>
               )}
