@@ -70,6 +70,19 @@ export type SplitParticipantForm = {
   friendId: number | null;
   friendName: string;
   shareAmount: string;
+  /**
+   * The percentage as typed, when the user is working in percentages.
+   *
+   * `shareAmount` is what gets saved — a split is money owed, not a ratio — but
+   * it cannot be the only thing stored. A percentage is meaningless until the
+   * total exists, and deriving the field from the amount on every keystroke
+   * meant that with no amount yet entered, every digit typed round-tripped
+   * through `share = 0` and came back as an empty field. The intent is kept
+   * here, and turns into money as soon as there is a total to take it from.
+   *
+   * Undefined means the share was set as an amount, and the amount leads.
+   */
+  sharePercent?: string;
   direction: 'friend_owes_user' | 'user_owes_friend';
 };
 
@@ -213,6 +226,17 @@ const splitParticipantDivisor = (participantCount: number) => participantCount +
 const equalShareAmount = (amount: number, participantCount: number) => {
   if (!Number.isFinite(amount) || amount <= 0 || participantCount <= 0) return '';
   return toAmountInputValue(amount / splitParticipantDivisor(participantCount));
+};
+
+/**
+ * The equal-split percentage, which — unlike the equal-split *amount* — can
+ * always be worked out. That is the whole reason "Split equally" now has
+ * something to do before an amount is typed.
+ */
+const equalSharePercent = (participantCount: number) => {
+  if (participantCount <= 0) return '';
+  const percent = 100 / splitParticipantDivisor(participantCount);
+  return String(Math.round(percent * 100) / 100);
 };
 
 const percentFromShare = (shareAmount: string, totalAmount: string) => {
@@ -711,6 +735,32 @@ export function TransactionFormModal({
   }, []);
 
   /**
+   * A share held as a percentage follows the total.
+   *
+   * This is what makes a percentage typed before the amount — or an equal split
+   * chosen before it — mean anything: the shares are recomputed the moment the
+   * total exists, and again whenever it is corrected. Shares entered as amounts
+   * carry no percentage and are left exactly as the user typed them.
+   *
+   * The identity check matters: returning `prev` unchanged when nothing moved
+   * is what keeps this from re-entering itself on every render.
+   */
+  useEffect(() => {
+    setForm((prev) => {
+      if (!prev.splitEnabled) return prev;
+      let changed = false;
+      const splitParticipants = prev.splitParticipants.map((participant) => {
+        if (participant.sharePercent == null) return participant;
+        const shareAmount = shareFromPercent(participant.sharePercent, prev.amount);
+        if (shareAmount === participant.shareAmount) return participant;
+        changed = true;
+        return { ...participant, shareAmount };
+      });
+      return changed ? { ...prev, splitParticipants } : prev;
+    });
+  }, [form.amount, form.splitEnabled]);
+
+  /**
    * One tap for a whole transaction shape. Category-only chips leave the
    * payment mode and account alone — see the note on `QuickFill`.
    */
@@ -1104,13 +1154,40 @@ export function TransactionFormModal({
     }));
   };
 
+  /**
+   * Everything split evenly. Adding or removing a share redistributes, and so
+   * does the "Split equally" button.
+   *
+   * It writes the percentage as well as the amount, so the result is visible in
+   * whichever unit the user is looking at — and so an even split entered before
+   * the amount still lands once the amount arrives.
+   */
   const rebalanceSplitParticipants = (
     participants: SplitParticipantForm[],
     amountValue = Number(form.amount || 0)
   ) => {
-    const defaultShare = equalShareAmount(amountValue, participants.length);
-    if (!defaultShare) return participants;
-    return participants.map((participant) => ({ ...participant, shareAmount: defaultShare }));
+    if (participants.length === 0) return participants;
+    const sharePercent = equalSharePercent(participants.length);
+    const shareAmount = equalShareAmount(amountValue, participants.length);
+    return participants.map((participant) => ({ ...participant, sharePercent, shareAmount }));
+  };
+
+  const applyEqualSplit = (participants?: SplitParticipantForm[]) => {
+    setForm((prev) => {
+      const base = participants ?? prev.splitParticipants;
+      if (base.length === 0) return prev;
+      return {
+        ...prev,
+        splitParticipants: rebalanceSplitParticipants(base, Number(prev.amount || 0)),
+      };
+    });
+    // With no amount there is nothing to write into the amount fields, and a
+    // button that leaves the screen exactly as it found it reads as broken.
+    // The percentages are the half of the answer that exists either way, so
+    // the view moves to where the result is.
+    if (!(Number(form.amount || 0) > 0)) {
+      setSplitShareMode('percentage');
+    }
   };
 
   const updateSplitParticipant = (index: number, updates: Partial<SplitParticipantForm>) => {
@@ -2172,6 +2249,7 @@ export function TransactionFormModal({
                                         shareAmount: prev.amount
                                           ? toAmountInputValue(roundToPaise(prev.amount) / 2)
                                           : '',
+                                        sharePercent: '50',
                                         direction: 'friend_owes_user',
                                       },
                                     ]
@@ -2253,13 +2331,9 @@ export function TransactionFormModal({
                                   <Pressable
                                     accessibilityRole="button"
                                     onPress={() =>
-                                      setForm((p) => ({
-                                        ...p,
-                                        splitParticipants: buildParticipantsForGroup(
-                                          selectedSplitGroup,
-                                          p.amount
-                                        ),
-                                      }))
+                                      applyEqualSplit(
+                                        buildParticipantsForGroup(selectedSplitGroup, form.amount)
+                                      )
                                     }
                                     className="mt-3 flex-row items-center justify-center gap-2 rounded-2xl border py-3"
                                     style={{ borderColor: theme.border }}>
@@ -2342,15 +2416,7 @@ export function TransactionFormModal({
                               </View>
                               <Pressable
                                 accessibilityRole="button"
-                                onPress={() =>
-                                  setForm((prev) => ({
-                                    ...prev,
-                                    splitParticipants: rebalanceSplitParticipants(
-                                      prev.splitParticipants,
-                                      Number(prev.amount || 0)
-                                    ),
-                                  }))
-                                }
+                                onPress={() => applyEqualSplit()}
                                 className="flex-row items-center justify-center gap-2 rounded-2xl border py-3"
                                 style={{ borderColor: theme.border }}>
                                 <MaterialCommunityIcons
@@ -2463,15 +2529,25 @@ export function TransactionFormModal({
                                   <TextInput
                                     value={
                                       splitShareMode === 'percentage'
-                                        ? percentFromShare(participant.shareAmount, form.amount)
+                                        ? (participant.sharePercent ??
+                                          percentFromShare(participant.shareAmount, form.amount))
                                         : participant.shareAmount
                                     }
                                     onChangeText={(text) => {
+                                      if (splitShareMode === 'percentage') {
+                                        updateSplitParticipant(index, {
+                                          sharePercent: text,
+                                          shareAmount: shareFromPercent(text, form.amount),
+                                        });
+                                        return;
+                                      }
+                                      // An amount typed by hand is the whole
+                                      // instruction; a percentage left over
+                                      // from before would overwrite it the
+                                      // next time the total changed.
                                       updateSplitParticipant(index, {
-                                        shareAmount:
-                                          splitShareMode === 'percentage'
-                                            ? shareFromPercent(text, form.amount)
-                                            : text,
+                                        shareAmount: text,
+                                        sharePercent: undefined,
                                       });
                                     }}
                                     keyboardType="decimal-pad"
