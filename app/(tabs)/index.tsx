@@ -32,6 +32,7 @@ import { HomeHeader } from '@/components/home/HomeHeader';
 import { MonthStrip } from '@/components/home/MonthStrip';
 import { QuickPrompts } from '@/components/home/QuickPrompts';
 import { TransactionItem } from '@/components/home/TransactionItem';
+import { ParseErrorCard } from '@/components/home/ParseErrorCard';
 import { VoiceInputCard } from '@/components/home/VoiceInputCard';
 import { CreditStatusCard } from '@/components/billing/CreditStatusCard';
 import { GuestUpgradePrompt } from '@/components/home/GuestUpgradePrompt';
@@ -87,6 +88,8 @@ import {
   isParseAnswer,
   looksLikeQuestion,
   ParseApiError,
+  describeParseFailure,
+  type ParseFailure,
   parseEntryDraft,
   type LedgerAnswer,
   type ParseResponse,
@@ -284,6 +287,14 @@ export default function HomeScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /**
+   * A failed capture, as something the user can act on rather than a red line.
+   * It is separate from `errorMessage` because the two are different objects:
+   * that one is a sentence about the screen (no microphone, entries would not
+   * load), this one is a dead end in the middle of a task, and it comes with
+   * the way out.
+   */
+  const [parseFailure, setParseFailure] = useState<ParseFailure | null>(null);
   const [isTextInputVisible, setIsTextInputVisible] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
@@ -340,6 +351,12 @@ export default function HomeScreen() {
   const [autopayReviews, setAutopayReviews] = useState<SubscriptionOccurrence[]>([]);
   const [isGuestUpgradeSnoozed, setIsGuestUpgradeSnoozed] = useState(true);
   const createIdempotencyKey = useRef<string | null>(null);
+  /**
+   * The text of the last capture attempt, so "Try again" can re-send it.
+   * Null means the attempt was a recording — that one is re-sent from
+   * `recordedUri` instead, and both are cleared only on success.
+   */
+  const lastPromptText = useRef<string | null>(null);
   const resumeDraftAfterAccounts = useRef(false);
   const saveConfirmationAnim = useRef(new RNAnimated.Value(0)).current;
   const motion = useMotion();
@@ -671,6 +688,7 @@ export default function HomeScreen() {
     }
     try {
       setErrorMessage(null);
+      setParseFailure(null);
       setRecordedUri(null);
       await setAudioModeAsync({
         allowsRecording: true,
@@ -796,7 +814,9 @@ export default function HomeScreen() {
     setRecordedUri(null);
     setInputText('');
     setErrorMessage(null);
+    setParseFailure(null);
     setCreditAction(null);
+    lastPromptText.current = null;
   }, []);
 
   const handleOpenManualEntry = useCallback(() => {
@@ -974,8 +994,10 @@ export default function HomeScreen() {
     }
     setIsSubmitting(true);
     setErrorMessage(null);
+    setParseFailure(null);
     setCreditAction(null);
     setAnswer(null);
+    lastPromptText.current = overrideText ? trimmed : null;
     // Typed text that reads as a question waits behind an inline indicator
     // instead of the draft sheet. The server still decides what it was — this
     // only decides where the wait is shown.
@@ -1146,9 +1168,7 @@ export default function HomeScreen() {
           return;
         }
       }
-      setErrorMessage(
-        getFriendlyErrorMessage(error, 'Something went wrong while parsing.')
-      );
+      setParseFailure(describeParseFailure(error));
     } finally {
       setIsParsing(false);
       setIsSubmitting(false);
@@ -1168,6 +1188,32 @@ export default function HomeScreen() {
   ]);
 
   const handleSubmitPrompt = useCallback(() => submitPrompt(), [submitPrompt]);
+
+  /**
+   * Re-send exactly what failed. A quick prompt never reached the input field,
+   * so it is replayed from the ref; a typed sentence and a recording are both
+   * still where they were left, and `submitPrompt` picks whichever is there.
+   */
+  const handleRetryPrompt = useCallback(() => {
+    void submitPrompt(lastPromptText.current ?? undefined);
+  }, [submitPrompt]);
+
+  /**
+   * An example lands in the field rather than being sent. Someone whose
+   * sentence was just rejected should get to read the replacement — and edit
+   * the amount to their own — before it costs another credit.
+   */
+  const handleUseExample = useCallback((example: string) => {
+    setParseFailure(null);
+    setRecordedUri(null);
+    setInputText(example);
+    setIsTextInputVisible(true);
+  }, []);
+
+  const handleAddManuallyAfterFailure = useCallback(() => {
+    setParseFailure(null);
+    handleOpenManualEntry();
+  }, [handleOpenManualEntry]);
 
   const renderRecentActivity = () => {
     if (isEntriesLoading) {
@@ -1427,6 +1473,18 @@ export default function HomeScreen() {
             onLongPress={handleLongPressPrompt}
           />
 
+          {parseFailure && (
+            <ParseErrorCard
+              failure={parseFailure}
+              onRetry={handleRetryPrompt}
+              onDismiss={() => setParseFailure(null)}
+              onUseExample={handleUseExample}
+              onAddManually={handleAddManuallyAfterFailure}
+              isRetrying={isSubmitting}
+              style={{ marginHorizontal: 24, marginBottom: 24 }}
+            />
+          )}
+
           {errorMessage && (
             <ErrorBanner
               message={errorMessage}
@@ -1523,6 +1581,7 @@ export default function HomeScreen() {
               onChangeText={setInputText}
               onProcess={handleSubmitPrompt}
               onClear={handleClearRecording}
+              hasFailed={Boolean(parseFailure)}
               isProcessing={isSubmitting}
               isTextInputVisible={isTextInputVisible}
               onToggleTextInput={() => setIsTextInputVisible((current) => !current)}

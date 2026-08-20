@@ -186,6 +186,8 @@ export type ParseDraftInput = {
 type ParseErrorPayload = {
   error?: string;
   message?: string;
+  details?: string[];
+  transcript?: string;
   required_credits?: number;
   available_credits?: number;
   daily_limit_remaining?: number;
@@ -202,8 +204,7 @@ const parseErrorMessages: Record<string, string> = {
   guest_not_allowed: 'Create an account to use this AI feature.',
   non_transactional_prompt:
     'Tell Finnri about an expense, income, bill, split, subscription, or payment to add.',
-  could_not_parse:
-    'I could not find a clear transaction in that. Try including the amount, merchant, and payment method.',
+  could_not_parse: 'Finnri could not read that just now. Try again in a moment.',
   schema_invalid:
     'I could not turn that into a clean transaction. Try again with the amount, merchant, and payment method.',
 };
@@ -211,6 +212,10 @@ const parseErrorMessages: Record<string, string> = {
 export class ParseApiError extends Error {
   status: number;
   code?: string;
+  /** What the server heard, when it says. Shown back so a misheard word is visible. */
+  transcript?: string | null;
+  /** Schema complaints. Never shown — carried for logging and bug reports. */
+  details?: string[];
   requiredCredits?: number;
   availableCredits?: number;
   dailyLimitRemaining?: number;
@@ -225,6 +230,8 @@ export class ParseApiError extends Error {
     this.name = 'ParseApiError';
     this.status = status;
     this.code = code;
+    this.transcript = payload.transcript ?? null;
+    this.details = payload.details;
     this.requiredCredits = payload.required_credits;
     this.availableCredits = payload.available_credits;
     this.dailyLimitRemaining = payload.daily_limit_remaining;
@@ -234,6 +241,137 @@ export class ParseApiError extends Error {
     this.upgradeRequired = payload.upgrade_required;
   }
 }
+
+/**
+ * What a failed capture says, and what the user can do about it.
+ *
+ * A parse failure used to arrive as one red sentence with no way forward: it
+ * named no cause, offered no action, and left the recording sitting under a
+ * button still labelled "Process" — the same button that had just failed. The
+ * three things a person needs after a capture fails are the reason, a sentence
+ * that would work instead, and one press to try again, so the failure carries
+ * all three.
+ *
+ * `canRetry` is the honest part. Sending the same words again is worth doing
+ * when the parser stumbled or the model produced something unusable — those are
+ * not deterministic. It is not worth doing when the sentence itself is the
+ * problem, and offering a retry there would just spend another credit to reach
+ * the same place.
+ */
+export type ParseFailure = {
+  code?: string;
+  title: string;
+  message: string;
+  /** Rewrites of the same intent that do parse. Tappable — they fill the field. */
+  examples: string[];
+  /** True when re-sending the same input unchanged is worth a credit. */
+  canRetry: boolean;
+  /** What the server heard, when it told us. */
+  heard?: string | null;
+};
+
+type ParseFailureCopy = Omit<ParseFailure, 'code' | 'heard'>;
+
+const genericParseFailure: ParseFailureCopy = {
+  title: 'That capture did not go through',
+  message: 'Something failed between here and Finnri. Try it again in a moment.',
+  examples: [],
+  canRetry: true,
+};
+
+const parseFailureCopy: Record<string, ParseFailureCopy> = {
+  // The model answered, but not with a transaction this app can hold. The
+  // sentence is usually fine — it is the shape of the reply that broke — so a
+  // straight retry genuinely often works.
+  schema_invalid: {
+    title: 'I heard it, but could not shape it',
+    message:
+      'The words came through; the transaction did not. Try again, or say it as one line: the amount, what it was for, and how you paid.',
+    examples: [
+      'Paid 10000 advance rent to landlord by UPI',
+      'Paid 10000 rent by UPI, split with the bubu-dudu group',
+    ],
+    canRetry: true,
+  },
+  could_not_parse: {
+    title: 'Finnri could not read that',
+    message: 'The parser did not answer this time. This one is usually temporary.',
+    examples: [],
+    canRetry: true,
+  },
+  invalid_parse_response: {
+    title: 'Finnri could not read that',
+    message: 'The parser answered with something unusable. Sending it again usually clears it.',
+    examples: [],
+    canRetry: true,
+  },
+  non_transactional_prompt: {
+    title: 'There is no money in that sentence',
+    message:
+      'Tell me about money that moved — an expense, income, a bill, a split, a subscription — and I will file it.',
+    examples: ['Spent 250 on coffee via UPI', 'Got 2000 from freelance work'],
+    canRetry: false,
+  },
+  transcription_failed: {
+    title: 'I could not hear that clearly',
+    message: 'The recording did not come through. Record again somewhere quieter, or type it.',
+    examples: [],
+    canRetry: true,
+  },
+  transcript_too_long: {
+    title: 'That was a long one',
+    message: 'Keep it to a sentence or two — one transaction at a time.',
+    examples: [],
+    canRetry: false,
+  },
+  audio_too_long_for_ai: {
+    title: 'That recording was too long',
+    message: 'Record a shorter clip — a sentence is plenty.',
+    examples: [],
+    canRetry: false,
+  },
+  empty_audio: {
+    title: 'Nothing was recorded',
+    message: 'The clip came through empty. Record again, or type the entry instead.',
+    examples: [],
+    canRetry: false,
+  },
+  guest_not_allowed: {
+    title: 'Create an account to use this',
+    message: 'AI capture needs an account. Everything you have added so far comes with you.',
+    examples: [],
+    canRetry: false,
+  },
+  feature_locked: {
+    title: 'This needs an active plan',
+    message: 'AI capture is part of a paid plan. You can still add the entry by hand.',
+    examples: [],
+    canRetry: false,
+  },
+};
+
+/** True for the errors the credit UI on Home already owns. */
+export const isCreditParseError = (error: unknown) =>
+  error instanceof ParseApiError &&
+  (error.code === 'insufficient_ai_credits' || error.code === 'daily_ai_limit_reached');
+
+export const describeParseFailure = (error: unknown): ParseFailure => {
+  if (error instanceof ParseApiError) {
+    const copy = (error.code && parseFailureCopy[error.code]) || {
+      ...genericParseFailure,
+      // An unmapped code still carries the server's own sentence, which beats
+      // a house-written guess at what went wrong.
+      message: error.message || genericParseFailure.message,
+    };
+    return { ...copy, code: error.code, heard: error.transcript };
+  }
+  // No status, no payload: the request never got an answer.
+  return {
+    ...genericParseFailure,
+    title: 'Could not reach Finnri',
+    message: 'Check your connection and try again — nothing was lost.',
+  };
+};
 
 const readParseError = async (response: Response) => {
   const fallback = 'Unable to parse the entry right now.';
