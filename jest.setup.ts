@@ -134,6 +134,26 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 
+// The app always renders inside a `SafeAreaProvider` — Expo Router mounts one
+// and the root layout seeds a nested one with `initialWindowMetrics`. A test
+// that renders a screen on its own has neither, and `useSafeAreaInsets` throws
+// rather than degrading, so every screen under `OnboardingScreenWrapper` would
+// fail for want of a provider it will never actually be missing.
+//
+// Fixed non-zero insets rather than zeroes: a screen that only lays out
+// correctly when the insets happen to be 0 is the bug this mock exists to let
+// us keep testing around.
+jest.mock('react-native-safe-area-context', () => {
+  const insets = { top: 24, right: 0, bottom: 16, left: 0 };
+  const frame = { x: 0, y: 0, width: 390, height: 844 };
+  return {
+    ...jest.requireActual('react-native-safe-area-context'),
+    useSafeAreaInsets: () => insets,
+    useSafeAreaFrame: () => frame,
+    initialWindowMetrics: { insets, frame },
+  };
+});
+
 // Haptics are a real assertion target now — "did the app answer on the hand"
 // is part of what C2 and C3 promise — so these are spies rather than no-ops.
 //
