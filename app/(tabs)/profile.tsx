@@ -74,19 +74,31 @@ export default function ProfileScreen() {
   const isProfileIncomplete = !user?.username?.trim() || !hasEmail || !hasPhone;
 
   /**
-   * One fact, one line.
+   * One fact, one line — and the fact has to be the one the balance is in.
    *
    * This was a progress bar plus "12/50 used today", "38 daily left" and
    * "214 total credits left" — four renderings of one number, two of which
    * were the same number subtracted from different things. What a user wants
    * off this screen is whether they can run another AI capture right now.
+   *
+   * The line that replaced them called that one fact "AI actions", which it is
+   * not: a capture costs several credits, so "50 AI actions left" promised ten
+   * times the captures it could pay for. Everything else in the app — the
+   * credit card on Home, the billing screen, the out-of-credits prompt — says
+   * credits, and so does this now. At zero the number has nothing left to
+   * report, so the line points at the way out instead, which differs for a
+   * guest.
    */
   const credits = billingStatus?.credits;
   const creditLine = isBillingLoading
     ? 'Checking your balance'
-    : credits
-      ? `${credits.daily_credits_remaining} AI actions left today`
-      : 'Plans, credits and lifetime quote';
+    : !credits || credits.daily_limit <= 0
+      ? 'Plans, credits and lifetime quote'
+      : credits.daily_credits_remaining > 0
+        ? `${credits.daily_credits_remaining} AI credits left today`
+        : isGuest
+          ? 'No AI credits left today — sign in for more'
+          : 'No AI credits left today — they reset tomorrow';
 
   return (
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
@@ -166,6 +178,38 @@ export default function ProfileScreen() {
               )}
             </Pressable>
           </View>
+
+          {/* The one thing a guest most needs from this screen, so it opens the
+            screen rather than closing it. Signing out is an exit and earns the
+            bottom of the page; signing in is an invitation and does not. */}
+          {isGuest ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/auth?mode=link')}
+              className="flex-row items-center rounded-[28px] p-5"
+              style={{ backgroundColor: colors.secondary }}>
+              <View
+                className="w-11 h-11 rounded-2xl items-center justify-center mr-4"
+                style={{ backgroundColor: cardColor }}>
+                <MaterialCommunityIcons
+                  name={getMoodIconName('login', iconStyle) as any}
+                  size={22}
+                  color={colors.accent}
+                />
+              </View>
+              <View className="flex-1 mr-3">
+                <TText
+                  className="text-base font-bold"
+                  style={{ color: colors.accent, fontFamily: Fonts.title }}>
+                  Sign in / Create account
+                </TText>
+                <TText className="text-xs opacity-60 mt-0.5" style={{ fontFamily: Fonts.body }}>
+                  Keep your data safe and unlock more AI credits
+                </TText>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={colors.accent} />
+            </Pressable>
+          ) : null}
 
           {/* Plan */}
           <View>
@@ -274,29 +318,26 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Account action */}
-          <Pressable
-            onPress={() => {
-              if (isGuest) {
-                router.push('/auth?mode=link');
-                return;
-              }
-              handleLogout();
-            }}
-            className="flex-row items-center justify-center h-16 rounded-[24px] mt-2 mb-2"
-            style={{ backgroundColor: isGuest ? colors.secondary : '#FFF5F2' }}>
-            <MaterialCommunityIcons
-              name={getMoodIconName(isGuest ? 'login' : 'logout', iconStyle) as any}
-              size={20}
-              color={isGuest ? colors.accent : '#D32F2F'}
-              style={{ marginRight: 10 }}
-            />
-            <TText
-              className="text-base font-bold"
-              style={{ color: isGuest ? colors.accent : '#D32F2F', fontFamily: Fonts.title }}>
-              {isGuest ? 'Sign in / Create account' : 'Time to Log Out?'}
-            </TText>
-          </Pressable>
+          {/* Sign out — last thing on the screen, where a destructive action
+            belongs. A guest sees the sign-in invitation up top instead. */}
+          {isGuest ? null : (
+            <Pressable
+              onPress={handleLogout}
+              className="flex-row items-center justify-center h-16 rounded-[24px] mt-2 mb-2"
+              style={{ backgroundColor: '#FFF5F2' }}>
+              <MaterialCommunityIcons
+                name={getMoodIconName('logout', iconStyle) as any}
+                size={20}
+                color="#D32F2F"
+                style={{ marginRight: 10 }}
+              />
+              <TText
+                className="text-base font-bold"
+                style={{ color: '#D32F2F', fontFamily: Fonts.title }}>
+                Time to Log Out?
+              </TText>
+            </Pressable>
+          )}
 
           {/* Footer */}
           <TText
