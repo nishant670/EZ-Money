@@ -1,8 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { BackHandler, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -51,13 +51,28 @@ export default function AppMoodScreen() {
   const softSurface = isDark ? colors.secondary : selected.light.secondary;
   const previewCard = isDark ? colors.card : '#FFFFFF';
 
-  const goBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-    router.replace('/(tabs)/profile');
-  };
+  /**
+   * App Mood is a tab screen without a tab of its own, and the tab navigator's
+   * default back behaviour is `firstRoute` — so `router.back()` from here
+   * landed on Insights rather than on Profile, the only screen that opens it.
+   * Naming the destination keeps the return trip honest, and `navigate` reuses
+   * the Profile tab that is already mounted instead of remounting it.
+   */
+  const goBack = React.useCallback(() => {
+    router.navigate('/(tabs)/profile');
+  }, [router]);
+
+  // The hardware back button reaches the navigator, not the header, so it needs
+  // the same redirection while this screen is the focused one.
+  useFocusEffect(
+    React.useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        goBack();
+        return true;
+      });
+      return () => subscription.remove();
+    }, [goBack])
+  );
 
   return (
     <SafeAreaView

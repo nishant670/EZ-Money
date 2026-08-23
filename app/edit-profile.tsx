@@ -3,7 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -13,7 +13,6 @@ import {
   Text,
   TextInput,
   View,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { ThemedAlertDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -29,6 +29,16 @@ import { updateProfile, authOtpSend, authOtpVerify } from '@/lib/auth';
 import { getMonogram } from '@/lib/monogram';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
+
+/** The backend issues six-digit codes; the boxes on screen have to say so. */
+const OTP_LENGTH = 6;
+
+type AlertState = {
+  title: string;
+  message: string;
+  tone?: 'info' | 'success' | 'danger';
+  onDismiss?: () => void;
+};
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -47,11 +57,28 @@ export default function EditProfileScreen() {
   // OTP State
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState('');
+  const [otpFocused, setOtpFocused] = useState(false);
   const [verifyingIdentifier, setVerifyingIdentifier] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const otpInputRef = useRef<TextInput>(null);
+
+  // Every message this screen raises goes through the themed dialog rather than
+  // `Alert.alert`, so the flow never ends on a stock system box.
+  const [alert, setAlert] = useState<AlertState | null>(null);
+  const showAlert = useCallback((next: AlertState) => setAlert(next), []);
+  const dismissAlert = useCallback(() => {
+    const onDismiss = alert?.onDismiss;
+    setAlert(null);
+    onDismiss?.();
+  }, [alert]);
 
   const cardColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
   const backgroundColor = colorScheme === 'light' ? '#F9F7FB' : theme.background;
+  const isDark = colorScheme === 'dark';
+  const sheetSurface = isDark ? theme.card : '#FFFFFF';
+  const otpBoxSurface = isDark ? 'rgba(255,255,255,0.06)' : '#F7F7F9';
+  const otpBoxBorder = isDark ? 'rgba(255,255,255,0.12)' : '#EDEDF1';
+  const otpFilledBorder = isDark ? 'rgba(33,150,243,0.55)' : '#C9DFF5';
 
   const handleChangePhoto = async () => {
     try {
@@ -67,7 +94,10 @@ export default function EditProfileScreen() {
 
       const asset = result.assets[0];
       if (!asset?.uri) {
-        Alert.alert('Photo not selected', 'Please choose an image file to use as your profile photo.');
+        showAlert({
+          title: 'Photo not selected',
+          message: 'Please choose an image file to use as your profile photo.',
+        });
         return;
       }
 
@@ -88,13 +118,17 @@ export default function EditProfileScreen() {
         await FileSystem.deleteAsync(previousPhoto, { idempotent: true });
       }
     } catch {
-      Alert.alert('Photo not updated', 'Unable to select that image right now.');
+      showAlert({
+        title: 'Photo not updated',
+        message: 'Unable to select that image right now.',
+        tone: 'danger',
+      });
     }
   };
 
   const handleUpdate = async () => {
     if (!name.trim()) {
-      Alert.alert('Error', 'Name cannot be empty.');
+      showAlert({ title: 'Error', message: 'Name cannot be empty.', tone: 'danger' });
       return;
     }
     if (!token) return;
@@ -103,7 +137,10 @@ export default function EditProfileScreen() {
     const phoneChanged = (user?.phone || '') !== phone.trim();
 
     if (emailChanged && phoneChanged) {
-      Alert.alert('Notice', 'Please update Email and Phone separately for security.');
+      showAlert({
+        title: 'Notice',
+        message: 'Please update Email and Phone separately for security.',
+      });
       return;
     }
 
@@ -127,17 +164,26 @@ export default function EditProfileScreen() {
     setIsLoading(true);
     try {
       await authOtpSend(identifier);
+      setOtpCode('');
       setShowOtp(true);
     } catch {
-      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+      showAlert({
+        title: 'Error',
+        message: 'Failed to send OTP. Please try again.',
+        tone: 'danger',
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const verifyOtp = async () => {
-    if (otpCode.length < 4) {
-      Alert.alert('Error', 'Please enter a valid OTP.');
+    if (otpCode.length < OTP_LENGTH) {
+      showAlert({
+        title: 'Error',
+        message: `Please enter the ${OTP_LENGTH}-digit code we sent you.`,
+        tone: 'danger',
+      });
       return;
     }
     setIsVerifying(true);
@@ -147,7 +193,7 @@ export default function EditProfileScreen() {
       setOtpCode('');
       performUpdate(res.claim_token);
     } catch {
-      Alert.alert('Error', 'Invalid OTP. Please try again.');
+      showAlert({ title: 'Error', message: 'Invalid OTP. Please try again.', tone: 'danger' });
     } finally {
       setIsVerifying(false);
     }
@@ -165,18 +211,25 @@ export default function EditProfileScreen() {
         claim_token: claimToken,
       });
       updateUser(result.user);
-      Alert.alert('Success', 'Profile updated successfully!', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      showAlert({
+        title: 'Success',
+        message: 'Profile updated successfully!',
+        tone: 'success',
+        onDismiss: () => router.back(),
+      });
     } catch (error: any) {
       // Handle specific errors
       const msg = getFriendlyErrorMessage(error, 'Failed to update profile.');
       if (msg.includes('Username is already taken')) {
-        Alert.alert('Username Taken', 'This username is already in use. Please choose another.');
+        showAlert({
+          title: 'Username Taken',
+          message: 'This username is already in use. Please choose another.',
+          tone: 'danger',
+        });
       } else if (msg.includes('verification required')) {
-        Alert.alert('Verification Required', msg);
+        showAlert({ title: 'Verification Required', message: msg, tone: 'danger' });
       } else {
-        Alert.alert('Error', msg);
+        showAlert({ title: 'Error', message: msg, tone: 'danger' });
       }
     } finally {
       setIsLoading(false);
@@ -365,12 +418,22 @@ export default function EditProfileScreen() {
       </SafeAreaView>
 
       {/* OTP Modal */}
-      <AnimatedBottomSheet visible={showOtp} onClose={() => setShowOtp(false)}>
-          <View className="bg-white rounded-t-[32px] p-8 pb-12 items-center">
-            <View className="w-12 h-1 rounded-full bg-gray-300 mb-6" />
+      {/*
+        * `avoidKeyboard` is what keeps the code field visible: the sheet lives
+        * in its own Android window, which `adjustResize` never reaches, so
+        * without it the number pad slid straight over the boxes being typed in.
+        */}
+      <AnimatedBottomSheet visible={showOtp} onClose={() => setShowOtp(false)} avoidKeyboard>
+          <View
+            className="rounded-t-[32px] p-8 pb-12 items-center"
+            style={{ backgroundColor: sheetSurface }}>
+            <View
+              className="w-12 h-1 rounded-full mb-6"
+              style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.24)' : '#D5D0D8' }}
+            />
             <View
               className="w-16 h-16 rounded-full items-center justify-center mb-4"
-              style={{ backgroundColor: '#E3F2FD' }}>
+              style={{ backgroundColor: isDark ? 'rgba(33,150,243,0.18)' : '#E3F2FD' }}>
               <MaterialCommunityIcons name="shield-check" size={32} color="#2196F3" />
             </View>
             <TText
@@ -382,22 +445,71 @@ export default function EditProfileScreen() {
               We sent a code to {verifyingIdentifier}.{'\n'}Enter it below to confirm this change.
             </TText>
 
-            <TextInput
-              value={otpCode}
-              onChangeText={setOtpCode}
-              placeholder="1234"
-              keyboardType="number-pad"
-              maxLength={6}
-              className="w-full h-16 rounded-2xl bg-gray-50 text-center text-2xl font-bold tracking-widest mb-6 border border-gray-100"
-              style={{ fontFamily: Fonts.title, color: theme.text }}
-              autoFocus
-            />
+            {/*
+              * One input behind six boxes rather than a single free-text field:
+              * the boxes say how many digits are expected without a placeholder
+              * having to imply it, and the real caret stays hidden so it can
+              * never sit off to one side of centred text.
+              */}
+            <Pressable
+              accessibilityRole="none"
+              className="w-full mb-6"
+              onPress={() => otpInputRef.current?.focus()}>
+              <View className="flex-row justify-between">
+                {Array.from({ length: OTP_LENGTH }).map((_, index) => {
+                  const digit = otpCode[index] ?? '';
+                  const isCaret =
+                    otpFocused &&
+                    (index === otpCode.length ||
+                      (otpCode.length === OTP_LENGTH && index === OTP_LENGTH - 1));
+                  return (
+                    <View
+                      key={index}
+                      className="h-16 flex-1 mx-1 rounded-2xl items-center justify-center border"
+                      style={{
+                        backgroundColor: otpBoxSurface,
+                        borderColor: isCaret ? '#2196F3' : digit ? otpFilledBorder : otpBoxBorder,
+                        borderWidth: isCaret ? 2 : 1,
+                      }}>
+                      <Text
+                        style={{ fontFamily: Fonts.title, fontSize: 22, color: theme.text }}>
+                        {digit}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <TextInput
+                ref={otpInputRef}
+                value={otpCode}
+                onChangeText={(text) =>
+                  setOtpCode(text.replace(/\D/g, '').slice(0, OTP_LENGTH))
+                }
+                onFocus={() => setOtpFocused(true)}
+                onBlur={() => setOtpFocused(false)}
+                keyboardType="number-pad"
+                maxLength={OTP_LENGTH}
+                caretHidden
+                autoFocus
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  opacity: 0,
+                }}
+              />
+            </Pressable>
 
             <Pressable
               onPress={verifyOtp}
-              disabled={isVerifying}
+              disabled={isVerifying || otpCode.length < OTP_LENGTH}
               className="w-full h-14 rounded-full items-center justify-center mb-4"
-              style={{ backgroundColor: '#2196F3' }}>
+              style={{
+                backgroundColor: '#2196F3',
+                opacity: isVerifying || otpCode.length < OTP_LENGTH ? 0.6 : 1,
+              }}>
               {isVerifying ? (
                 <ActivityIndicator color="white" />
               ) : (
@@ -416,6 +528,14 @@ export default function EditProfileScreen() {
             </Pressable>
           </View>
       </AnimatedBottomSheet>
+
+      <ThemedAlertDialog
+        visible={alert !== null}
+        title={alert?.title ?? ''}
+        message={alert?.message ?? ''}
+        tone={alert?.tone ?? 'info'}
+        onDismiss={dismissAlert}
+      />
     </>
   );
 }
