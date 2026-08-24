@@ -171,10 +171,34 @@ export const DefaultAppMood: AppMoodSettings = {
   iconStyle: 'whimsical',
 };
 
+/**
+ * Secondary text, as an alpha over the mood's own ink rather than a grey.
+ *
+ * Screens had been reaching for `text-black/55 dark:text-white/55`, or a
+ * literal `rgba(120,120,120,…)`, for the line under a row's title. That is two
+ * problems in one: the mood's text colour is not black — Mint's is `#182C24`,
+ * Sky's `#172437` — so the caption drifted off-hue from the title directly
+ * above it, and the opacity was chosen per call site, which is how the split
+ * feature alone ended up carrying six different values for one rank of text.
+ *
+ * Two ranks is the whole vocabulary. `muted` is the caption band, and lands on
+ * `99` because that is what `AppHeader` had already settled on for a subtitle.
+ * `mutedStrong` is for text that is secondary but still read as prose — an
+ * empty state's explanation, a sheet's opening line.
+ *
+ * They stay alpha rather than pre-blended so they composite correctly over a
+ * card, the screen background, or a tinted surface — which is exactly what the
+ * `text-black/55` they replace was doing.
+ */
+const MUTED_ALPHA = '99';
+const MUTED_STRONG_ALPHA = 'BF';
+
 function createColors(mood: MoodPalette) {
   return {
     light: {
       text: mood.light.text,
+      muted: `${mood.light.text}${MUTED_ALPHA}`,
+      mutedStrong: `${mood.light.text}${MUTED_STRONG_ALPHA}`,
       background: mood.light.background,
       tint: mood.accent,
       accent: mood.accent,
@@ -192,6 +216,8 @@ function createColors(mood: MoodPalette) {
     },
     dark: {
       text: mood.dark.text,
+      muted: `${mood.dark.text}${MUTED_ALPHA}`,
+      mutedStrong: `${mood.dark.text}${MUTED_STRONG_ALPHA}`,
       background: mood.dark.background,
       tint: mood.accent,
       accent: mood.accent,
@@ -278,7 +304,7 @@ export function getMoodIconName(name: string, iconStyle: IconStyle, active = fal
     return outlineIconNames[name] ?? name;
   }
 
-  return active ? filledIconNames[name] ?? name : name;
+  return active ? (filledIconNames[name] ?? name) : name;
 }
 
 export const Fonts = Platform.select({

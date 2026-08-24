@@ -3,12 +3,7 @@ import { View } from 'react-native';
 
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
-export function GroupTile({
-  icon,
-}: {
-  variant: number;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-}) {
+export function GroupTile({ icon }: { icon: keyof typeof MaterialCommunityIcons.glyphMap }) {
   const theme = useThemeTokens();
 
   return (

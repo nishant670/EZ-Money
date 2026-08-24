@@ -81,7 +81,7 @@ export function Segments<Key extends string>({
             <MaterialCommunityIcons
               name={option.icon}
               size={16}
-              color={selected ? theme.accent : `${theme.text}F2`}
+              color={selected ? theme.accent : theme.muted}
             />
             <ThemedText
               className="text-sm"

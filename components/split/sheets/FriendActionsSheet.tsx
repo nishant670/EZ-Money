@@ -34,7 +34,7 @@ export function FriendActionsSheet({
             <TText variant="sectionTitle">
               {friend?.name ?? 'Friend'}
             </TText>
-            <TText className="mt-1 text-xs text-black/55 dark:text-white/55">
+            <TText className="mt-1 text-xs" style={{ color: theme.muted }}>
               Manage this split friend
             </TText>
           </View>

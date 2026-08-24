@@ -76,7 +76,7 @@ export function GroupActionModal({
             <TText variant="screenTitle" style={{ color: theme.text }}>
               {title}
             </TText>
-            <TText className="mt-1 text-xs text-black/50 dark:text-white/50">
+            <TText className="mt-1 text-xs" style={{ color: theme.muted }}>
               {summary.group.name}
             </TText>
           </View>
@@ -96,7 +96,7 @@ export function GroupActionModal({
               <TText variant="screenTitle" style={{ color: theme.text }}>
                 Outstanding balances
               </TText>
-              <TText className="mt-2 text-sm leading-5 text-black/55 dark:text-white/55">
+              <TText className="mt-2 text-sm leading-5" style={{ color: theme.muted }}>
                 Pick a balance to record the settlement direction and amount automatically.
               </TText>
               <View className="mt-6 gap-3">
@@ -186,12 +186,12 @@ export function GroupActionModal({
                       style={{ color: theme.text, fontFamily: Fonts.title }}>
                       Finnri split export
                     </TText>
-                    <TText className="mt-1 text-sm text-black/55 dark:text-white/55">
+                    <TText className="mt-1 text-sm" style={{ color: theme.muted }}>
                       Excel-compatible CSV report
                     </TText>
                   </View>
                 </View>
-                <TText className="mt-4 text-sm leading-5 text-black/60 dark:text-white/60">
+                <TText className="mt-4 text-sm leading-5" style={{ color: theme.muted }}>
                   A simple spreadsheet with who owes whom at the top, followed by every expense,
                   who paid, who it was split with, and each person&apos;s share.
                 </TText>
@@ -251,7 +251,7 @@ function ExportPreviewRow({ label, value }: { label: string; value: string }) {
   const theme = useThemeTokens().colors;
   return (
     <View className="min-h-10 flex-row items-center justify-between gap-4">
-      <TText className="text-sm text-black/50 dark:text-white/50">{label}</TText>
+      <TText className="text-sm" style={{ color: theme.muted }}>{label}</TText>
       <TText
         className="flex-1 text-right text-sm"
         style={{ color: theme.text, fontFamily: Fonts.title }}>
@@ -303,7 +303,7 @@ function GroupBalanceActionRow({
           onPress={onPress}
           className="mt-4 min-h-11 items-center justify-center rounded-full"
           style={{ backgroundColor: theme.accent }}>
-          <TText className="text-sm text-white" style={{ fontFamily: Fonts.title }}>
+          <TText className="text-sm" style={{ color: theme.onAccent, fontFamily: Fonts.title }}>
             {actionLabel}
           </TText>
         </Pressable>

@@ -106,7 +106,7 @@ export function BalanceFilterSheet({
                   <TText className="text-sm" style={{ fontFamily: Fonts.title }}>
                     {option.title}
                   </TText>
-                  <TText className="mt-1 text-xs text-black/55 dark:text-white/55">
+                  <TText className="mt-1 text-xs" style={{ color: theme.muted }}>
                     {option.description}
                   </TText>
                 </View>

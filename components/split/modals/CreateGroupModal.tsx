@@ -18,12 +18,11 @@ const groupKindOptions: {
   kind: GroupKind;
   label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  variant: number;
 }[] = [
-  { kind: 'trip', label: 'Trip', icon: 'airplane', variant: 2 },
-  { kind: 'home', label: 'Home', icon: 'home-outline', variant: 4 },
-  { kind: 'couple', label: 'Couple', icon: 'heart-outline', variant: 3 },
-  { kind: 'other', label: 'Other', icon: 'format-list-bulleted', variant: 0 },
+  { kind: 'trip', label: 'Trip', icon: 'airplane' },
+  { kind: 'home', label: 'Home', icon: 'home-outline' },
+  { kind: 'couple', label: 'Couple', icon: 'heart-outline' },
+  { kind: 'other', label: 'Other', icon: 'format-list-bulleted' },
 ];
 
 export function CreateGroupModal({
@@ -115,21 +114,21 @@ export function CreateGroupModal({
               <MaterialCommunityIcons
                 name="camera-plus-outline"
                 size={30}
-                color={`${theme.text}E6`}
+                color={theme.mutedStrong}
               />
             </Pressable>
             <View className="flex-1">
-              <TText className="text-sm text-black/60 dark:text-white/60">Group name</TText>
+              <TText className="text-sm" style={{ color: theme.muted }}>Group name</TText>
               <TextInput
                 value={groupName}
                 onChangeText={onChangeName}
                 autoFocus
                 placeholder="Group name"
-                placeholderTextColor={`${theme.text}B3`}
+                placeholderTextColor={theme.mutedStrong}
                 style={{
                   minHeight: 48,
                   borderBottomWidth: 2,
-                  borderColor: groupName ? `${theme.text}8C` : theme.accent,
+                  borderColor: groupName ? theme.muted : theme.accent,
                   color: theme.text,
                   fontFamily: Fonts.body,
                   fontSize: 20,
@@ -139,8 +138,8 @@ export function CreateGroupModal({
           </View>
 
           <TText
-            className="mt-8 text-base text-black/70 dark:text-white/70"
-            style={{ fontFamily: Fonts.title }}>
+            className="mt-8 text-base"
+            style={{ color: theme.mutedStrong, fontFamily: Fonts.title }}>
             Type
           </TText>
           <View className="mt-4 flex-row gap-3">
@@ -169,15 +168,15 @@ export function CreateGroupModal({
               ios_backgroundColor={theme.secondary}
             />
           </View>
-          <TText className="mt-5 text-base leading-6 text-black/55 dark:text-white/55">
+          <TText className="mt-5 text-base leading-6" style={{ color: theme.muted }}>
             Finnri can mark this group when someone reaches a balance limit.
           </TText>
 
           {balanceAlertEnabled ? (
             <View className="mt-8">
               <TText
-                className="text-base text-black/70 dark:text-white/70"
-                style={{ fontFamily: Fonts.title }}>
+                className="text-base"
+                style={{ color: theme.mutedStrong, fontFamily: Fonts.title }}>
                 Balance amount
               </TText>
               <View className="mt-3 flex-row items-center gap-5">
@@ -193,12 +192,12 @@ export function CreateGroupModal({
                   onChangeText={onChangeBalanceAlertAmount}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
-                  placeholderTextColor={`${theme.text}BF`}
+                  placeholderTextColor={theme.mutedStrong}
                   style={{
                     flex: 1,
                     minHeight: 64,
                     borderBottomWidth: 2,
-                    borderColor: balanceAlertAmount ? theme.accent : `${theme.text}8C`,
+                    borderColor: balanceAlertAmount ? theme.accent : theme.muted,
                     color: theme.text,
                     fontFamily: Fonts.title,
                     fontSize: 32,
@@ -210,8 +209,8 @@ export function CreateGroupModal({
 
           <View className="mt-9">
             <TText
-              className="text-base text-black/70 dark:text-white/70"
-              style={{ fontFamily: Fonts.title }}>
+              className="text-base"
+              style={{ color: theme.mutedStrong, fontFamily: Fonts.title }}>
               Members
             </TText>
             {friends.length > 0 ? (
@@ -229,7 +228,7 @@ export function CreateGroupModal({
               <View
                 className="mt-3 rounded-2xl border p-4"
                 style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                <TText className="text-sm text-black/60 dark:text-white/60">
+                <TText className="text-sm" style={{ color: theme.muted }}>
                   No friends yet. You can add members after creating friends.
                 </TText>
               </View>
@@ -264,7 +263,7 @@ function GroupTypeCard({
       <MaterialCommunityIcons
         name={option.icon}
         size={30}
-        color={selected ? theme.accent : `${theme.text}E6`}
+        color={selected ? theme.accent : theme.mutedStrong}
       />
       <TText
         className="text-base"

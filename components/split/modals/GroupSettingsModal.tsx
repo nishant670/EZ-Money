@@ -1,12 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
-import {
-  AvatarCircle,
-} from '@/components/split/primitives/SplitPrimitives';
+import { AvatarCircle } from '@/components/split/primitives/SplitPrimitives';
+import { SplitFullScreenModal } from '@/components/split/primitives/SplitFullScreenModal';
 import { GroupTile } from '@/components/split/rows/GroupTile';
 import { getGroupKindConfig } from '@/components/split/split-utils';
 import type { SplitGroupSummary } from '@/components/split/split-types';
@@ -71,171 +69,176 @@ export function GroupSettingsModal({
     .filter((friend): friend is SplitFriend => Boolean(friend));
 
   return (
-    <Modal visible onRequestClose={onClose}>
-      <SafeAreaView
-        className="flex-1"
-        edges={['top', 'left', 'right']}
-        style={{ backgroundColor: theme.background }}>
-        <AppHeader
-          title="Group settings"
-          subtitle={summary.group.name}
-          onBack={onClose}
-          style={{ borderBottomColor: theme.border, borderBottomWidth: 1 }}
-        />
+    <SplitFullScreenModal onClose={onClose}>
+      {(close) => (
+        <>
+          <AppHeader
+            title="Group settings"
+            subtitle={summary.group.name}
+            onBack={close}
+            style={{ borderBottomColor: theme.border, borderBottomWidth: 1 }}
+          />
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 44 }}>
-          <View
-            className="flex-row items-center gap-5 border-b px-6 py-4"
-            style={{ borderColor: theme.border }}>
-            <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
-            <View className="flex-1">
-              <TText variant="screenTitle" style={{ color: theme.text }}>
-                {summary.group.name}
-              </TText>
-              <TText className="mt-1 text-base text-black/55 dark:text-white/55">
-                {kindConfig.label} • {roleLabel}
-              </TText>
-            </View>
-            {canManageGroup ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Edit group"
-                onPress={() => onEditGroup(summary)}
-                className="h-11 w-11 items-center justify-center">
-                <MaterialCommunityIcons name="pencil-outline" size={25} color={theme.text} />
-              </Pressable>
-            ) : null}
-          </View>
-
-          <SettingsSectionTitle label="Group members" />
-          {canManageGroup ? (
-            <>
-              <SettingsActionRow
-                icon="account-plus-outline"
-                label="Add existing friend"
-                onPress={() => onAddPeople(summary)}
-              />
-              <SettingsActionRow
-                icon="email-plus-outline"
-                label="Invite by email or phone"
-                onPress={() => onInvitePerson(summary)}
-              />
-              <SettingsActionRow
-                icon="link-variant"
-                label="Invite via link"
-                onPress={() => onInviteViaLink(summary)}
-              />
-            </>
-          ) : null}
-          <SettingsMemberRow label={`${currentUserName} (you)`} subtitle={currentUserContact} />
-          {memberFriends.map((friend) => (
-            <SettingsMemberRow
-              key={friend.id}
-              label={friend.name}
-              subtitle={[friend.phone, friend.email].filter(Boolean).join(' • ')}
-            />
-          ))}
-
-          {canManageGroup && (pendingInvitesLoading || pendingInvites.length > 0) ? (
-            <>
-              <SettingsSectionTitle label="Pending invites" />
-              {pendingInvitesLoading ? (
-                <SkeletonFrame
-                  label="Loading pending invites"
-                  testID="pending-invites-skeleton"
-                  style={{ paddingHorizontal: 24, paddingVertical: 8 }}>
-                  <SkeletonRows count={2} variant="list" showAmount={false} carded={false} />
-                </SkeletonFrame>
-              ) : (
-                pendingInvites.map((invite) => (
-                  <PendingInviteRow
-                    key={invite.id}
-                    invite={invite}
-                    onShare={() => onSharePendingInvite(invite)}
-                    onRevoke={() => onRevokePendingInvite(invite)}
-                  />
-                ))
-              )}
-            </>
-          ) : null}
-
-          <SettingsSectionTitle label="Advanced settings" />
-          <View className="flex-row items-start gap-5 px-6 py-4">
-            <MaterialCommunityIcons name="call-split" size={27} color={theme.text} />
-            <View className="flex-1">
-              <TText variant="screenTitle" style={{ color: theme.text }}>
-                Simplify group debts
-              </TText>
-              <TText className="mt-3 text-base leading-6 text-black/55 dark:text-white/55">
-                Automatically combines debts to reduce the total number of repayments between group
-                members.{' '}
-                <TText style={{ color: theme.accent, fontFamily: Fonts.title }}>Learn more</TText>
-              </TText>
-            </View>
-            <HapticSwitch
-              value={simplifyGroupDebts}
-              onValueChange={onToggleSimplifyDebts}
-              trackColor={{ false: theme.secondary, true: theme.accent }}
-              thumbColor={theme.onAccent}
-              ios_backgroundColor={theme.secondary}
-            />
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Set the default split for this group"
-            onPress={() => onOpenDefaultSplit(summary)}
-            className="flex-row items-start gap-5 px-6 py-4">
-            <MaterialCommunityIcons name="format-list-bulleted" size={27} color={theme.accent} />
-            <View className="flex-1">
-              <View className="flex-row items-center gap-2">
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 44 }}>
+            <View
+              className="flex-row items-center gap-5 border-b px-6 py-4"
+              style={{ borderColor: theme.border }}>
+              <GroupTile icon={kindConfig.icon} />
+              <View className="flex-1">
                 <TText variant="screenTitle" style={{ color: theme.text }}>
-                  Default split
+                  {summary.group.name}
                 </TText>
-                <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: theme.secondary }}>
-                  <TText className="text-xs" style={{ color: theme.accent, fontFamily: Fonts.title }}>
-                    PRO
-                  </TText>
-                </View>
+                <TText className="mt-1 text-base" style={{ color: theme.muted }}>
+                  {kindConfig.label} • {roleLabel}
+                </TText>
               </View>
-              <TText className="mt-2 text-base text-black/55 dark:text-white/55">
-                {defaultSplitLabel}
-              </TText>
-              <TText className="mt-7 text-base leading-6 text-black/50 dark:text-white/50">
-                New expenses in this group start from this split. It belongs to the group, so every
-                member sees it and any of them can change it.
-              </TText>
+              {canManageGroup ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit group"
+                  onPress={() => onEditGroup(summary)}
+                  className="h-11 w-11 items-center justify-center">
+                  <MaterialCommunityIcons name="pencil-outline" size={25} color={theme.text} />
+                </Pressable>
+              ) : null}
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={26} color={theme.text} />
-          </Pressable>
-          {!canManageGroup ? (
-            <SettingsActionRow
-              icon="exit-to-app"
-              label="Leave group"
-              destructive
-              onPress={() => onLeaveGroup(summary)}
-            />
-          ) : null}
-          {canManageGroup ? (
-            <SettingsActionRow
-              icon="trash-can-outline"
-              label="Delete group"
-              destructive
-              onPress={() => onDeleteGroup(summary)}
-            />
-          ) : null}
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+
+            <SettingsSectionTitle label="Group members" />
+            {canManageGroup ? (
+              <>
+                <SettingsActionRow
+                  icon="account-plus-outline"
+                  label="Add existing friend"
+                  onPress={() => onAddPeople(summary)}
+                />
+                <SettingsActionRow
+                  icon="email-plus-outline"
+                  label="Invite by email or phone"
+                  onPress={() => onInvitePerson(summary)}
+                />
+                <SettingsActionRow
+                  icon="link-variant"
+                  label="Invite via link"
+                  onPress={() => onInviteViaLink(summary)}
+                />
+              </>
+            ) : null}
+            <SettingsMemberRow label={`${currentUserName} (you)`} subtitle={currentUserContact} />
+            {memberFriends.map((friend) => (
+              <SettingsMemberRow
+                key={friend.id}
+                label={friend.name}
+                subtitle={[friend.phone, friend.email].filter(Boolean).join(' • ')}
+              />
+            ))}
+
+            {canManageGroup && (pendingInvitesLoading || pendingInvites.length > 0) ? (
+              <>
+                <SettingsSectionTitle label="Pending invites" />
+                {pendingInvitesLoading ? (
+                  <SkeletonFrame
+                    label="Loading pending invites"
+                    testID="pending-invites-skeleton"
+                    style={{ paddingHorizontal: 24, paddingVertical: 8 }}>
+                    <SkeletonRows count={2} variant="list" showAmount={false} carded={false} />
+                  </SkeletonFrame>
+                ) : (
+                  pendingInvites.map((invite) => (
+                    <PendingInviteRow
+                      key={invite.id}
+                      invite={invite}
+                      onShare={() => onSharePendingInvite(invite)}
+                      onRevoke={() => onRevokePendingInvite(invite)}
+                    />
+                  ))
+                )}
+              </>
+            ) : null}
+
+            <SettingsSectionTitle label="Advanced settings" />
+            <View className="flex-row items-start gap-5 px-6 py-4">
+              <MaterialCommunityIcons name="call-split" size={27} color={theme.text} />
+              <View className="flex-1">
+                <TText variant="screenTitle" style={{ color: theme.text }}>
+                  Simplify group debts
+                </TText>
+                <TText className="mt-3 text-base leading-6" style={{ color: theme.muted }}>
+                  Automatically combines debts to reduce the total number of repayments between
+                  group members.{' '}
+                  <TText style={{ color: theme.accent, fontFamily: Fonts.title }}>Learn more</TText>
+                </TText>
+              </View>
+              <HapticSwitch
+                value={simplifyGroupDebts}
+                onValueChange={onToggleSimplifyDebts}
+                trackColor={{ false: theme.secondary, true: theme.accent }}
+                thumbColor={theme.onAccent}
+                ios_backgroundColor={theme.secondary}
+              />
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Set the default split for this group"
+              onPress={() => onOpenDefaultSplit(summary)}
+              className="flex-row items-start gap-5 px-6 py-4">
+              <MaterialCommunityIcons name="format-list-bulleted" size={27} color={theme.accent} />
+              <View className="flex-1">
+                <View className="flex-row items-center gap-2">
+                  <TText variant="screenTitle" style={{ color: theme.text }}>
+                    Default split
+                  </TText>
+                  <View
+                    className="rounded-full px-2 py-0.5"
+                    style={{ backgroundColor: theme.secondary }}>
+                    <TText
+                      className="text-xs"
+                      style={{ color: theme.accent, fontFamily: Fonts.title }}>
+                      PRO
+                    </TText>
+                  </View>
+                </View>
+                <TText className="mt-2 text-base" style={{ color: theme.muted }}>
+                  {defaultSplitLabel}
+                </TText>
+                <TText className="mt-7 text-base leading-6" style={{ color: theme.muted }}>
+                  New expenses in this group start from this split. It belongs to the group, so
+                  every member sees it and any of them can change it.
+                </TText>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={26} color={theme.text} />
+            </Pressable>
+            {!canManageGroup ? (
+              <SettingsActionRow
+                icon="exit-to-app"
+                label="Leave group"
+                destructive
+                onPress={() => onLeaveGroup(summary)}
+              />
+            ) : null}
+            {canManageGroup ? (
+              <SettingsActionRow
+                icon="trash-can-outline"
+                label="Delete group"
+                destructive
+                onPress={() => onDeleteGroup(summary)}
+              />
+            ) : null}
+          </ScrollView>
+        </>
+      )}
+    </SplitFullScreenModal>
   );
 }
 
 function SettingsSectionTitle({ label }: { label: string }) {
+  const theme = useThemeTokens().colors;
+
   return (
     <TText
-      className="px-6 pb-3 pt-6 text-base text-black/70 dark:text-white/70"
-      style={{ fontFamily: Fonts.title }}>
+      className="px-6 pb-3 pt-6 text-base"
+      style={{ color: theme.mutedStrong, fontFamily: Fonts.title }}>
       {label}
     </TText>
   );
@@ -300,7 +303,7 @@ function PendingInviteRow({
           style={{ color: theme.text, fontFamily: Fonts.title }}>
           {label}
         </TText>
-        <TText className="mt-1 text-xs text-black/50 dark:text-white/50" numberOfLines={1}>
+        <TText className="mt-1 text-xs" style={{ color: theme.muted }} numberOfLines={1}>
           {subtitle}
         </TText>
       </View>
@@ -334,7 +337,7 @@ function SettingsMemberRow({ label, subtitle }: { label: string; subtitle?: stri
           {label}
         </TText>
         {subtitle ? (
-          <TText className="mt-1 text-base text-black/55 dark:text-white/55" numberOfLines={1}>
+          <TText className="mt-1 text-base" style={{ color: theme.muted }} numberOfLines={1}>
             {subtitle}
           </TText>
         ) : null}

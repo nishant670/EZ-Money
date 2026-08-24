@@ -2133,7 +2133,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                 <TText variant="cardTitle" style={{ color: theme.text }}>
                   {friend.name}
                 </TText>
-                <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
+                <TText className="mt-1 text-xs" style={{ color: theme.muted }}>
                   {[friend.phone, friend.email].filter(Boolean).join(' • ') || 'No contact saved'}
                 </TText>
                 <TText
@@ -2188,7 +2188,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
               accessibilityRole="button"
               onPress={() => setSelectedGroupDetailId(group.id)}
               className="flex-row gap-4 p-4">
-              <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
+              <GroupTile icon={kindConfig.icon} />
               <View className="flex-1 justify-center">
                 <TText variant="cardTitle" style={{ color: theme.text }}>
                   {group.name}
@@ -2200,14 +2200,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                   detailLines.map((line) => (
                     <TText
                       key={line}
-                      className="mt-1 text-sm text-black/55 dark:text-white/55"
+                      className="mt-1 text-sm" style={{ color: theme.muted }}
                       numberOfLines={1}>
                       {line}
                     </TText>
                   ))
                 ) : (
                   <TText
-                    className="mt-1 text-sm text-black/55 dark:text-white/55"
+                    className="mt-1 text-sm" style={{ color: theme.muted }}
                     numberOfLines={1}>
                     {latestBill
                       ? `${billCount} bill${billCount === 1 ? '' : 's'} • last on ${latestBill.date}`
@@ -2231,7 +2231,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             accessibilityRole="button"
             onPress={() => openModal('bill')}
             className="flex-row gap-4 p-4">
-          <GroupTile variant={5} icon="receipt-text-outline" />
+          <GroupTile icon="receipt-text-outline" />
           <View className="flex-1 justify-center">
           <TText variant="cardTitle" style={{ color: theme.text }}>
             Non-group expenses
@@ -2243,13 +2243,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             nonGroupSummary.detailLines.map((line) => (
               <TText
                 key={line}
-                className="mt-1 text-sm text-black/55 dark:text-white/55"
+                className="mt-1 text-sm" style={{ color: theme.muted }}
                 numberOfLines={1}>
                 {line}
               </TText>
             ))
           ) : (
-            <TText className="mt-1 text-sm text-black/55 dark:text-white/55" numberOfLines={1}>
+            <TText className="mt-1 text-sm" style={{ color: theme.muted }} numberOfLines={1}>
               {nonGroupSummary.latestBill
                 ? `${nonGroupSummary.billCount} bill${
                     nonGroupSummary.billCount === 1 ? '' : 's'
@@ -2284,7 +2284,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         <TText variant="cardTitle" style={{ color: theme.text }}>
           {item.title}
         </TText>
-        <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
+        <TText className="mt-1 text-xs" style={{ color: theme.muted }}>
           {item.caption} • {item.date}
         </TText>
       </View>
@@ -2861,7 +2861,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
         <SplitModal visible={modal === 'settlement'} title="Record Settlement" onClose={closeModal}>
           <View className="gap-2">
-            <TText className="text-xs text-black/60 dark:text-white/60">Friend</TText>
+            <TText className="text-xs" style={{ color: theme.muted }}>Friend</TText>
             <View className="flex-row flex-wrap gap-2">
               {friends.map((friend) =>
                 renderFriendChip(friend, settlementFriendId, setSettlementFriendId)

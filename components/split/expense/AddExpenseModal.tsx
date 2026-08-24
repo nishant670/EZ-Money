@@ -175,7 +175,7 @@ export function AddExpenseModal({
                     onChangeText={onChangeTitle}
                     onFocus={() => setAmountKeypadVisible(false)}
                     placeholder="What was this expense for?"
-                    placeholderTextColor={`${theme.text}B8`}
+                    placeholderTextColor={theme.mutedStrong}
                     style={{
                       minHeight: 32,
                       color: theme.text,
@@ -263,7 +263,7 @@ export function AddExpenseModal({
                     onFocus={() => setAmountKeypadVisible(false)}
                     multiline
                     placeholder="Add a note"
-                    placeholderTextColor={`${theme.text}B8`}
+                    placeholderTextColor={theme.mutedStrong}
                     textAlignVertical="top"
                     style={{
                       minHeight: 64,
@@ -496,7 +496,7 @@ export function SplitChoiceScreen({
 
           {others.length > 1 ? (
             <View className="mt-2">
-              <TText className="mb-2 text-sm text-black/55 dark:text-white/55">
+              <TText className="mb-2 text-sm" style={{ color: theme.muted }}>
                 Paid by someone else
               </TText>
               <View className="flex-row flex-wrap gap-2">
@@ -719,7 +719,7 @@ export function AdjustSplitScreen({
                 <TText
                   className="text-lg"
                   style={{
-                    color: selected ? theme.text : `${theme.text}B8`,
+                    color: selected ? theme.text : theme.mutedStrong,
                     fontFamily: Fonts.title,
                   }}>
                   {tab.label}
@@ -747,11 +747,11 @@ export function AdjustSplitScreen({
           <TText variant="screenTitle" className="mt-7" style={{ color: theme.text }}>
             {copy.heading}
           </TText>
-          <TText className="mt-2 text-center text-lg text-black/55 dark:text-white/55">
+          <TText className="mt-2 text-center text-lg" style={{ color: theme.muted }}>
             {copy.caption}
           </TText>
           {selection.fullAmount ? (
-            <TText className="mt-3 text-center text-base text-black/50 dark:text-white/50">
+            <TText className="mt-3 text-center text-base" style={{ color: theme.muted }}>
               {payerName} is owed the full amount and carries none of it.
             </TText>
           ) : null}
@@ -773,7 +773,7 @@ export function AdjustSplitScreen({
             style={{ color: theme.text, fontFamily: Fonts.title }}>
             {footerSummary()}
           </TText>
-          <TText className="mt-1 text-center text-base text-black/55 dark:text-white/55">
+          <TText className="mt-1 text-center text-base" style={{ color: theme.muted }}>
             {shareResult.ok || activeTab === 'equally'
               ? `(${totalSelected} ${totalSelected === 1 ? 'person' : 'people'})`
               : shareResult.error}
@@ -791,7 +791,7 @@ export function AdjustSplitScreen({
           <MaterialCommunityIcons
             name={allSelected ? 'checkbox-marked' : 'checkbox-blank-outline'}
             size={30}
-            color={allSelected ? theme.accent : `${theme.text}CC`}
+            color={allSelected ? theme.accent : theme.mutedStrong}
           />
         </Pressable>
       </View>
@@ -860,7 +860,7 @@ function PayerOptionRow({
           {label}
         </TText>
         {subtitle ? (
-          <TText className="mt-1 text-xs text-black/50 dark:text-white/50" numberOfLines={1}>
+          <TText className="mt-1 text-xs" style={{ color: theme.muted }} numberOfLines={1}>
             {subtitle}
           </TText>
         ) : null}
@@ -894,7 +894,7 @@ function SplitPersonRow({
           {label}
         </TText>
         {subtitle ? (
-          <TText className="mt-1 text-sm text-black/50 dark:text-white/50" numberOfLines={1}>
+          <TText className="mt-1 text-sm" style={{ color: theme.muted }} numberOfLines={1}>
             {subtitle}
           </TText>
         ) : null}
@@ -902,7 +902,7 @@ function SplitPersonRow({
       <MaterialCommunityIcons
         name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
         size={30}
-        color={selected ? theme.accent : `${theme.text}CC`}
+        color={selected ? theme.accent : theme.mutedStrong}
       />
     </Pressable>
   );
@@ -958,7 +958,7 @@ function SplitWeightRow({
               {preview}
             </TText>
           ) : subtitle ? (
-            <TText className="mt-1 text-sm text-black/50 dark:text-white/50" numberOfLines={1}>
+            <TText className="mt-1 text-sm" style={{ color: theme.muted }} numberOfLines={1}>
               {subtitle}
             </TText>
           ) : null}
@@ -968,7 +968,7 @@ function SplitWeightRow({
         className="min-h-12 w-28 flex-row items-center rounded-xl border px-3"
         style={{
           backgroundColor: selected ? theme.card : 'transparent',
-          borderColor: selected ? theme.border : `${theme.text}40`,
+          borderColor: selected ? theme.border : theme.border,
           opacity: selected ? 1 : 0.45,
         }}>
         {prefix ? (
@@ -982,7 +982,7 @@ function SplitWeightRow({
           editable={selected}
           keyboardType="decimal-pad"
           placeholder={placeholder}
-          placeholderTextColor={`${theme.text}B3`}
+          placeholderTextColor={theme.mutedStrong}
           accessibilityLabel={`Split value for ${label}`}
           style={{
             flex: 1,

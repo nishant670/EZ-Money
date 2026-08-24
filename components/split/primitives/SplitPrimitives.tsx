@@ -238,7 +238,7 @@ export function FormInput({
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         multiline={multiline}
-        placeholderTextColor={`${theme.text}B3`}
+        placeholderTextColor={theme.mutedStrong}
         style={{
           minHeight: multiline ? 84 : 48,
           paddingHorizontal: 0,

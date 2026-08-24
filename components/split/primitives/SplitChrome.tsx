@@ -52,7 +52,7 @@ export function SearchField({
         value={value}
         onChangeText={onChangeText}
         placeholder="Search groups, friends, activity"
-        placeholderTextColor={`${theme.text}B3`}
+        placeholderTextColor={theme.mutedStrong}
         autoCapitalize="none"
         style={{
           flex: 1,
@@ -63,7 +63,7 @@ export function SearchField({
       />
       {value ? (
         <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={onClear}>
-          <MaterialCommunityIcons name="close-circle" size={20} color={`${theme.text}CC`} />
+          <MaterialCommunityIcons name="close-circle" size={20} color={theme.mutedStrong} />
         </Pressable>
       ) : null}
     </View>
@@ -103,7 +103,7 @@ export function SettledHint({
 
   return (
     <View className="items-center px-4 py-5">
-      <TText className="text-center text-sm text-black/50 dark:text-white/50">
+      <TText className="text-center text-sm" style={{ color: theme.muted }}>
         Hiding groups that are settled up.
       </TText>
       <Pressable

@@ -178,8 +178,8 @@ export function FriendDetailModal({
               [...groupedRows.entries()].map(([section, sectionGroups]) => (
                 <View key={section} className="mb-7">
                   <TText
-                    className="mb-3 text-base text-black/65 dark:text-white/65"
-                    style={{ fontFamily: Fonts.title }}>
+                    className="mb-3 text-base"
+                    style={{ color: theme.mutedStrong, fontFamily: Fonts.title }}>
                     {section}
                   </TText>
                   {sectionGroups.map((group) => (
@@ -200,7 +200,7 @@ export function FriendDetailModal({
                   style={{ color: theme.text, fontFamily: Fonts.title }}>
                   No shared groups yet
                 </TText>
-                <TText className="mt-2 text-center text-sm leading-5 text-black/55 dark:text-white/55">
+                <TText className="mt-2 text-center text-sm leading-5" style={{ color: theme.muted }}>
                   Add an expense with {friendFirstName} or include them in a group to see history
                   here.
                 </TText>
@@ -246,8 +246,8 @@ function FriendSharedGroupRow({
       onPress={onPress}
       className="min-h-[78px] flex-row items-center gap-4 py-2">
       <View className="w-10 items-center">
-        <TText className="text-sm text-black/55 dark:text-white/55">{date.month}</TText>
-        <TText className="text-xl text-black/55 dark:text-white/55">{date.day}</TText>
+        <TText className="text-sm" style={{ color: theme.muted }}>{date.month}</TText>
+        <TText className="text-xl" style={{ color: theme.muted }}>{date.day}</TText>
       </View>
       <View
         className="h-16 w-16 items-center justify-center overflow-hidden rounded-xl"
@@ -258,11 +258,11 @@ function FriendSharedGroupRow({
         <TText variant="screenTitle" style={{ color: theme.text }}>
           {summary.group.name}
         </TText>
-        <TText className="mt-1 text-sm text-black/55 dark:text-white/55">Shared group</TText>
+        <TText className="mt-1 text-sm" style={{ color: theme.muted }}>Shared group</TText>
       </View>
       <View className="items-end">
         {friendNet === 0 ? (
-          <TText className="text-base text-black/55 dark:text-white/55">settled up</TText>
+          <TText className="text-base" style={{ color: theme.muted }}>settled up</TText>
         ) : (
           <>
             <TText

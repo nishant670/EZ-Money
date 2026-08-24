@@ -10,12 +10,11 @@ export const groupKindOptions: {
   kind: GroupKind;
   label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  variant: number;
 }[] = [
-  { kind: 'trip', label: 'Trip', icon: 'airplane', variant: 2 },
-  { kind: 'home', label: 'Home', icon: 'home-outline', variant: 4 },
-  { kind: 'couple', label: 'Couple', icon: 'heart-outline', variant: 3 },
-  { kind: 'other', label: 'Other', icon: 'format-list-bulleted', variant: 0 },
+  { kind: 'trip', label: 'Trip', icon: 'airplane' },
+  { kind: 'home', label: 'Home', icon: 'home-outline' },
+  { kind: 'couple', label: 'Couple', icon: 'heart-outline' },
+  { kind: 'other', label: 'Other', icon: 'format-list-bulleted' },
 ];
 
 export const getGroupKindConfig = (kind: GroupKind) =>

@@ -107,7 +107,7 @@ export function BillDetailModal({
               <TText variant="amount" className="mt-2" style={{ color: theme.text }}>
                 {formatBalance(presentedBill.total_amount)}
               </TText>
-              <TText className="mt-4 text-base leading-6 text-black/55 dark:text-white/55">
+              <TText className="mt-4 text-base leading-6" style={{ color: theme.muted }}>
                 {presentedBill.date}
                 {presentedBill.created_at ? `\nAdded on ${presentedBill.created_at.slice(0, 10)}` : ''}
               </TText>
@@ -136,7 +136,7 @@ export function BillDetailModal({
                         {friendName.charAt(0).toUpperCase()}
                       </TText>
                     </View>
-                    <TText className="flex-1 text-lg text-black/60 dark:text-white/60">
+                    <TText className="flex-1 text-lg" style={{ color: theme.muted }}>
                       {label}
                     </TText>
                   </View>
@@ -148,8 +148,8 @@ export function BillDetailModal({
           {presentedBill.notes ? (
             <View className="mt-10 rounded-2xl border p-4" style={{ borderColor: theme.border }}>
               <TText
-                className="text-xs text-black/45 dark:text-white/45"
-                style={{ fontFamily: Fonts.title }}>
+                className="text-xs"
+                style={{ color: theme.muted, fontFamily: Fonts.title }}>
                 Notes
               </TText>
               <TText className="mt-2 text-base leading-6" style={{ color: theme.text }}>
