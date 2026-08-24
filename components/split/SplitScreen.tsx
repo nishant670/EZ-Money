@@ -48,9 +48,11 @@ import {
 } from '@/components/split/primitives/SplitPrimitives';
 import {
   contactMatchesFriend,
+  countHiddenSettledGroups,
   formatBalance,
   getGroupKindConfig,
   getGroupBalanceRows,
+  groupMatchesSearch,
   parseAmount,
   todayApiDate,
 } from '@/components/split/split-utils';
@@ -995,14 +997,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const visibleGroupSummaries = useMemo(() => {
     return groupSummaries.filter((summary) => {
-      const searchText = [
-        summary.group.name,
-        ...summary.detailLines,
-        ...summary.memberIds.map((memberId) => friendById.get(memberId)?.name ?? ''),
-      ]
-        .join(' ')
-        .toLowerCase();
-      const matchesSearch = !normalizedSearch || searchText.includes(normalizedSearch);
+      const matchesSearch = groupMatchesSearch(summary, normalizedSearch, friendById);
       const isNewEmptyGroup = summary.billCount === 0 && summary.netBalance === 0;
       const matchesBalance =
         balanceFilter === 'open' && isNewEmptyGroup
@@ -1011,6 +1006,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       return matchesSearch && matchesBalance;
     });
   }, [balanceFilter, balanceMatchesFilter, friendById, groupSummaries, normalizedSearch]);
+
+  const hiddenSettledCount = useMemo(
+    () =>
+      countHiddenSettledGroups(groupSummaries, visibleGroupSummaries, (summary) =>
+        groupMatchesSearch(summary, normalizedSearch, friendById)
+      ),
+    [friendById, groupSummaries, normalizedSearch, visibleGroupSummaries]
+  );
 
   const showNonGroupSummary =
     nonGroupSummary.billCount > 0 &&
@@ -2424,22 +2427,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                     {showNonGroupSummary
                       ? renderNonGroupRow(visibleGroupSummaries.length)
                       : null}
-                    {balanceFilter !== 'settled' ? (
-                      <SettledHint
-                        settledCount={
-                          groups.filter((group) => {
-                            const memberIds = (group.members ?? []).map((member) => member.friend_id);
-                            return memberIds.every(
-                              (memberId) => (balanceByFriendId.get(memberId)?.net_balance ?? 0) === 0
-                            );
-                          }).length
-                        }
-                        onShowSettled={() => {
-                          setBalanceFilter('settled');
-                          setFilterSheetVisible(false);
-                        }}
-                      />
-                    ) : null}
+                    <SettledHint
+                      settledCount={hiddenSettledCount}
+                      onShowSettled={() => {
+                        setBalanceFilter('settled');
+                        setFilterSheetVisible(false);
+                      }}
+                    />
+
                   </>
                 ) : (
                   <StateView

@@ -157,3 +157,54 @@ export const formatApiDate = (date: Date) => {
 };
 
 export const parseAmount = (value: string) => Number(value.replace(/,/g, '').trim());
+
+/**
+ * How many settled groups a balance filter is actually holding back.
+ *
+ * Derived from the rendered list rather than counted independently, because
+ * counting it independently is what put "Hiding groups that are settled up"
+ * directly above the settled group it claimed to be hiding. Two cases broke
+ * the old count: under the `all` filter nothing is held back, and a
+ * freshly-made group is settled by definition but is deliberately kept on
+ * screen so it does not vanish the moment it is created.
+ *
+ * Taking `visible` as the source of truth means the hint cannot disagree with
+ * the list again, whatever exceptions that list grows later. `matchesSearch`
+ * is separate because a group hidden by a query is not hidden for being
+ * settled, and switching the balance filter would not bring it back.
+ */
+export function countHiddenSettledGroups<T extends { group: { id: number }; netBalance: number }>(
+  summaries: readonly T[],
+  visible: readonly T[],
+  matchesSearch: (summary: T) => boolean
+): number {
+  const visibleIds = new Set(visible.map((summary) => summary.group.id));
+  return summaries.filter(
+    (summary) =>
+      !visibleIds.has(summary.group.id) && summary.netBalance === 0 && matchesSearch(summary)
+  ).length;
+}
+
+/**
+ * Whether a group answers the search box — its name, its detail lines, or any
+ * member's name.
+ *
+ * Shared so the list and the settled-up hint cannot drift apart on what
+ * "matches" means; they disagreed once already, and a search predicate copied
+ * into two places is how that happens a second time.
+ */
+export function groupMatchesSearch(
+  summary: SplitGroupSummary,
+  normalizedSearch: string,
+  friendById: Map<number, SplitFriend>
+): boolean {
+  if (!normalizedSearch) return true;
+  return [
+    summary.group.name,
+    ...summary.detailLines,
+    ...summary.memberIds.map((memberId) => friendById.get(memberId)?.name ?? ''),
+  ]
+    .join(' ')
+    .toLowerCase()
+    .includes(normalizedSearch);
+}
