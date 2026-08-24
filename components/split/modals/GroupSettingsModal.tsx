@@ -3,6 +3,7 @@ import { cssInterop } from 'nativewind';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import {
   AvatarCircle,
 } from '@/components/split/primitives/SplitPrimitives';
@@ -70,25 +71,17 @@ export function GroupSettingsModal({
     .filter((friend): friend is SplitFriend => Boolean(friend));
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    <Modal visible onRequestClose={onClose}>
       <SafeAreaView
         className="flex-1"
         edges={['top', 'left', 'right']}
         style={{ backgroundColor: theme.background }}>
-        <View
-          className="min-h-16 flex-row items-center border-b px-5"
-          style={{ borderColor: theme.border }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close group settings"
-            onPress={onClose}
-            className="h-11 w-11 items-center justify-center">
-            <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
-          </Pressable>
-          <TText variant="screenTitle" className="ml-4 flex-1" style={{ color: theme.text }}>
-            Group settings
-          </TText>
-        </View>
+        <AppHeader
+          title="Group settings"
+          subtitle={summary.group.name}
+          onBack={onClose}
+          style={{ borderBottomColor: theme.border, borderBottomWidth: 1 }}
+        />
 
         <ScrollView
           showsVerticalScrollIndicator={false}

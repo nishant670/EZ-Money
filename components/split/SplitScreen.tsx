@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter, useScrollToTop } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 
 import { UpgradeSheet } from '@/components/billing/UpgradeSheet';
+import { AppHeader } from '@/components/navigation/AppHeader';
 import {
   AddExpenseModal,
   type ExpenseFlowScreen,
@@ -24,7 +26,6 @@ import {
   SegmentedSections,
   SettledHint,
   SplitScreenFrame,
-  SplitTopBar,
   type ActiveSection,
 } from '@/components/split/primitives/SplitChrome';
 import { FriendDetailModal } from '@/components/split/modals/FriendDetailModal';
@@ -2172,12 +2173,50 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             paddingBottom: 136,
           }}>
           {!embedded && (
-            <SplitTopBar
-              loading={loading}
-              activeSection={activeSection}
-              searchVisible={searchVisible}
-              onToggleSearch={() => setSearchVisible((current) => !current)}
-              onCreate={openContextCreate}
+            <AppHeader
+              title="Split"
+              style={{ marginBottom: 20, paddingHorizontal: 0, paddingVertical: 0 }}
+              rightNode={
+                <View className="ml-4 flex-row items-center gap-2">
+                  {loading ? <ActivityIndicator color={theme.accent} /> : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={searchVisible ? 'Hide split search' : 'Search splits'}
+                    onPress={() => setSearchVisible((current) => !current)}
+                    className="h-10 w-10 items-center justify-center rounded-full"
+                    style={{ backgroundColor: theme.card }}>
+                    <MaterialCommunityIcons
+                      name={searchVisible ? 'close' : 'magnify'}
+                      size={22}
+                      color={theme.accent}
+                    />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      activeSection === 'friends'
+                        ? 'Add split friend'
+                        : activeSection === 'activity'
+                          ? 'Create split group'
+                          : 'Create split friend or group'
+                    }
+                    onPress={openContextCreate}
+                    className="h-10 w-10 items-center justify-center rounded-full"
+                    style={{ backgroundColor: theme.card }}>
+                    <MaterialCommunityIcons
+                      name={
+                        activeSection === 'friends'
+                          ? 'account-plus-outline'
+                          : activeSection === 'activity'
+                            ? 'account-group-outline'
+                            : 'account-multiple-plus-outline'
+                      }
+                      size={22}
+                      color={theme.accent}
+                    />
+                  </Pressable>
+                </View>
+              }
             />
           )}
 
@@ -2451,25 +2490,24 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onLeaveGroup={handleLeaveGroup}
         />
 
-        {defaultSplitSummary && defaultSplitDraft ? (
-          <GroupDefaultSplitModal
-            groupName={defaultSplitSummary.group.name}
-            people={defaultSplitPeople}
-            draft={defaultSplitDraft}
-            screen={defaultSplitScreen}
-            saving={saving}
-            errorMessage={defaultSplitError}
-            hasSavedDefault={Boolean(defaultSplitSummary.group.default_split)}
-            onChangeDraft={(next) => {
-              setDefaultSplitDraft(next);
-              setDefaultSplitError(null);
-            }}
-            onChangeScreen={setDefaultSplitScreen}
-            onSave={() => void saveDefaultSplit()}
-            onReset={() => void resetDefaultSplit()}
-            onClose={closeDefaultSplitEditor}
-          />
-        ) : null}
+        <GroupDefaultSplitModal
+          visible={Boolean(defaultSplitSummary && defaultSplitDraft)}
+          groupName={defaultSplitSummary?.group.name ?? null}
+          people={defaultSplitPeople}
+          draft={defaultSplitDraft}
+          screen={defaultSplitScreen}
+          saving={saving}
+          errorMessage={defaultSplitError}
+          hasSavedDefault={Boolean(defaultSplitSummary?.group.default_split)}
+          onChangeDraft={(next) => {
+            setDefaultSplitDraft(next);
+            setDefaultSplitError(null);
+          }}
+          onChangeScreen={setDefaultSplitScreen}
+          onSave={() => void saveDefaultSplit()}
+          onReset={() => void resetDefaultSplit()}
+          onClose={closeDefaultSplitEditor}
+        />
 
         <ThemedConfirmDialog
           visible={Boolean(soloGroupPromptSummary)}

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import {
   DetailPill,
   FloatingExpenseButton,
@@ -83,9 +84,44 @@ export function GroupDetailModal({
         : `You owe ${formatBalance(Math.abs(summary.netBalance))} overall`;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1" style={{ backgroundColor: theme.background }}>
-        <View className="min-h-[270px] overflow-hidden" style={{ backgroundColor: theme.accent }}>
+    <Modal visible onRequestClose={onClose}>
+      <SafeAreaView
+        className="flex-1"
+        edges={['top', 'left', 'right']}
+        style={{ backgroundColor: theme.background }}>
+        <AppHeader
+          title={summary.group.name}
+          subtitle={overallCopy}
+          onBack={onClose}
+          rightNode={
+            <View className="ml-4 flex-row gap-2">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Search group"
+                onPress={() => {
+                  setGroupSearchVisible((current) => !current);
+                  if (groupSearchVisible) setGroupSearchQuery('');
+                }}
+                className="h-10 w-10 items-center justify-center rounded-full"
+                style={{ backgroundColor: theme.card }}>
+                <MaterialCommunityIcons
+                  name={groupSearchVisible ? 'close' : 'magnify'}
+                  size={22}
+                  color={theme.accent}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Group settings"
+                onPress={() => onOpenSettings(summary)}
+                className="h-10 w-10 items-center justify-center rounded-full"
+                style={{ backgroundColor: theme.card }}>
+                <MaterialCommunityIcons name="cog-outline" size={22} color={theme.accent} />
+              </Pressable>
+            </View>
+          }
+        />
+        <View className="min-h-[150px] overflow-hidden" style={{ backgroundColor: theme.accent }}>
           <View
             style={{
               position: 'absolute',
@@ -108,47 +144,8 @@ export function GroupDetailModal({
               transform: [{ rotate: '-18deg' }],
             }}
           />
-          <SafeAreaView edges={['top', 'left', 'right']}>
-            <View className="flex-row items-center justify-between px-5 pt-2">
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Close group"
-                onPress={onClose}
-                  className="h-12 w-12 items-center justify-center rounded-full"
-                  style={{ backgroundColor: theme.onAccent }}>
-                <MaterialCommunityIcons name="arrow-left" size={26} color={theme.shadow} />
-              </Pressable>
+            <View className="px-6 pb-8 pt-8">
               <View className="flex-row gap-3">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Search group"
-                  onPress={() => {
-                    setGroupSearchVisible((current) => !current);
-                    if (groupSearchVisible) setGroupSearchQuery('');
-                  }}
-                  className="h-12 w-12 items-center justify-center rounded-full"
-                  style={{ backgroundColor: theme.onAccent }}>
-                  <MaterialCommunityIcons
-                    name={groupSearchVisible ? 'close' : 'magnify'}
-                    size={26}
-                    color={theme.shadow}
-                  />
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Group settings"
-                  onPress={() => onOpenSettings(summary)}
-                  className="h-12 w-12 items-center justify-center rounded-full"
-                  style={{ backgroundColor: theme.onAccent }}>
-                  <MaterialCommunityIcons name="cog-outline" size={26} color={theme.shadow} />
-                </Pressable>
-              </View>
-            </View>
-            <View className="px-6 pb-8 pt-12">
-              <TText variant="screenTitle" style={{ color: theme.onAccent }}>
-                {summary.group.name}
-              </TText>
-              <View className="mt-5 flex-row gap-3">
                 {/*
                  * Dates are a trip's shape, not every group's: a home or couple
                  * group runs indefinitely, so offering to bound it with a start
@@ -182,7 +179,6 @@ export function GroupDetailModal({
                 </Pressable>
               </View>
             </View>
-          </SafeAreaView>
         </View>
 
         <ScrollView
@@ -346,7 +342,7 @@ export function GroupDetailModal({
         {canAddExpense ? (
           <FloatingExpenseButton onPress={() => onAddExpense(summary.group.id)} />
         ) : null}
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }

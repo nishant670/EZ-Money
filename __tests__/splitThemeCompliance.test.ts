@@ -40,4 +40,35 @@ describe('split theme compliance', () => {
 
     expect(violations).toEqual([]);
   });
+
+  it('uses shared motion and navigation chrome throughout split', () => {
+    const splitDirectory = join(process.cwd(), 'components', 'split');
+    const files = featureSourceFiles(splitDirectory);
+    const combinedSource = files.map((file) => readFileSync(file, 'utf8')).join('\n');
+
+    expect(combinedSource).not.toContain('animationType="slide"');
+    expect(combinedSource).not.toContain('ExpenseTopBar');
+    expect(combinedSource).not.toContain('SplitTopBar');
+
+    for (const modal of [
+      'FriendDetailModal.tsx',
+      'GroupActionModal.tsx',
+      'BillDetailModal.tsx',
+      'GroupDefaultSplitModal.tsx',
+      'CreateGroupModal.tsx',
+    ]) {
+      const source = readFileSync(join(splitDirectory, 'modals', modal), 'utf8');
+      expect(source).toContain('<AnimatedBottomSheet');
+    }
+
+    for (const modal of [
+      join('expense', 'AddExpenseModal.tsx'),
+      join('modals', 'GroupDetailModal.tsx'),
+      join('modals', 'GroupMembersModal.tsx'),
+      join('modals', 'GroupSettingsModal.tsx'),
+    ]) {
+      const source = readFileSync(join(splitDirectory, modal), 'utf8');
+      expect(source).toContain('<AppHeader');
+    }
+  });
 });

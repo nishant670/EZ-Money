@@ -1,12 +1,13 @@
 import { cssInterop } from 'nativewind';
-import { Modal, Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRef } from 'react';
+import { Pressable, View } from 'react-native';
 
 import {
   AdjustSplitScreen,
   SplitChoiceScreen,
 } from '@/components/split/expense/AddExpenseModal';
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
@@ -29,22 +30,24 @@ const TText = cssInterop(ThemedText, { className: 'style' });
  * one member's private frame.
  */
 export function GroupDefaultSplitModal({
-  groupName,
-  people,
-  draft,
-  screen,
+  visible,
+  groupName: liveGroupName,
+  people: livePeople,
+  draft: liveDraft,
+  screen: liveScreen,
   saving,
   errorMessage,
-  hasSavedDefault,
+  hasSavedDefault: liveHasSavedDefault,
   onChangeDraft,
   onChangeScreen,
   onSave,
   onReset,
   onClose,
 }: {
-  groupName: string;
+  visible: boolean;
+  groupName: string | null;
   people: SplitSlotPerson[];
-  draft: SplitSelection;
+  draft: SplitSelection | null;
   screen: 'choice' | 'adjust';
   saving: boolean;
   errorMessage?: string | null;
@@ -56,13 +59,31 @@ export function GroupDefaultSplitModal({
   onClose: () => void;
 }) {
   const theme = useThemeTokens().colors;
+  const presentationRef = useRef<{
+    groupName: string;
+    people: SplitSlotPerson[];
+    draft: SplitSelection;
+    screen: 'choice' | 'adjust';
+    hasSavedDefault: boolean;
+  } | null>(null);
+  if (visible && liveGroupName && liveDraft) {
+    presentationRef.current = {
+      groupName: liveGroupName,
+      people: livePeople,
+      draft: liveDraft,
+      screen: liveScreen,
+      hasSavedDefault: liveHasSavedDefault,
+    };
+  }
+  const presentation = presentationRef.current;
+  if (!presentation) return null;
+  const { groupName, people, draft, screen, hasSavedDefault } = presentation;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView
-        className="flex-1"
-        edges={['top', 'left', 'right']}
-        style={{ backgroundColor: theme.background }}>
+    <AnimatedBottomSheet visible={visible} onClose={onClose} sheetStyle={{ height: '94%' }}>
+      <View
+        className="flex-1 overflow-hidden rounded-t-[28px] border"
+        style={{ backgroundColor: theme.background, borderColor: theme.border }}>
         {screen === 'choice' ? (
           <View className="flex-1">
             <SplitChoiceScreen
@@ -134,7 +155,7 @@ export function GroupDefaultSplitModal({
             }
           />
         )}
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </AnimatedBottomSheet>
   );
 }

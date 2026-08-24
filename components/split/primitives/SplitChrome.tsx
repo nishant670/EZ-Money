@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -30,62 +30,6 @@ export function SplitScreenFrame({
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
       {children}
     </SafeAreaView>
-  );
-}
-
-export function SplitTopBar({
-  loading,
-  activeSection,
-  searchVisible,
-  onToggleSearch,
-  onCreate,
-}: {
-  loading: boolean;
-  activeSection: ActiveSection;
-  searchVisible: boolean;
-  onToggleSearch: () => void;
-  onCreate: () => void;
-}) {
-  const theme = useThemeTokens().colors;
-  const createIcon: keyof typeof MaterialCommunityIcons.glyphMap =
-    activeSection === 'friends'
-      ? 'account-plus-outline'
-      : activeSection === 'activity'
-        ? 'account-group-outline'
-        : 'account-multiple-plus-outline';
-  const createLabel =
-    activeSection === 'friends'
-      ? 'Add split friend'
-      : activeSection === 'activity'
-        ? 'Create split group'
-        : 'Create split friend or group';
-  return (
-    <View className="mb-5 flex-row items-center justify-between">
-      <TText variant="screenTitle" style={{ color: theme.text }}>
-        Split
-      </TText>
-      <View className="flex-row items-center gap-2">
-        {loading ? <ActivityIndicator color={theme.accent} /> : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={searchVisible ? 'Hide split search' : 'Search splits'}
-          onPress={onToggleSearch}
-          className="h-11 w-11 items-center justify-center rounded-full">
-          <MaterialCommunityIcons
-            name={searchVisible ? 'close' : 'magnify'}
-            size={26}
-            color={theme.text}
-          />
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={createLabel}
-          onPress={onCreate}
-          className="h-11 w-11 items-center justify-center rounded-full">
-          <MaterialCommunityIcons name={createIcon} size={26} color={theme.text} />
-        </Pressable>
-      </View>
-    </View>
   );
 }
 

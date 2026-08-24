@@ -1,10 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { MemberToggleChip } from '@/components/split/primitives/SplitPrimitives';
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { Fonts } from '@/constants/theme';
@@ -66,11 +66,14 @@ export function CreateGroupModal({
   const theme = useThemeTokens().colors;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView
-        className="flex-1"
-        edges={['top', 'left', 'right']}
-        style={{ backgroundColor: theme.background }}>
+    <AnimatedBottomSheet
+      visible={visible}
+      onClose={onClose}
+      avoidKeyboard
+      sheetStyle={{ maxHeight: '94%' }}>
+      <View
+        className="overflow-hidden rounded-t-[28px] border"
+        style={{ backgroundColor: theme.background, borderColor: theme.border, flexShrink: 1 }}>
         <View
           className="min-h-16 flex-row items-center border-b px-5"
           style={{ borderColor: theme.border }}>
@@ -233,8 +236,8 @@ export function CreateGroupModal({
             )}
           </View>
         </ScrollView>
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </AnimatedBottomSheet>
   );
 }
 

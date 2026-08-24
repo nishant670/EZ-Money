@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { contactMatchesFriend } from '@/components/split/split-utils';
 import type { DeviceContactOption, SplitGroupSummary } from '@/components/split/split-types';
 import { ThemedText } from '@/components/themed-text';
@@ -78,19 +79,35 @@ export function GroupMembersModal({
   );
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    <Modal visible onRequestClose={onClose}>
       <SafeAreaView
         className="flex-1"
         edges={['top', 'left', 'right']}
         style={{ backgroundColor: theme.background }}>
-        <View className="min-h-16 flex-row items-center px-5">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close group members"
-            onPress={onClose}
-            className="h-11 w-11 items-center justify-center">
-            <MaterialCommunityIcons name="arrow-left" size={26} color={theme.text} />
-          </Pressable>
+        <AppHeader
+          title="Group members"
+          subtitle={summary.group.name}
+          onBack={onClose}
+          rightNode={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Save group members"
+              disabled={saving}
+              onPress={onSave}
+              className="ml-4 min-h-10 min-w-12 items-center justify-center rounded-full px-3"
+              style={{ backgroundColor: theme.card }}>
+              {saving ? (
+                <ActivityIndicator color={theme.accent} />
+              ) : (
+                <TText variant="button" style={{ color: theme.accent }}>
+                  Save
+                </TText>
+              )}
+            </Pressable>
+          }
+        />
+        <View className="mx-6 mb-3 flex-row items-center rounded-2xl px-4" style={{ backgroundColor: theme.card }}>
+          <MaterialCommunityIcons name="magnify" size={21} color={theme.accent} />
           <TextInput
             value={searchQuery}
             onChangeText={onChangeSearchQuery}
@@ -100,25 +117,13 @@ export function GroupMembersModal({
             placeholderTextColor={`${theme.text}BF`}
             style={{
               flex: 1,
-              minHeight: 52,
+              minHeight: 48,
+              marginLeft: 10,
               color: theme.text,
               fontFamily: Fonts.body,
-              fontSize: 20,
+              fontSize: 16,
             }}
           />
-          <Pressable
-            accessibilityRole="button"
-            disabled={saving}
-            onPress={onSave}
-            className="min-h-11 min-w-12 items-end justify-center">
-            {saving ? (
-              <ActivityIndicator color={theme.accent} />
-            ) : (
-              <TText variant="button" style={{ color: theme.text }}>
-                Save
-              </TText>
-            )}
-          </Pressable>
         </View>
 
         <ScrollView

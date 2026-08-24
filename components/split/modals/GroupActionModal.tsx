@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRef } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import {
   AvatarCircle,
@@ -14,6 +14,7 @@ import {
 } from '@/components/split/split-utils';
 import type { GroupActionMode, SplitGroupSummary } from '@/components/split/split-types';
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { StateView } from '@/components/ui/StateView';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -22,8 +23,8 @@ import type { SplitFriend } from '@/lib/splits';
 const TText = cssInterop(ThemedText, { className: 'style' });
 
 export function GroupActionModal({
-  summary,
-  mode,
+  summary: liveSummary,
+  mode: liveMode,
   friends,
   currentUserName,
   onClose,
@@ -39,7 +40,16 @@ export function GroupActionModal({
   onShareExport: (summary: SplitGroupSummary) => void;
 }) {
   const theme = useThemeTokens().colors;
-  if (!summary || !mode) return null;
+  const presentationRef = useRef<{
+    summary: SplitGroupSummary;
+    mode: GroupActionMode;
+  } | null>(null);
+  if (liveSummary && liveMode) {
+    presentationRef.current = { summary: liveSummary, mode: liveMode };
+  }
+  const presentation = presentationRef.current;
+  if (!presentation) return null;
+  const { summary, mode } = presentation;
 
   const balances = getGroupBalanceRows(summary, friends);
   const totals = getGroupTotals(summary, friends, currentUserName);
@@ -54,20 +64,15 @@ export function GroupActionModal({
           : 'Export';
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView
-        className="flex-1"
-        edges={['top', 'left', 'right']}
-        style={{ backgroundColor: theme.background }}>
+    <AnimatedBottomSheet
+      visible={Boolean(liveSummary && liveMode)}
+      onClose={onClose}
+      sheetStyle={{ maxHeight: '92%' }}>
+      <View
+        className="overflow-hidden rounded-t-[28px] border"
+        style={{ backgroundColor: theme.background, borderColor: theme.border, flexShrink: 1 }}>
         <View className="min-h-16 flex-row items-center border-b px-5" style={{ borderColor: theme.border }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Close ${title}`}
-            onPress={onClose}
-            className="h-11 w-11 items-center justify-center">
-            <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
-          </Pressable>
-          <View className="ml-4 flex-1">
+          <View className="flex-1">
             <TText variant="screenTitle" style={{ color: theme.text }}>
               {title}
             </TText>
@@ -75,6 +80,14 @@ export function GroupActionModal({
               {summary.group.name}
             </TText>
           </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Close ${title}`}
+            onPress={onClose}
+            className="h-11 w-11 items-center justify-center rounded-full"
+            style={{ backgroundColor: theme.secondary }}>
+            <MaterialCommunityIcons name="close" size={22} color={theme.text} />
+          </Pressable>
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 24, paddingBottom: 44 }}>
@@ -199,8 +212,8 @@ export function GroupActionModal({
             </View>
           ) : null}
         </ScrollView>
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </AnimatedBottomSheet>
   );
 }
 

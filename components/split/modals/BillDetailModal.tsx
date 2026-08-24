@@ -1,10 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRef } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { formatBalance } from '@/components/split/split-utils';
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { SplitBill, SplitFriend } from '@/lib/splits';
@@ -27,61 +28,72 @@ export function BillDetailModal({
   onDelete: (bill: SplitBill) => void;
 }) {
   const theme = useThemeTokens().colors;
-  if (!bill) return null;
+  const presentedBillRef = useRef<SplitBill | null>(bill);
+  if (bill) presentedBillRef.current = bill;
+  const presentedBill = presentedBillRef.current;
+
+  if (!presentedBill) return null;
 
   const friendById = new Map(friends.map((friend) => [friend.id, friend]));
-  const payerParticipant = bill.participants.find(
+  const payerParticipant = presentedBill.participants.find(
     (participant) => participant.direction === 'user_owes_friend'
   );
   const payerName = payerParticipant
     ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
     : currentUserName;
   const paidLine = `${payerName === currentUserName ? 'You' : payerName} paid ${formatBalance(
-    bill.total_amount
+    presentedBill.total_amount
   )}`;
-  const canEdit = bill.viewer_can_edit === true;
-  const canDelete = bill.viewer_can_delete === true;
+  const canEdit = presentedBill.viewer_can_edit === true;
+  const canDelete = presentedBill.viewer_can_delete === true;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView
-        className="flex-1"
-        edges={['top', 'left', 'right']}
-        style={{ backgroundColor: theme.background }}>
+    <AnimatedBottomSheet
+      visible={Boolean(bill)}
+      onClose={onClose}
+      sheetStyle={{ maxHeight: '92%' }}>
+      <View
+        className="overflow-hidden rounded-t-[28px] border"
+        style={{ backgroundColor: theme.card, borderColor: theme.border, flexShrink: 1 }}>
         <View
-          className="min-h-16 flex-row items-center border-b px-5"
-          style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close expense details"
-            onPress={onClose}
-            className="h-11 w-11 items-center justify-center">
-            <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
-          </Pressable>
-          <View className="flex-1" />
+          className="min-h-16 flex-row items-center border-b px-5 pt-2"
+          style={{ borderColor: theme.border }}>
+          <View className="flex-1">
+            <TText variant="sectionTitle" style={{ color: theme.text }}>
+              Expense details
+            </TText>
+          </View>
           {canDelete ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Delete expense"
-              onPress={() => onDelete(bill)}
-              className="h-11 w-11 items-center justify-center">
-              <MaterialCommunityIcons name="trash-can-outline" size={27} color={theme.negative} />
+              onPress={() => onDelete(presentedBill)}
+              className="h-11 w-11 items-center justify-center rounded-full">
+              <MaterialCommunityIcons name="trash-can-outline" size={24} color={theme.negative} />
             </Pressable>
           ) : null}
           {canEdit ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Edit expense"
-              onPress={() => onEdit(bill)}
-              className="h-11 w-11 items-center justify-center">
-              <MaterialCommunityIcons name="pencil-outline" size={27} color={theme.text} />
+              onPress={() => onEdit(presentedBill)}
+              className="h-11 w-11 items-center justify-center rounded-full">
+              <MaterialCommunityIcons name="pencil-outline" size={24} color={theme.text} />
             </Pressable>
           ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close expense details"
+            onPress={onClose}
+            className="h-11 w-11 items-center justify-center rounded-full"
+            style={{ backgroundColor: theme.secondary }}>
+            <MaterialCommunityIcons name="close" size={22} color={theme.text} />
+          </Pressable>
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40, paddingTop: 28 }}>
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 44, paddingTop: 24 }}>
           <View className="flex-row items-start gap-5">
             <View
               className="h-20 w-20 items-center justify-center rounded-xl border"
@@ -90,14 +102,14 @@ export function BillDetailModal({
             </View>
             <View className="flex-1">
               <TText variant="screenTitle" style={{ color: theme.text }}>
-                {bill.title}
+                {presentedBill.title}
               </TText>
               <TText variant="amount" className="mt-2" style={{ color: theme.text }}>
-                {formatBalance(bill.total_amount)}
+                {formatBalance(presentedBill.total_amount)}
               </TText>
               <TText className="mt-4 text-base leading-6 text-black/55 dark:text-white/55">
-                {bill.date}
-                {bill.created_at ? `\nAdded on ${bill.created_at.slice(0, 10)}` : ''}
+                {presentedBill.date}
+                {presentedBill.created_at ? `\nAdded on ${presentedBill.created_at.slice(0, 10)}` : ''}
               </TText>
             </View>
           </View>
@@ -107,7 +119,7 @@ export function BillDetailModal({
               {paidLine}
             </TText>
             <View className="mt-5 gap-4">
-              {bill.participants.map((participant) => {
+              {presentedBill.participants.map((participant) => {
                 const friendName = friendById.get(participant.friend_id)?.name ?? 'Friend';
                 const isUserOwes = participant.direction === 'user_owes_friend';
                 const label = isUserOwes
@@ -133,7 +145,7 @@ export function BillDetailModal({
             </View>
           </View>
 
-          {bill.notes ? (
+          {presentedBill.notes ? (
             <View className="mt-10 rounded-2xl border p-4" style={{ borderColor: theme.border }}>
               <TText
                 className="text-xs text-black/45 dark:text-white/45"
@@ -141,12 +153,12 @@ export function BillDetailModal({
                 Notes
               </TText>
               <TText className="mt-2 text-base leading-6" style={{ color: theme.text }}>
-                {bill.notes}
+                {presentedBill.notes}
               </TText>
             </View>
           ) : null}
         </ScrollView>
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </AnimatedBottomSheet>
   );
 }

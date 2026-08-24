@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppHeader } from '@/components/navigation/AppHeader';
 import { AvatarCircle, GroupChoiceChip } from '@/components/split/primitives/SplitPrimitives';
 import {
   formatApiDate,
@@ -123,14 +124,19 @@ export function AddExpenseModal({
   if (!visible) return null;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    <Modal visible onRequestClose={onClose}>
       <SafeAreaView
         className="flex-1"
         edges={['top', 'left', 'right']}
         style={{ backgroundColor: theme.background }}>
         {flowScreen === 'expense' ? (
           <View className="flex-1">
-            <ExpenseTopBar title="Add expense" saving={saving} onBack={onClose} onDone={onSave} />
+            <AppHeader
+              title="Add expense"
+              onBack={onClose}
+              rightNode={<HeaderDoneAction saving={saving} onDone={onSave} />}
+              style={{ borderBottomColor: theme.border, borderBottomWidth: 1 }}
+            />
             <ScrollView
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -284,44 +290,28 @@ export function AddExpenseModal({
   );
 }
 
-function ExpenseTopBar({
-  title,
+function HeaderDoneAction({
   saving,
-  onBack,
   onDone,
 }: {
-  title: string;
   saving: boolean;
-  onBack: () => void;
   onDone: () => void;
 }) {
   const theme = useThemeTokens().colors;
   return (
-    <View
-      className="min-h-16 flex-row items-center border-b px-5"
-      style={{ borderColor: theme.border }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Close expense"
-        onPress={onBack}
-        className="h-11 w-11 items-center justify-center">
-        <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
-      </Pressable>
-      <TText variant="screenTitle" className="ml-4 flex-1" style={{ color: theme.text }}>
-        {title}
-      </TText>
-      <Pressable
-        accessibilityRole="button"
-        disabled={saving}
-        onPress={onDone}
-        className="h-11 w-11 items-center justify-center">
-        {saving ? (
-          <ActivityIndicator color={theme.accent} />
-        ) : (
-          <MaterialCommunityIcons name="check" size={30} color={theme.text} />
-        )}
-      </Pressable>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Save"
+      disabled={saving}
+      onPress={onDone}
+      className="ml-4 h-10 w-10 items-center justify-center rounded-full"
+      style={{ backgroundColor: theme.card }}>
+      {saving ? (
+        <ActivityIndicator color={theme.accent} />
+      ) : (
+        <MaterialCommunityIcons name="check" size={26} color={theme.accent} />
+      )}
+    </Pressable>
   );
 }
 
@@ -446,11 +436,11 @@ export function SplitChoiceScreen({
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <ExpenseTopBar
+      <AppHeader
         title={title ?? 'How was this expense split?'}
-        saving={false}
         onBack={onBack}
-        onDone={onDone ?? onBack}
+        rightNode={<HeaderDoneAction saving={false} onDone={onDone ?? onBack} />}
+        style={{ borderBottomColor: theme.border, borderBottomWidth: 1 }}
       />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
         <View className="px-6 pt-5">
@@ -661,11 +651,11 @@ export function AdjustSplitScreen({
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <ExpenseTopBar
+      <AppHeader
         title={title ?? 'Adjust split'}
-        saving={false}
         onBack={onBack}
-        onDone={onDone}
+        rightNode={<HeaderDoneAction saving={false} onDone={onDone} />}
+        style={{ borderBottomColor: theme.border, borderBottomWidth: 1 }}
       />
       <ScrollView
         keyboardShouldPersistTaps="handled"

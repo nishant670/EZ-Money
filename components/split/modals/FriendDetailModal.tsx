@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRef } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import {
   AvatarCircle,
@@ -21,6 +21,7 @@ import type {
   SplitGroupSummary,
 } from '@/components/split/split-types';
 import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { SplitFriend } from '@/lib/splits';
@@ -28,7 +29,7 @@ import type { SplitFriend } from '@/lib/splits';
 const TText = cssInterop(ThemedText, { className: 'style' });
 
 export function FriendDetailModal({
-  summary,
+  summary: liveSummary,
   currentUserName,
   onClose,
   onAddExpense,
@@ -45,6 +46,9 @@ export function FriendDetailModal({
   onOpenOptions: (friend: SplitFriend) => void;
 }) {
   const theme = useThemeTokens().colors;
+  const summaryRef = useRef<FriendDetailSummary | null>(liveSummary);
+  if (liveSummary) summaryRef.current = liveSummary;
+  const summary = summaryRef.current;
   if (!summary) return null;
 
   const { friend, groups, netBalance } = summary;
@@ -76,8 +80,10 @@ export function FriendDetailModal({
   }, new Map<string, SplitGroupSummary[]>());
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1" style={{ backgroundColor: theme.background }}>
+    <AnimatedBottomSheet visible={Boolean(liveSummary)} onClose={onClose} sheetStyle={{ height: '94%' }}>
+      <View
+        className="flex-1 overflow-hidden rounded-t-[28px] border"
+        style={{ backgroundColor: theme.background, borderColor: theme.border }}>
         <View className="min-h-[250px] overflow-hidden" style={{ backgroundColor: theme.accent }}>
           <View
             style={{
@@ -112,7 +118,7 @@ export function FriendDetailModal({
               transform: [{ rotate: '32deg' }],
             }}
           />
-          <SafeAreaView edges={['top', 'left', 'right']}>
+          <View>
             <View className="flex-row items-center justify-between px-5 pt-2">
               <Pressable
                 accessibilityRole="button"
@@ -137,7 +143,7 @@ export function FriendDetailModal({
                 </Pressable>
               </View>
             </View>
-          </SafeAreaView>
+          </View>
         </View>
 
         <View className="-mt-16 px-8">
@@ -205,7 +211,7 @@ export function FriendDetailModal({
 
         <FloatingExpenseButton onPress={() => onAddExpense(friend.id)} />
       </View>
-    </Modal>
+    </AnimatedBottomSheet>
   );
 }
 
