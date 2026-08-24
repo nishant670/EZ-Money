@@ -35,6 +35,7 @@ import { GroupDefaultSplitModal } from '@/components/split/modals/GroupDefaultSp
 import { GroupSettingsModal } from '@/components/split/modals/GroupSettingsModal';
 import { GroupMembersModal } from '@/components/split/modals/GroupMembersModal';
 import { GroupTile } from '@/components/split/rows/GroupTile';
+import { SwipeActionRow } from '@/components/split/rows/SwipeActionRow';
 import { GroupActionModal } from '@/components/split/modals/GroupActionModal';
 import { BillDetailModal } from '@/components/split/modals/BillDetailModal';
 import {
@@ -446,6 +447,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>('open');
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [openSwipeRow, setOpenSwipeRow] = useState<string | null>(null);
   const [selectedGroupDetailId, setSelectedGroupDetailId] = useState<number | null>(null);
   const [groupSettingsId, setGroupSettingsId] = useState<number | null>(null);
   const [groupAction, setGroupAction] = useState<{
@@ -976,6 +978,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
 
+  useEffect(() => {
+    setOpenSwipeRow(null);
+  }, [activeSection, balanceFilter, normalizedSearch]);
+
   const balanceMatchesFilter = useCallback(
     (value: number) => {
       if (balanceFilter === 'all') return true;
@@ -1247,6 +1253,33 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const handleArchiveFriend = (friend: SplitFriend) => {
     removeFriendFromActiveList(friend, 'archive');
+  };
+
+  const handleArchiveGroup = (summary: SplitGroupSummary) => {
+    if (!token || !summary.group.viewer_can_manage) return;
+    Alert.alert(
+      `Archive ${summary.group.name}?`,
+      'Archived groups stay out of the active Split list while preserving their history.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          style: 'destructive',
+          onPress: () => {
+            setOpenSwipeRow(null);
+            setError(null);
+            void archiveSplitGroup(token, summary.group.id)
+              .then(async () => {
+                haptics.removed();
+                await loadSplitData();
+              })
+              .catch((archiveError: unknown) => {
+                reportSplitError(archiveError, 'Unable to archive this split group.');
+              });
+          },
+        },
+      ]
+    );
   };
 
   const openFriendEditor = (friend: SplitFriend) => {
@@ -2072,37 +2105,46 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         key={friend.id}
         entering={motion.rowEntering(entranceIndex)}
         layout={motion.reflow()}>
-        <Card compact style={{ padding: 16 }}>
-          <View className="flex-row items-center gap-4">
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Open ${friend.name}`}
-          onPress={() => openFriendDetail(friend.id)}
-          onLongPress={() => setSelectedFriendActions(friend)}
-          className="flex-1 flex-row items-center gap-4">
-          <AvatarCircle label={friend.name} size={58} />
-          <View className="flex-1">
-            <TText variant="cardTitle" style={{ color: theme.text }}>
-              {friend.name}
-            </TText>
-            <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
-              {[friend.phone, friend.email].filter(Boolean).join(' • ') || 'No contact saved'}
-            </TText>
-            <TText className="mt-1 text-sm" style={{ color: amountColor, fontFamily: Fonts.title }}>
-              {formatBalance(netBalance)} {balanceLabel}
-            </TText>
-          </View>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Archive ${friend.name}`}
-          onPress={() => handleArchiveFriend(friend)}
-          className="h-10 w-10 items-center justify-center rounded-full"
-          style={{ backgroundColor: theme.secondary }}>
-          <MaterialCommunityIcons name="archive-outline" size={18} color={theme.text} />
-        </Pressable>
-          </View>
-        </Card>
+        <SwipeActionRow
+          open={openSwipeRow === `friend-${friend.id}`}
+          onOpenChange={(open) => setOpenSwipeRow(open ? `friend-${friend.id}` : null)}
+          actions={[
+            {
+              label: 'Edit',
+              icon: 'pencil-outline',
+              onPress: () => openFriendEditor(friend),
+            },
+            {
+              label: 'Archive',
+              icon: 'archive-outline',
+              tone: 'destructive',
+              onPress: () => handleArchiveFriend(friend),
+            },
+          ]}>
+          <Card compact style={{ padding: 0 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${friend.name}`}
+              onPress={() => openFriendDetail(friend.id)}
+              onLongPress={() => setSelectedFriendActions(friend)}
+              className="flex-row items-center gap-4 p-4">
+              <AvatarCircle label={friend.name} size={58} />
+              <View className="flex-1">
+                <TText variant="cardTitle" style={{ color: theme.text }}>
+                  {friend.name}
+                </TText>
+                <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
+                  {[friend.phone, friend.email].filter(Boolean).join(' • ') || 'No contact saved'}
+                </TText>
+                <TText
+                  className="mt-1 text-sm"
+                  style={{ color: amountColor, fontFamily: Fonts.title }}>
+                  {formatBalance(netBalance)} {balanceLabel}
+                </TText>
+              </View>
+            </Pressable>
+          </Card>
+        </SwipeActionRow>
       </Animated.View>
     );
   };
@@ -2121,38 +2163,61 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         key={group.id}
         entering={motion.rowEntering(entranceIndex)}
         layout={motion.reflow()}>
-        <Card compact style={{ padding: 0 }}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setSelectedGroupDetailId(group.id)}
-            className="flex-row gap-4 p-4">
-          <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
-          <View className="flex-1 justify-center">
-          <TText variant="cardTitle" style={{ color: theme.text }}>
-            {group.name}
-          </TText>
-          <View className="mt-1">
-            <BalanceFigure value={netBalance} color={tone.color} />
-          </View>
-          {detailLines.length > 0 ? (
-            detailLines.map((line) => (
-              <TText
-                key={line}
-                className="mt-1 text-sm text-black/55 dark:text-white/55"
-                numberOfLines={1}>
-                {line}
-              </TText>
-            ))
-          ) : (
-            <TText className="mt-1 text-sm text-black/55 dark:text-white/55" numberOfLines={1}>
-              {latestBill
-                ? `${billCount} bill${billCount === 1 ? '' : 's'} • last on ${latestBill.date}`
-                : memberNames || 'No expenses yet'}
-            </TText>
-          )}
-          </View>
-          </Pressable>
-        </Card>
+        <SwipeActionRow
+          open={openSwipeRow === `group-${group.id}`}
+          onOpenChange={(open) => setOpenSwipeRow(open ? `group-${group.id}` : null)}
+          actions={
+            group.viewer_can_manage
+              ? [
+                  {
+                    label: 'Edit',
+                    icon: 'pencil-outline' as const,
+                    onPress: () => openGroupEditor(summary),
+                  },
+                  {
+                    label: 'Archive',
+                    icon: 'archive-outline' as const,
+                    tone: 'destructive' as const,
+                    onPress: () => handleArchiveGroup(summary),
+                  },
+                ]
+              : []
+          }>
+          <Card compact style={{ padding: 0 }}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setSelectedGroupDetailId(group.id)}
+              className="flex-row gap-4 p-4">
+              <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
+              <View className="flex-1 justify-center">
+                <TText variant="cardTitle" style={{ color: theme.text }}>
+                  {group.name}
+                </TText>
+                <View className="mt-1">
+                  <BalanceFigure value={netBalance} color={tone.color} />
+                </View>
+                {detailLines.length > 0 ? (
+                  detailLines.map((line) => (
+                    <TText
+                      key={line}
+                      className="mt-1 text-sm text-black/55 dark:text-white/55"
+                      numberOfLines={1}>
+                      {line}
+                    </TText>
+                  ))
+                ) : (
+                  <TText
+                    className="mt-1 text-sm text-black/55 dark:text-white/55"
+                    numberOfLines={1}>
+                    {latestBill
+                      ? `${billCount} bill${billCount === 1 ? '' : 's'} • last on ${latestBill.date}`
+                      : memberNames || 'No expenses yet'}
+                  </TText>
+                )}
+              </View>
+            </Pressable>
+          </Card>
+        </SwipeActionRow>
       </Animated.View>
     );
   };
