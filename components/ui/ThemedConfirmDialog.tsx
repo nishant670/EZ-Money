@@ -122,6 +122,102 @@ export function ThemedConfirmDialog({
   );
 }
 
+type AlertTone = 'info' | 'success' | 'danger';
+
+type ThemedAlertDialogProps = {
+  visible: boolean;
+  title: string;
+  message: string;
+  buttonLabel?: string;
+  iconName?: IconName;
+  tone?: AlertTone;
+  onDismiss: () => void;
+};
+
+/**
+ * The one-button counterpart to the confirm dialog, for the places that were
+ * still reaching for `Alert.alert` — a system dialog carries none of the app's
+ * type, colour, or corner radius, so an otherwise themed flow ended on a stock
+ * Android box.
+ */
+export function ThemedAlertDialog({
+  visible,
+  title,
+  message,
+  buttonLabel = 'OK',
+  iconName,
+  tone = 'info',
+  onDismiss,
+}: ThemedAlertDialogProps) {
+  const theme = useThemeTokens();
+  const colors = theme.colors;
+  const isDark = theme.mode === 'dark';
+  const accentByTone: Record<AlertTone, string> = {
+    info: colors.accent,
+    success: '#2E9E6B',
+    danger: '#EF5B5B',
+  };
+  const iconByTone: Record<AlertTone, IconName> = {
+    info: 'information-outline',
+    success: 'check-decagram',
+    danger: 'alert-circle-outline',
+  };
+  const actionColor = accentByTone[tone];
+  const iconBackground =
+    tone === 'info' ? colors.secondary : isDark ? 'rgba(255,255,255,0.08)' : `${actionColor}1A`;
+
+  return (
+    <Modal
+      transparent
+      animationType="fade"
+      visible={visible}
+      statusBarTranslucent
+      onRequestClose={onDismiss}>
+      <View style={styles.overlay}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={buttonLabel}
+          onPress={onDismiss}
+          style={styles.backdrop}
+        />
+        <View
+          style={[
+            styles.dialog,
+            theme.shadows.soft,
+            { backgroundColor: colors.background, borderColor: colors.border },
+          ]}>
+          <View style={[styles.iconShell, { backgroundColor: iconBackground }]}>
+            <MaterialCommunityIcons
+              name={iconName ?? iconByTone[tone]}
+              size={27}
+              color={actionColor}
+            />
+          </View>
+          <ThemedText style={[styles.title, { color: colors.text }]}>{title}</ThemedText>
+          <ThemedText
+            style={[styles.message, { color: isDark ? 'rgba(255,255,255,0.58)' : '#6B7280' }]}>
+            {message}
+          </ThemedText>
+
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onDismiss}
+              style={({ pressed }) => [
+                styles.button,
+                { backgroundColor: actionColor, opacity: pressed ? 0.72 : 1 },
+              ]}>
+              <ThemedText style={[styles.confirmLabel, { color: '#FFFFFF' }]}>
+                {buttonLabel}
+              </ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function ThemedDeleteDialog(
   props: Omit<ThemedConfirmDialogProps, 'destructive' | 'iconName'>
 ) {

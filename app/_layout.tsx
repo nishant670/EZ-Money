@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 // Must load before any component calls setColorScheme: NativeWind reads the
@@ -189,6 +190,20 @@ export default function RootLayout() {
     // unless a `GestureHandlerRootView` is above them. One root here, so a row on any
     // screen can be swiped without each screen remembering to provide one.
     <GestureHandlerRootView style={{ flex: 1 }}>
+      {/* Expo Router mounts a `SafeAreaProvider` of its own, but it passes
+          `initialMetrics` only on web and under test — on a device the value is
+          `undefined`, so the provider starts with *no* insets and fills them in
+          only once the native view has measured itself.
+
+          `initialWindowMetrics` is read straight off the native module when the
+          JS bundle loads, so a provider seeded with it hands out correct insets
+          on the very first frame. Nesting is the supported way to override:
+          the inner provider wins for its subtree, which is the whole app.
+
+          This is what lets a screen read its insets from JS and lay out right
+          the first time, instead of being re-padded natively a beat later —
+          see `OnboardingScreenWrapper` for the reflow that cost. */}
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <ThemeProvider value={navigationTheme}>
       {showCustomSplash && <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />}
       <Stack
@@ -265,6 +280,7 @@ export default function RootLayout() {
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
