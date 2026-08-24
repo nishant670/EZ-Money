@@ -1,17 +1,16 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { cssInterop } from 'nativewind';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Modal,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { AvatarCircle, GroupChoiceChip } from '@/components/split/primitives/SplitPrimitives';
@@ -22,11 +21,19 @@ import {
   parseApiDate,
 } from '@/components/split/split-utils';
 import { ThemedText } from '@/components/themed-text';
+import { AmountDisplay, AmountKeypad } from '@/components/transactions/AmountKeypad';
+import { DraftFieldCard } from '@/components/transactions/DraftFieldCard';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import {
+  CATEGORIES,
+  DEFAULT_CATEGORY,
+  categoryVisual,
+  type Category,
+} from '@/lib/categories';
 import {
   computeSplitShares,
   describeSplitTab,
@@ -114,130 +121,116 @@ export function AddExpenseModal({
   onChangeAdjustSplitTab: (tab: AdjustSplitTab) => void;
   onChangeSplitWeight: (key: string, value: string) => void;
   onApplySplit: () => void;
-  onSave: () => void;
+  onSave: (category: Category) => void;
   onClose: () => void;
 }) {
   const theme = useThemeTokens().colors;
   const groupLabel = selectedGroup ? `All of ${selectedGroup.name}` : 'All friends';
   const splitLabel = describeSplitChoice(selection, people);
+  const [category, setCategory] = useState<Category>(DEFAULT_CATEGORY);
+  const [amountKeypadVisible, setAmountKeypadVisible] = useState(true);
 
-  if (!visible) return null;
+  useEffect(() => {
+    if (visible) {
+      setCategory(DEFAULT_CATEGORY);
+      setAmountKeypadVisible(true);
+    }
+  }, [visible]);
 
   return (
-    <Modal visible onRequestClose={onClose}>
-      <SafeAreaView
-        className="flex-1"
-        edges={['top', 'left', 'right']}
-        style={{ backgroundColor: theme.background }}>
+    <AnimatedBottomSheet visible={visible} onClose={onClose} avoidKeyboard sheetStyle={{ height: '92%' }}>
+      <View
+        className="flex-1 overflow-hidden rounded-t-[28px] border"
+        style={{ backgroundColor: theme.background, borderColor: theme.border }}>
+        <View className="items-center pb-1 pt-3">
+          <View className="h-1.5 w-12 rounded-full" style={{ backgroundColor: theme.border }} />
+        </View>
         {flowScreen === 'expense' ? (
           <View className="flex-1">
             <AppHeader
               title="Add expense"
               onBack={onClose}
-              rightNode={<HeaderDoneAction saving={saving} onDone={onSave} />}
+              rightNode={<HeaderDoneAction saving={saving} onDone={() => onSave(category)} />}
               style={{ borderBottomColor: theme.border, borderBottomWidth: 1 }}
             />
             <ScrollView
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 110 }}>
-              {!isGroupLocked ? (
-                <View
-                  className="min-h-[74px] flex-row items-center border-b px-6"
-                  style={{ borderColor: theme.border }}>
-                  <TText className="text-xl" style={{ color: theme.text }}>
-                    With you and:
-                  </TText>
-                  <Pressable
-                    accessibilityRole="button"
-                    className="ml-3 min-h-12 flex-1 flex-row items-center rounded-full border px-3"
-                    style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                    <View
-                      className="h-10 w-10 items-center justify-center rounded-full"
-                      style={{ backgroundColor: theme.accent }}>
-                      <MaterialCommunityIcons
-                        name="receipt-text-outline"
-                        size={23}
-                        color={theme.onAccent}
-                      />
-                    </View>
-                    <TText
-                      className="ml-3 flex-1 text-lg"
-                      numberOfLines={1}
-                      style={{ color: theme.text, fontFamily: Fonts.title }}>
-                      {groupLabel}
-                    </TText>
-                  </Pressable>
-                </View>
-              ) : null}
+              contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 20, paddingTop: 12 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Edit expense amount"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setAmountKeypadVisible(true);
+                }}>
+                <AmountDisplay value={amount} />
+              </Pressable>
 
-              <View className="px-8 pt-12">
-                <View className="flex-row items-center gap-4">
-                  <View
-                    className="h-[70px] w-[70px] items-center justify-center rounded border"
-                    style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                    <MaterialCommunityIcons
-                      name="receipt-text-outline"
-                      size={40}
-                      color={theme.text}
-                    />
-                  </View>
+              <View className="mt-3 gap-3">
+                <DraftFieldCard label="Description" icon="receipt-text-outline">
                   <TextInput
                     value={title}
                     onChangeText={onChangeTitle}
-                    placeholder="Description"
+                    onFocus={() => setAmountKeypadVisible(false)}
+                    placeholder="What was this expense for?"
                     placeholderTextColor={`${theme.text}B8`}
                     style={{
-                      flex: 1,
-                      minHeight: 58,
-                      borderBottomWidth: 1,
-                      borderColor: `${theme.text}8C`,
+                      minHeight: 32,
                       color: theme.text,
                       fontFamily: Fonts.body,
-                      fontSize: 20,
+                      fontSize: 16,
                     }}
                   />
-                </View>
-                <View className="mt-6 flex-row items-center gap-4">
-                  <View
-                    className="h-[70px] w-[70px] items-center justify-center rounded border"
-                    style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                    <TText variant="amount" style={{ color: theme.text }}>
-                      {CURRENCY_SYMBOL}
-                    </TText>
-                  </View>
-                  <TextInput
-                    value={amount}
-                    onChangeText={onChangeAmount}
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    placeholderTextColor={`${theme.text}B8`}
-                    style={{
-                      flex: 1,
-                      minHeight: 64,
-                      borderBottomWidth: 2,
-                      borderColor: theme.accent,
-                      color: theme.text,
-                      fontFamily: Fonts.title,
-                      fontSize: 36,
-                    }}
-                  />
-                </View>
+                </DraftFieldCard>
 
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => onChangeFlowScreen('split_choice')}
-                  className="mt-10 min-h-14 items-center justify-center self-center rounded border px-6"
-                  style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                  <TText variant="cardTitle" style={{ color: theme.text }}>
-                    {splitLabel}
-                  </TText>
-                </Pressable>
+                <DraftFieldCard
+                  label="Category"
+                  icon={categoryVisual(category).icon}
+                  iconColor={categoryVisual(category).color}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{ gap: 8, paddingTop: 6, paddingRight: 8 }}>
+                    {CATEGORIES.map((option) => {
+                      const selected = category === option;
+                      const visual = categoryVisual(option);
+                      return (
+                        <Pressable
+                          key={option}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          onPress={() => setCategory(option)}
+                          className="flex-row items-center gap-1.5 rounded-full border px-3 py-2"
+                          style={{
+                            backgroundColor: selected ? theme.secondary : theme.background,
+                            borderColor: selected ? theme.accent : theme.border,
+                          }}>
+                          <MaterialCommunityIcons name={visual.icon} size={14} color={visual.color} />
+                          <TText variant="button" className="text-xs" style={{ color: theme.text }}>
+                            {option}
+                          </TText>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </DraftFieldCard>
+
+                <DraftFieldCard
+                  label="Split"
+                  value={splitLabel}
+                  icon="account-multiple-outline"
+                  accessibilityLabel={`Change split. ${splitLabel}`}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    onChangeFlowScreen('split_choice');
+                  }}
+                />
 
                 {!isGroupLocked && groups.length > 0 ? (
-                  <View className="mt-8">
-                    <TText className="text-xs text-black/55 dark:text-white/55">Group</TText>
-                    <View className="mt-3 flex-row flex-wrap gap-2">
+                  <DraftFieldCard label="Group" icon="account-group-outline">
+                    <View className="mt-1 flex-row flex-wrap gap-2">
                       <GroupChoiceChip
                         label="No group"
                         selected={selectedGroupId === null}
@@ -252,15 +245,43 @@ export function AddExpenseModal({
                         />
                       ))}
                     </View>
-                  </View>
-                ) : null}
+                  </DraftFieldCard>
+                ) : (
+                  <DraftFieldCard label="Group" value={groupLabel} icon="account-group-outline" />
+                )}
+
+                <ExpenseDateField date={date} onChangeDate={onChangeDate} />
+
+                <DraftFieldCard label="Notes" icon="note-text-outline">
+                  <TextInput
+                    value={notes}
+                    onChangeText={onChangeNotes}
+                    onFocus={() => setAmountKeypadVisible(false)}
+                    multiline
+                    placeholder="Add a note"
+                    placeholderTextColor={`${theme.text}B8`}
+                    textAlignVertical="top"
+                    style={{
+                      minHeight: 64,
+                      color: theme.text,
+                      fontFamily: Fonts.body,
+                      fontSize: 15,
+                    }}
+                  />
+                </DraftFieldCard>
 
                 {errorMessage ? (
-                  <ErrorBanner message={errorMessage} style={{ marginTop: 24 }} />
+                  <ErrorBanner message={errorMessage} />
                 ) : null}
               </View>
             </ScrollView>
-            <ExpenseBottomBar date={date} onChangeDate={onChangeDate} />
+            {amountKeypadVisible ? (
+              <View
+                className="border-t px-5 pb-5 pt-3"
+                style={{ backgroundColor: theme.background, borderColor: theme.border }}>
+                <AmountKeypad value={amount} onChange={onChangeAmount} disabled={saving} />
+              </View>
+            ) : null}
           </View>
         ) : flowScreen === 'split_choice' ? (
           <SplitChoiceScreen
@@ -285,8 +306,8 @@ export function AddExpenseModal({
             onChangeWeight={onChangeSplitWeight}
           />
         )}
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </AnimatedBottomSheet>
   );
 }
 
@@ -315,14 +336,13 @@ function HeaderDoneAction({
   );
 }
 
-function ExpenseBottomBar({
+function ExpenseDateField({
   date,
   onChangeDate,
 }: {
   date: string;
   onChangeDate: (value: string) => void;
 }) {
-  const theme = useThemeTokens().colors;
   const [showIosDatePicker, setShowIosDatePicker] = useState(false);
   const openDatePicker = () => {
     const currentDate = parseApiDate(date);
@@ -343,20 +363,14 @@ function ExpenseBottomBar({
   };
 
   return (
-    <View
-      className="absolute bottom-0 left-0 right-0 min-h-20 border-t px-6 pb-3"
-      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-      <View className="min-h-16 flex-row items-center justify-between">
-        <TText className="text-base text-black/55 dark:text-white/55">{date}</TText>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Select expense date"
-          onPress={openDatePicker}
-          className="h-12 w-12 items-center justify-center rounded-full"
-          style={{ backgroundColor: theme.secondary }}>
-          <MaterialCommunityIcons name="calendar-blank-outline" size={30} color={theme.accent} />
-        </Pressable>
-      </View>
+    <View>
+      <DraftFieldCard
+        label="Date"
+        value={date}
+        icon="calendar-blank-outline"
+        accessibilityLabel={`Select expense date. ${date}`}
+        onPress={openDatePicker}
+      />
       {showIosDatePicker ? (
         <DateTimePicker
           value={parseApiDate(date)}
@@ -368,6 +382,7 @@ function ExpenseBottomBar({
             }
           }}
           onDismiss={() => setShowIosDatePicker(false)}
+          style={{ width: '100%' }}
         />
       ) : null}
     </View>

@@ -58,6 +58,7 @@ import type {
   GroupActionMode,
   SplitGroupSummary,
 } from '@/components/split/split-types';
+import type { Category } from '@/lib/categories';
 import {
   BalanceFilterSheet,
   type BalanceFilter,
@@ -1309,7 +1310,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const createEntryBackedSplitBill = async (
     authToken: string,
     amount: number,
-    participants: ParticipantDraft[]
+    participants: ParticipantDraft[],
+    category: Category
   ) => {
     const account = await resolveSplitExpenseAccount(authToken);
     await createEntry(
@@ -1321,7 +1323,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         account_id: account.id,
         type: 'expense',
         mode: 'Cash',
-        category: 'Split',
+        category,
         notes: billNotes.trim(),
         merchant: '',
         tag: 'Split',
@@ -1343,7 +1345,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     );
   };
 
-  const handleCreateBill = async () => {
+  const handleCreateBill = async (category: Category) => {
     if (!token || saving) return;
     const amount = parseAmount(billAmount);
     if (!billTitle.trim() || !Number.isFinite(amount) || amount <= 0) {
@@ -1371,7 +1373,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           ? null
           : await createSplitBill(token, payload);
       if (shouldMirrorToTransaction) {
-        await createEntryBackedSplitBill(token, amount, finalParticipants);
+        await createEntryBackedSplitBill(token, amount, finalParticipants, category);
       }
       closeModal();
       await loadSplitData();
@@ -2714,7 +2716,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             setSplitWeights((current) => ({ ...current, [key]: value }));
           }}
           onApplySplit={applySplitChoice}
-          onSave={() => void handleCreateBill()}
+          onSave={(category) => void handleCreateBill(category)}
           onClose={closeModal}
         />
 
