@@ -54,32 +54,44 @@ export function AnimatedBottomSheet({
   const exitDurationMs = motion.exitDuration('sheet');
 
   useEffect(() => {
+    let active = true;
+    let animationFrame: number | null = null;
+    let animation: Animated.CompositeAnimation | null = null;
+
     if (visible) {
       setIsMounted(true);
-      requestAnimationFrame(() => {
-        Animated.parallel([
+      animationFrame = requestAnimationFrame(() => {
+        if (!active) return;
+        animation = Animated.parallel([
           Animated.timing(progress, {
             toValue: 1,
             duration: enterDuration,
             easing: ENTER_EASING,
             useNativeDriver: true,
           }),
-        ]).start();
+        ]);
+        animation.start();
       });
-      return;
+    } else {
+      animation = Animated.timing(progress, {
+        toValue: 0,
+        duration: exitDurationMs,
+        easing: EXIT_EASING,
+        useNativeDriver: true,
+      });
+      animation.start(({ finished }) => {
+        if (active && finished) {
+          setIsMounted(false);
+          onDismiss?.();
+        }
+      });
     }
 
-    Animated.timing(progress, {
-      toValue: 0,
-      duration: exitDurationMs,
-      easing: EXIT_EASING,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setIsMounted(false);
-        onDismiss?.();
-      }
-    });
+    return () => {
+      active = false;
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      animation?.stop();
+    };
   }, [enterDuration, exitDurationMs, onDismiss, progress, visible]);
 
   /**

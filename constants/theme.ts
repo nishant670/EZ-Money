@@ -29,6 +29,9 @@ type MoodPalette = {
     secondary: string;
     card: string;
     border: string;
+    positive: string;
+    negative: string;
+    neutral: string;
   };
   dark: {
     background: string;
@@ -36,6 +39,9 @@ type MoodPalette = {
     secondary: string;
     card: string;
     border: string;
+    positive: string;
+    negative: string;
+    neutral: string;
   };
 };
 
@@ -52,6 +58,9 @@ export const ThemeMoods = {
       secondary: palette.accentSecondary,
       card: palette.cardLight,
       border: palette.borderLight,
+      positive: '#16825D',
+      negative: '#C43D52',
+      neutral: '#6B7280',
     },
     dark: {
       background: palette.backgroundDark,
@@ -59,6 +68,9 @@ export const ThemeMoods = {
       secondary: '#2C2C2C',
       card: '#242424',
       border: palette.borderDark,
+      positive: '#6EE7B7',
+      negative: '#FB7185',
+      neutral: '#A3A3A3',
     },
   },
   mint: {
@@ -73,6 +85,9 @@ export const ThemeMoods = {
       secondary: '#DDF6EA',
       card: '#FFFFFF',
       border: '#D7EEE3',
+      positive: '#0F8A5F',
+      negative: '#C2415A',
+      neutral: '#66736D',
     },
     dark: {
       background: '#0F1D19',
@@ -80,6 +95,9 @@ export const ThemeMoods = {
       secondary: '#17362B',
       card: '#162621',
       border: '#28483D',
+      positive: '#6EE7B7',
+      negative: '#FDA4AF',
+      neutral: '#A7B7AF',
     },
   },
   sky: {
@@ -94,6 +112,9 @@ export const ThemeMoods = {
       secondary: '#DCEEFF',
       card: '#FFFFFF',
       border: '#D7E7F7',
+      positive: '#17845B',
+      negative: '#C2415A',
+      neutral: '#64748B',
     },
     dark: {
       background: '#101A25',
@@ -101,6 +122,9 @@ export const ThemeMoods = {
       secondary: '#172C42',
       card: '#172331',
       border: '#29425E',
+      positive: '#6EE7B7',
+      negative: '#FDA4AF',
+      neutral: '#AAB8C8',
     },
   },
   plum: {
@@ -115,6 +139,9 @@ export const ThemeMoods = {
       secondary: '#F0DDF8',
       card: '#FFFFFF',
       border: '#EBDCF0',
+      positive: '#16825D',
+      negative: '#C2415A',
+      neutral: '#76697A',
     },
     dark: {
       background: '#1F1724',
@@ -122,6 +149,9 @@ export const ThemeMoods = {
       secondary: '#35213F',
       card: '#291E30',
       border: '#47304F',
+      positive: '#6EE7B7',
+      negative: '#FDA4AF',
+      neutral: '#C0B2C5',
     },
   },
 } as const satisfies Record<string, MoodPalette>;
@@ -141,10 +171,34 @@ export const DefaultAppMood: AppMoodSettings = {
   iconStyle: 'whimsical',
 };
 
+/**
+ * Secondary text, as an alpha over the mood's own ink rather than a grey.
+ *
+ * Screens had been reaching for `text-black/55 dark:text-white/55`, or a
+ * literal `rgba(120,120,120,…)`, for the line under a row's title. That is two
+ * problems in one: the mood's text colour is not black — Mint's is `#182C24`,
+ * Sky's `#172437` — so the caption drifted off-hue from the title directly
+ * above it, and the opacity was chosen per call site, which is how the split
+ * feature alone ended up carrying six different values for one rank of text.
+ *
+ * Two ranks is the whole vocabulary. `muted` is the caption band, and lands on
+ * `99` because that is what `AppHeader` had already settled on for a subtitle.
+ * `mutedStrong` is for text that is secondary but still read as prose — an
+ * empty state's explanation, a sheet's opening line.
+ *
+ * They stay alpha rather than pre-blended so they composite correctly over a
+ * card, the screen background, or a tinted surface — which is exactly what the
+ * `text-black/55` they replace was doing.
+ */
+const MUTED_ALPHA = '99';
+const MUTED_STRONG_ALPHA = 'BF';
+
 function createColors(mood: MoodPalette) {
   return {
     light: {
       text: mood.light.text,
+      muted: `${mood.light.text}${MUTED_ALPHA}`,
+      mutedStrong: `${mood.light.text}${MUTED_STRONG_ALPHA}`,
       background: mood.light.background,
       tint: mood.accent,
       accent: mood.accent,
@@ -152,11 +206,18 @@ function createColors(mood: MoodPalette) {
       card: mood.light.card,
       icon: mood.light.text,
       border: mood.light.border,
+      positive: mood.light.positive,
+      negative: mood.light.negative,
+      neutral: mood.light.neutral,
+      onAccent: '#FFFFFF',
+      shadow: '#000000',
       tabIconDefault: '#9BA1A6',
       tabIconSelected: mood.accent,
     },
     dark: {
       text: mood.dark.text,
+      muted: `${mood.dark.text}${MUTED_ALPHA}`,
+      mutedStrong: `${mood.dark.text}${MUTED_STRONG_ALPHA}`,
       background: mood.dark.background,
       tint: mood.accent,
       accent: mood.accent,
@@ -164,6 +225,11 @@ function createColors(mood: MoodPalette) {
       card: mood.dark.card,
       icon: mood.dark.text,
       border: mood.dark.border,
+      positive: mood.dark.positive,
+      negative: mood.dark.negative,
+      neutral: mood.dark.neutral,
+      onAccent: '#FFFFFF',
+      shadow: '#000000',
       tabIconDefault: '#9BA1A6',
       tabIconSelected: mood.accent,
     },
@@ -238,7 +304,7 @@ export function getMoodIconName(name: string, iconStyle: IconStyle, active = fal
     return outlineIconNames[name] ?? name;
   }
 
-  return active ? filledIconNames[name] ?? name : name;
+  return active ? (filledIconNames[name] ?? name) : name;
 }
 
 export const Fonts = Platform.select({

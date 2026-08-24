@@ -1,0 +1,283 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { cssInterop } from 'nativewind';
+import { useRef } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
+
+import {
+  AvatarCircle,
+  DetailPill,
+  FloatingExpenseButton,
+} from '@/components/split/primitives/SplitPrimitives';
+import {
+  formatBalance,
+  formatBillListDate,
+  formatMonthYear,
+  getFirstName,
+  getGroupKindConfig,
+  todayApiDate,
+} from '@/components/split/split-utils';
+import type {
+  FriendDetailSummary,
+  SplitGroupSummary,
+} from '@/components/split/split-types';
+import { ThemedText } from '@/components/themed-text';
+import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { Fonts } from '@/constants/theme';
+import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import type { SplitFriend } from '@/lib/splits';
+
+const TText = cssInterop(ThemedText, { className: 'style' });
+
+export function FriendDetailModal({
+  summary: liveSummary,
+  currentUserName,
+  onClose,
+  onAddExpense,
+  onSettleUp,
+  onOpenGroup,
+  onOpenOptions,
+}: {
+  summary: FriendDetailSummary | null;
+  currentUserName: string;
+  onClose: () => void;
+  onAddExpense: (friendId: number) => void;
+  onSettleUp: (friendId: number) => void;
+  onOpenGroup: (groupId: number) => void;
+  onOpenOptions: (friend: SplitFriend) => void;
+}) {
+  const theme = useThemeTokens().colors;
+  const summaryRef = useRef<FriendDetailSummary | null>(liveSummary);
+  if (liveSummary) summaryRef.current = liveSummary;
+  const summary = summaryRef.current;
+  if (!summary) return null;
+
+  const { friend, groups, netBalance } = summary;
+  const friendFirstName = getFirstName(friend.name);
+  const unsettledGroup = groups.find((group) =>
+    group.bills.some((bill) =>
+      bill.participants?.some(
+        (participant) => participant.friend_id === friend.id && participant.share_amount > 0
+      )
+    )
+  );
+  const balanceCopy =
+    netBalance > 0
+      ? `${friendFirstName} owes you ${formatBalance(netBalance)}${
+          unsettledGroup ? ` in "${unsettledGroup.group.name}"` : ''
+        }`
+      : netBalance < 0
+        ? `You owe ${friendFirstName} ${formatBalance(netBalance)}${
+            unsettledGroup ? ` in "${unsettledGroup.group.name}"` : ''
+          }`
+        : `You and ${friendFirstName} are settled up.`;
+  const groupedRows = groups.reduce((acc, group) => {
+    const date = group.latestBill?.date ?? group.group.created_at ?? todayApiDate();
+    const section = formatMonthYear(date);
+    const rows = acc.get(section) ?? [];
+    rows.push(group);
+    acc.set(section, rows);
+    return acc;
+  }, new Map<string, SplitGroupSummary[]>());
+
+  return (
+    <AnimatedBottomSheet visible={Boolean(liveSummary)} onClose={onClose} sheetStyle={{ height: '94%' }}>
+      <View
+        className="flex-1 overflow-hidden rounded-t-[28px] border"
+        style={{ backgroundColor: theme.background, borderColor: theme.border }}>
+        <View className="min-h-[250px] overflow-hidden" style={{ backgroundColor: theme.accent }}>
+          <View
+            style={{
+              position: 'absolute',
+              left: -46,
+              bottom: 0,
+              width: 190,
+              height: 118,
+              backgroundColor: `${theme.accent}D9`,
+              transform: [{ rotate: '28deg' }],
+            }}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              left: 128,
+              top: 54,
+              width: 220,
+              height: 152,
+              backgroundColor: `${theme.onAccent}61`,
+              transform: [{ rotate: '-32deg' }],
+            }}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              right: -34,
+              bottom: 10,
+              width: 260,
+              height: 152,
+              backgroundColor: `${theme.onAccent}6B`,
+              transform: [{ rotate: '32deg' }],
+            }}
+          />
+          <View>
+            <View className="flex-row items-center justify-between px-5 pt-2">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close friend"
+                onPress={onClose}
+                className="h-12 w-12 items-center justify-center rounded-full">
+                <MaterialCommunityIcons name="arrow-left" size={30} color={theme.onAccent} />
+              </Pressable>
+              <View className="flex-row gap-4">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Search friend activity"
+                  className="h-12 w-12 items-center justify-center rounded-full">
+                  <MaterialCommunityIcons name="magnify" size={28} color={theme.onAccent} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${friend.name} options`}
+                  onPress={() => onOpenOptions(friend)}
+                  className="h-12 w-12 items-center justify-center rounded-full">
+                  <MaterialCommunityIcons name="cog-outline" size={28} color={theme.onAccent} />
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View className="-mt-16 px-8">
+          <AvatarCircle label={friend.name} size={112} borderColor={theme.onAccent} />
+          <TText variant="screenTitle" className="mt-4" style={{ color: theme.text }}>
+            {friend.name}
+          </TText>
+          <TText className="mt-6 text-lg leading-7" style={{ color: theme.text }}>
+            {balanceCopy}
+          </TText>
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 132, paddingTop: 30 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 12 }}>
+            <DetailPill
+              label="Settle up"
+              icon="hand-coin-outline"
+              onPress={() => onSettleUp(friend.id)}
+            />
+            <DetailPill label="Remind..." icon="bell-ring-outline" />
+            <DetailPill label="Charts" icon="diamond-stone" />
+            <DetailPill label="Convert" icon="diamond-stone" />
+          </ScrollView>
+
+          <View className="mt-8">
+            {groups.length > 0 ? (
+              [...groupedRows.entries()].map(([section, sectionGroups]) => (
+                <View key={section} className="mb-7">
+                  <TText
+                    className="mb-3 text-base"
+                    style={{ color: theme.mutedStrong, fontFamily: Fonts.title }}>
+                    {section}
+                  </TText>
+                  {sectionGroups.map((group) => (
+                    <FriendSharedGroupRow
+                      key={group.group.id}
+                      summary={group}
+                      friendId={friend.id}
+                      onPress={() => onOpenGroup(group.group.id)}
+                    />
+                  ))}
+                </View>
+              ))
+            ) : (
+              <View className="items-center px-6 py-16">
+                <AvatarCircle label={friend.name} size={70} />
+                <TText
+                  className="mt-5 text-center text-lg"
+                  style={{ color: theme.text, fontFamily: Fonts.title }}>
+                  No shared groups yet
+                </TText>
+                <TText className="mt-2 text-center text-sm leading-5" style={{ color: theme.muted }}>
+                  Add an expense with {friendFirstName} or include them in a group to see history
+                  here.
+                </TText>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+
+        <FloatingExpenseButton onPress={() => onAddExpense(friend.id)} />
+      </View>
+    </AnimatedBottomSheet>
+  );
+}
+
+function FriendSharedGroupRow({
+  summary,
+  friendId,
+  onPress,
+}: {
+  summary: SplitGroupSummary;
+  friendId: number;
+  onPress: () => void;
+}) {
+  const theme = useThemeTokens().colors;
+  const kindConfig = getGroupKindConfig(summary.kind);
+  const date = formatBillListDate(
+    summary.latestBill?.date ?? summary.group.created_at ?? todayApiDate()
+  );
+  const friendNet = summary.bills.reduce((sum, bill) => {
+    const participant = bill.participants?.find((item) => item.friend_id === friendId);
+    if (!participant) return sum;
+    return (
+      sum +
+      (participant.direction === 'friend_owes_user'
+        ? participant.share_amount
+        : -participant.share_amount)
+    );
+  }, 0);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      className="min-h-[78px] flex-row items-center gap-4 py-2">
+      <View className="w-10 items-center">
+        <TText className="text-sm" style={{ color: theme.muted }}>{date.month}</TText>
+        <TText className="text-xl" style={{ color: theme.muted }}>{date.day}</TText>
+      </View>
+      <View
+        className="h-16 w-16 items-center justify-center overflow-hidden rounded-xl"
+        style={{ backgroundColor: theme.accent }}>
+        <MaterialCommunityIcons name={kindConfig.icon} size={32} color={theme.onAccent} />
+      </View>
+      <View className="flex-1">
+        <TText variant="screenTitle" style={{ color: theme.text }}>
+          {summary.group.name}
+        </TText>
+        <TText className="mt-1 text-sm" style={{ color: theme.muted }}>Shared group</TText>
+      </View>
+      <View className="items-end">
+        {friendNet === 0 ? (
+          <TText className="text-base" style={{ color: theme.muted }}>settled up</TText>
+        ) : (
+          <>
+            <TText
+              className="text-sm"
+              style={{ color: friendNet > 0 ? theme.positive : theme.negative, fontFamily: Fonts.title }}>
+              {friendNet > 0 ? 'you lent' : 'you owe'}
+            </TText>
+            <TText
+              className="mt-1 text-lg"
+              style={{ color: friendNet > 0 ? theme.positive : theme.negative, fontFamily: Fonts.title }}>
+              {formatBalance(friendNet)}
+            </TText>
+          </>
+        )}
+      </View>
+    </Pressable>
+  );
+}
