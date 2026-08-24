@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { haptics } from '@/lib/haptics';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
@@ -86,7 +87,10 @@ export function BalanceFilterSheet({
                 key={option.filter}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
-                onPress={() => onSelect(option.filter)}
+                onPress={() => {
+                  haptics.select();
+                  onSelect(option.filter);
+                }}
                 className="flex-row items-center gap-3 rounded-2xl p-3"
                 style={{ backgroundColor: selected ? theme.secondary : 'transparent' }}>
                 <View

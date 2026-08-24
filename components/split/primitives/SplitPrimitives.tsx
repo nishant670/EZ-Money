@@ -9,6 +9,7 @@ import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { haptics } from '@/lib/haptics';
 import { getMonogram } from '@/lib/monogram';
 import type { SplitFriend } from '@/lib/splits';
 
@@ -55,7 +56,10 @@ export function DetailPill({
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onPress}
+      onPress={() => {
+        haptics.select();
+        onPress?.();
+      }}
       className="min-h-12 flex-row items-center gap-2 rounded-full border px-4"
       style={{ backgroundColor: theme.card, borderColor: theme.border }}>
       <MaterialCommunityIcons name={icon} size={18} color={theme.accent} />
@@ -80,7 +84,10 @@ export function MemberToggleChip({
     <Pressable
       accessibilityRole="checkbox"
       accessibilityState={{ checked: selected }}
-      onPress={onPress}
+      onPress={() => {
+        haptics.select();
+        onPress();
+      }}
       className="flex-row items-center gap-2 rounded-2xl px-3 py-2"
       style={{
         backgroundColor: selected ? theme.accent : theme.background,
@@ -114,7 +121,10 @@ export function GroupChoiceChip({
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onPress}
+      onPress={() => {
+        haptics.select();
+        onPress();
+      }}
       className="rounded-2xl px-3 py-2"
       style={{
         backgroundColor: selected ? theme.accent : theme.background,
@@ -256,7 +266,10 @@ export function DirectionChip({
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onPress}
+      onPress={() => {
+        haptics.select();
+        onPress();
+      }}
       className="flex-1 rounded-2xl px-3 py-3"
       style={{
         backgroundColor: selected ? theme.accent : 'transparent',

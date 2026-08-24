@@ -13,6 +13,7 @@ import {
   Share,
   View,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { UpgradeSheet } from '@/components/billing/UpgradeSheet';
 import { AppHeader } from '@/components/navigation/AppHeader';
@@ -59,6 +60,7 @@ import type {
   SplitGroupSummary,
 } from '@/components/split/split-types';
 import type { Category } from '@/lib/categories';
+import { haptics } from '@/lib/haptics';
 import {
   BalanceFilterSheet,
   type BalanceFilter,
@@ -67,6 +69,7 @@ import { FriendActionsSheet } from '@/components/split/sheets/FriendActionsSheet
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { CountUpMoney } from '@/components/ui/CountUpMoney';
 import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
 import { ThemedConfirmDialog, ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
@@ -75,6 +78,7 @@ import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { useMotion } from '@/hooks/use-motion';
 import { fetchAccounts, getPreferredAccountForPaymentMode } from '@/lib/accounts';
 import { userDisplayName } from '@/lib/display-name';
 import { createEntry } from '@/lib/entries';
@@ -165,6 +169,39 @@ const getBalanceTone = (
   if (value < 0) return { label: `you owe ${formatBalance(value)}`, color: colors.negative };
   return { label: 'settled up', color: colors.neutral };
 };
+
+function BalanceFigure({
+  value,
+  color,
+  overall = false,
+}: {
+  value: number;
+  color: string;
+  overall?: boolean;
+}) {
+  const variant = overall ? 'sectionTitle' : 'cardTitle';
+  if (value === 0) {
+    return (
+      <TText variant={variant} style={{ color }}>
+        {overall ? 'Overall, settled up' : 'settled up'}
+      </TText>
+    );
+  }
+  const relationship = value > 0 ? 'you are owed' : 'you owe';
+  return (
+    <View className="flex-row flex-wrap items-baseline">
+      <TText variant={variant} style={{ color }}>
+        {overall ? `Overall, ${relationship} ` : `${relationship} `}
+      </TText>
+      <CountUpMoney
+        variant={variant}
+        amount={Math.abs(value)}
+        sign="never"
+        style={{ color }}
+      />
+    </View>
+  );
+}
 
 type BuiltParticipants =
   | { ok: true; participants: ParticipantDraft[] }
@@ -376,6 +413,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const { token, user } = useAuthStore();
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
+  const motion = useMotion();
   const borderColor = theme.border;
   const currentUserName = userDisplayName(user?.username, 'You');
   const currentUserContact = user?.email?.trim() || user?.phone?.trim() || '';
@@ -1099,6 +1137,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         setBalanceFilter('all');
         setSearchQuery('');
       }
+      haptics.saved();
       closeModal();
       await loadSplitData();
     } catch (saveError) {
@@ -1142,6 +1181,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           amount: groupBalanceAlertAmount.trim(),
         },
       }));
+      haptics.saved();
       closeModal();
       setActiveSection('groups');
       await loadSplitData();
@@ -1175,7 +1215,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           setError(null);
           setSelectedFriendActions(null);
           void archiveSplitFriend(token, friend.id)
-            .then(loadSplitData)
+            .then(async () => {
+              haptics.removed();
+              await loadSplitData();
+            })
             .catch((archiveError: unknown) => {
               reportSplitError(archiveError, 'Unable to archive friend.');
             });
@@ -1189,7 +1232,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSaving(true);
     setError(null);
     void archiveSplitFriend(token, pendingFriendDelete.id)
-      .then(loadSplitData)
+      .then(async () => {
+        haptics.removed();
+        await loadSplitData();
+      })
       .catch((archiveError: unknown) => {
         reportSplitError(archiveError, 'Unable to delete friend.');
       })
@@ -1375,6 +1421,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       if (shouldMirrorToTransaction) {
         await createEntryBackedSplitBill(token, amount, finalParticipants, category);
       }
+      haptics.saved();
       closeModal();
       await loadSplitData();
       const nextGroupId = savedBill?.group_id ?? billGroupId;
@@ -1425,6 +1472,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         date: settlementDate.trim(),
         notes: settlementNotes.trim(),
       });
+      haptics.saved();
       closeModal();
       await loadSplitData();
     } catch (saveError) {
@@ -1537,6 +1585,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSaving(true);
     try {
       await setSplitGroupDefaultSplit(token, defaultSplitGroupId, payload);
+      haptics.saved();
       closeDefaultSplitEditor();
       await loadSplitData();
     } catch (saveError) {
@@ -1710,6 +1759,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setError(null);
     void archiveSplitGroup(token, removedGroupId)
       .then(async () => {
+        haptics.removed();
         setPendingGroupDelete(null);
         setGroupSettingsId(null);
         setSelectedGroupDetailId(null);
@@ -1986,7 +2036,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       <Pressable
         key={friend.id}
         accessibilityRole="button"
-        onPress={() => onSelect(friend.id)}
+        onPress={() => {
+          haptics.select();
+          onSelect(friend.id);
+        }}
         className="rounded-2xl px-3 py-2"
         style={{
           borderWidth: 1,
@@ -2002,7 +2055,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     );
   };
 
-  const renderFriendRow = (friend: SplitFriend) => {
+  const renderFriendRow = (friend: SplitFriend, entranceIndex: number) => {
     const balance = balanceByFriendId.get(friend.id);
     const netBalance = balance?.net_balance ?? 0;
     const isReceivable = netBalance > 0;
@@ -2015,8 +2068,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     const balanceLabel = isReceivable ? 'owes you' : isPayable ? 'you owe' : 'settled';
 
     return (
-      <Card key={friend.id} compact style={{ padding: 16 }}>
-        <View className="flex-row items-center gap-4">
+      <Animated.View
+        key={friend.id}
+        entering={motion.rowEntering(entranceIndex)}
+        layout={motion.reflow()}>
+        <Card compact style={{ padding: 16 }}>
+          <View className="flex-row items-center gap-4">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Open ${friend.name}`}
@@ -2044,12 +2101,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           style={{ backgroundColor: theme.secondary }}>
           <MaterialCommunityIcons name="archive-outline" size={18} color={theme.text} />
         </Pressable>
-        </View>
-      </Card>
+          </View>
+        </Card>
+      </Animated.View>
     );
   };
 
-  const renderGroupCard = (summary: SplitGroupSummary) => {
+  const renderGroupCard = (summary: SplitGroupSummary, entranceIndex: number) => {
     const { group, detailLines, memberIds, kind, netBalance, billCount, latestBill } = summary;
     const tone = getBalanceTone(netBalance, theme);
     const kindConfig = getGroupKindConfig(kind);
@@ -2059,19 +2117,23 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       .join(', ');
 
     return (
-      <Card key={group.id} compact style={{ padding: 0 }}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setSelectedGroupDetailId(group.id)}
-          className="flex-row gap-4 p-4">
+      <Animated.View
+        key={group.id}
+        entering={motion.rowEntering(entranceIndex)}
+        layout={motion.reflow()}>
+        <Card compact style={{ padding: 0 }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setSelectedGroupDetailId(group.id)}
+            className="flex-row gap-4 p-4">
           <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
           <View className="flex-1 justify-center">
           <TText variant="cardTitle" style={{ color: theme.text }}>
             {group.name}
           </TText>
-          <TText variant="cardTitle" className="mt-1" style={{ color: tone.color }}>
-            {tone.label}
-          </TText>
+          <View className="mt-1">
+            <BalanceFigure value={netBalance} color={tone.color} />
+          </View>
           {detailLines.length > 0 ? (
             detailLines.map((line) => (
               <TText
@@ -2089,27 +2151,29 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             </TText>
           )}
           </View>
-        </Pressable>
-      </Card>
+          </Pressable>
+        </Card>
+      </Animated.View>
     );
   };
 
-  const renderNonGroupRow = () => {
+  const renderNonGroupRow = (entranceIndex: number) => {
     const tone = getBalanceTone(nonGroupSummary.netBalance, theme);
     return (
-      <Card compact style={{ padding: 0 }}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => openModal('bill')}
-          className="flex-row gap-4 p-4">
+      <Animated.View entering={motion.rowEntering(entranceIndex)} layout={motion.reflow()}>
+        <Card compact style={{ padding: 0 }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => openModal('bill')}
+            className="flex-row gap-4 p-4">
           <GroupTile variant={5} icon="receipt-text-outline" />
           <View className="flex-1 justify-center">
           <TText variant="cardTitle" style={{ color: theme.text }}>
             Non-group expenses
           </TText>
-          <TText variant="cardTitle" className="mt-1" style={{ color: tone.color }}>
-            {tone.label}
-          </TText>
+          <View className="mt-1">
+            <BalanceFigure value={nonGroupSummary.netBalance} color={tone.color} />
+          </View>
           {nonGroupSummary.detailLines.length > 0 ? (
             nonGroupSummary.detailLines.map((line) => (
               <TText
@@ -2129,13 +2193,18 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             </TText>
           )}
           </View>
-        </Pressable>
-      </Card>
+          </Pressable>
+        </Card>
+      </Animated.View>
     );
   };
 
-  const renderActivityRow = (item: (typeof recentActivity)[number]) => (
-    <Card key={item.id} compact style={{ padding: 0 }}>
+  const renderActivityRow = (item: (typeof recentActivity)[number], entranceIndex: number) => (
+    <Animated.View
+      key={item.id}
+      entering={motion.rowEntering(entranceIndex)}
+      layout={motion.reflow()}>
+      <Card compact style={{ padding: 0 }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Open activity ${item.title}`}
@@ -2160,7 +2229,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         </TText>
       ) : null}
       </Pressable>
-    </Card>
+      </Card>
+    </Animated.View>
   );
 
   return (
@@ -2264,9 +2334,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             {activeSection !== 'activity' ? (
               <View className="mt-7 flex-row items-center justify-between gap-4">
                 <View className="flex-1">
-                  <TText variant="sectionTitle" style={{ color: theme.text }}>
-                    Overall, {overallTone.label}
-                  </TText>
+                  <BalanceFigure
+                    value={overallNetBalance}
+                    color={overallTone.color}
+                    overall
+                  />
                 </View>
                 <Pressable
                   accessibilityRole="button"
@@ -2284,7 +2356,9 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                 {visibleGroupSummaries.length > 0 || showNonGroupSummary ? (
                   <>
                     {visibleGroupSummaries.map(renderGroupCard)}
-                    {showNonGroupSummary ? renderNonGroupRow() : null}
+                    {showNonGroupSummary
+                      ? renderNonGroupRow(visibleGroupSummaries.length)
+                      : null}
                     {balanceFilter !== 'settled' ? (
                       <SettledHint
                         settledCount={

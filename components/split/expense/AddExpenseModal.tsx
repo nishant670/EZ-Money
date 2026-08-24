@@ -34,6 +34,7 @@ import {
   categoryVisual,
   type Category,
 } from '@/lib/categories';
+import { haptics } from '@/lib/haptics';
 import {
   computeSplitShares,
   describeSplitTab,
@@ -201,7 +202,10 @@ export function AddExpenseModal({
                           key={option}
                           accessibilityRole="button"
                           accessibilityState={{ selected }}
-                          onPress={() => setCategory(option)}
+                          onPress={() => {
+                            haptics.select();
+                            setCategory(option);
+                          }}
                           className="flex-row items-center gap-1.5 rounded-full border px-3 py-2"
                           style={{
                             backgroundColor: selected ? theme.secondary : theme.background,
@@ -468,7 +472,10 @@ export function SplitChoiceScreen({
                 key={choice.key}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
-                onPress={() => onSelectPayer(choice.payerKey, choice.fullAmount)}
+                onPress={() => {
+                  haptics.select();
+                  onSelectPayer(choice.payerKey, choice.fullAmount);
+                }}
                 className="min-h-[92px] flex-row items-center gap-5">
                 <SplitAvatarStack
                   primaryLabel={paidBySelf ? selfName : otherName}
@@ -703,7 +710,10 @@ export function AdjustSplitScreen({
                 key={tab.key}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                onPress={() => onChangeTab(tab.key)}
+                onPress={() => {
+                  haptics.select();
+                  onChangeTab(tab.key);
+                }}
                 className="min-h-14 justify-center px-4"
                 style={{ borderBottomWidth: selected ? 2 : 0, borderColor: theme.text }}>
                 <TText
@@ -838,7 +848,10 @@ function PayerOptionRow({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      onPress={onPress}
+      onPress={() => {
+        haptics.select();
+        onPress();
+      }}
       className="min-h-16 flex-row items-center gap-4 rounded-2xl px-3"
       style={{ backgroundColor: selected ? theme.secondary : 'transparent' }}>
       <AvatarCircle label={label} size={44} />
@@ -930,7 +943,10 @@ function SplitWeightRow({
         accessibilityRole="checkbox"
         accessibilityState={{ checked: selected }}
         accessibilityLabel={`Include ${label} in this split`}
-        onPress={onPress}
+        onPress={() => {
+          haptics.select();
+          onPress();
+        }}
         className="flex-1 flex-row items-center gap-4">
         <AvatarCircle label={label} size={54} />
         <View className="flex-1">
