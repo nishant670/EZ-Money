@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   AvatarCircle,
-  InlineEmptyState,
   PrimaryModalButton,
 } from '@/components/split/primitives/SplitPrimitives';
 import {
@@ -15,6 +14,7 @@ import {
 } from '@/components/split/split-utils';
 import type { GroupActionMode, SplitGroupSummary } from '@/components/split/split-types';
 import { ThemedText } from '@/components/themed-text';
+import { StateView } from '@/components/ui/StateView';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { SplitFriend } from '@/lib/splits';
@@ -68,7 +68,7 @@ export function GroupActionModal({
             <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
           </Pressable>
           <View className="ml-4 flex-1">
-            <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            <TText variant="screenTitle" style={{ color: theme.text }}>
               {title}
             </TText>
             <TText className="mt-1 text-xs text-black/50 dark:text-white/50">
@@ -80,7 +80,7 @@ export function GroupActionModal({
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 24, paddingBottom: 44 }}>
           {mode === 'settle' ? (
             <View>
-              <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="screenTitle" style={{ color: theme.text }}>
                 Outstanding balances
               </TText>
               <TText className="mt-2 text-sm leading-5 text-black/55 dark:text-white/55">
@@ -98,7 +98,8 @@ export function GroupActionModal({
                     />
                   ))
                 ) : (
-                  <InlineEmptyState
+                  <StateView
+                    compact
                     icon="check-circle-outline"
                     title="Settled up"
                     message="There are no open balances in this group."
@@ -117,7 +118,7 @@ export function GroupActionModal({
                 <GroupMetricRow label="You lent" value={formatBalance(totals.youLent)} icon="arrow-up-circle-outline" positive />
                 <GroupMetricRow label="You borrowed" value={formatBalance(totals.youBorrowed)} icon="arrow-down-circle-outline" negative />
               </View>
-              <TText className="mt-8 text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="sectionTitle" className="mt-8" style={{ color: theme.text }}>
                 Paid by
               </TText>
               <View className="mt-3 gap-2">
@@ -126,10 +127,10 @@ export function GroupActionModal({
                     key={name}
                     className="flex-row items-center justify-between rounded-2xl px-4 py-3"
                     style={{ backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }}>
-                    <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                    <TText variant="cardTitle" style={{ color: theme.text }}>
                       {name}
                     </TText>
-                    <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                    <TText variant="cardTitle" style={{ color: theme.text }}>
                       {formatBalance(value)}
                     </TText>
                   </View>
@@ -140,7 +141,7 @@ export function GroupActionModal({
 
           {mode === 'balances' ? (
             <View>
-              <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="screenTitle" style={{ color: theme.text }}>
                 Group balances
               </TText>
               <View className="mt-5 gap-3">
@@ -223,10 +224,10 @@ function GroupMetricRow({
       className="min-h-16 flex-row items-center gap-4 rounded-2xl border px-4"
       style={{ backgroundColor: theme.card, borderColor: theme.border }}>
       <MaterialCommunityIcons name={icon} size={24} color={color} />
-      <TText className="flex-1 text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+      <TText variant="cardTitle" className="flex-1" style={{ color: theme.text }}>
         {label}
       </TText>
-      <TText className="text-base" style={{ color, fontFamily: Fonts.title }}>
+      <TText variant="cardTitle" style={{ color }}>
         {value}
       </TText>
     </View>
@@ -268,7 +269,7 @@ function GroupBalanceActionRow({
       <View className="flex-row items-center gap-4">
         <AvatarCircle label={friend.name} size={46} />
         <View className="flex-1">
-          <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+          <TText variant="cardTitle" style={{ color: theme.text }}>
             {friend.name}
           </TText>
           <TText className="mt-1 text-sm" style={{ color }}>
@@ -279,7 +280,7 @@ function GroupBalanceActionRow({
                 : `you owe ${formatBalance(balance)}`}
           </TText>
         </View>
-        <TText className="text-base" style={{ color, fontFamily: Fonts.title }}>
+        <TText variant="cardTitle" style={{ color }}>
           {settled ? formatBalance(0) : formatBalance(balance)}
         </TText>
       </View>

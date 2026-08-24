@@ -145,7 +145,7 @@ export function GroupDetailModal({
               </View>
             </View>
             <View className="px-6 pb-8 pt-12">
-              <TText className="text-5xl" style={{ color: theme.onAccent, fontFamily: Fonts.title }}>
+              <TText variant="screenTitle" style={{ color: theme.onAccent }}>
                 {summary.group.name}
               </TText>
               <View className="mt-5 flex-row gap-3">
@@ -164,7 +164,7 @@ export function GroupDetailModal({
                       size={19}
                       color={theme.onAccent}
                     />
-                    <TText className="ml-3 text-base text-white" style={{ fontFamily: Fonts.title }}>
+                    <TText variant="button" className="ml-3" style={{ color: theme.onAccent }}>
                       Add trip dates
                     </TText>
                   </Pressable>
@@ -176,7 +176,7 @@ export function GroupDetailModal({
                   className="min-h-12 flex-row items-center rounded-full px-4"
                   style={{ backgroundColor: `${theme.shadow}B8` }}>
                   <MaterialCommunityIcons name="account-group-outline" size={19} color={theme.onAccent} />
-                  <TText className="ml-3 text-base text-white" style={{ fontFamily: Fonts.title }}>
+                  <TText variant="button" className="ml-3" style={{ color: theme.onAccent }}>
                     {memberNames.length + 1} people
                   </TText>
                 </Pressable>
@@ -214,7 +214,7 @@ export function GroupDetailModal({
           ) : null}
 
           <View>
-            <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            <TText variant="sectionTitle" style={{ color: theme.text }}>
               {overallCopy}
             </TText>
             {summary.detailLines.length > 0 ? (
@@ -279,7 +279,7 @@ export function GroupDetailModal({
                 className="mt-5 min-h-14 flex-row items-center justify-center gap-3 rounded-full"
                 style={{ backgroundColor: theme.accent }}>
                 <MaterialCommunityIcons name="account-plus-outline" size={22} color={theme.onAccent} />
-                <TText className="text-lg text-white" style={{ fontFamily: Fonts.title }}>
+                <TText variant="button" style={{ color: theme.onAccent }}>
                   Add group members
                 </TText>
               </Pressable>
@@ -289,7 +289,7 @@ export function GroupDetailModal({
                 className="mt-3 min-h-14 flex-row items-center justify-center gap-3 rounded-full border"
                 style={{ borderColor: theme.border }}>
                 <MaterialCommunityIcons name="link-variant" size={22} color={theme.accent} />
-                <TText className="text-lg" style={{ color: theme.accent, fontFamily: Fonts.title }}>
+                <TText variant="button" style={{ color: theme.accent }}>
                   Share group link
                 </TText>
               </Pressable>
@@ -388,7 +388,9 @@ function GroupExpenseRow({
       className="min-h-[88px] flex-row items-start gap-4 py-3">
       <View className="w-9 items-center pt-1">
         <TText className="text-base text-black/55">{date.month}</TText>
-        <TText className="text-2xl text-black/55">{date.day}</TText>
+        <TText variant="cardTitle" className="text-black/55">
+          {date.day}
+        </TText>
       </View>
       <View
         className="h-16 w-16 items-center justify-center rounded"
@@ -396,7 +398,7 @@ function GroupExpenseRow({
         <MaterialCommunityIcons name={iconConfig.icon} size={34} color={theme.text} />
       </View>
       <View className="flex-1 pt-1">
-        <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <TText variant="cardTitle" style={{ color: theme.text }}>
           {bill.title}
         </TText>
         <TText className="mt-1 text-base text-black/50">

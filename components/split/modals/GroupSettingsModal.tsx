@@ -5,13 +5,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   AvatarCircle,
-  SwitchControl,
 } from '@/components/split/primitives/SplitPrimitives';
 import { GroupTile } from '@/components/split/rows/GroupTile';
 import { getGroupKindConfig } from '@/components/split/split-utils';
 import type { SplitGroupSummary } from '@/components/split/split-types';
 import { ThemedText } from '@/components/themed-text';
 import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
+import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { SplitFriend, SplitGroupDirectInvite } from '@/lib/splits';
@@ -85,9 +85,7 @@ export function GroupSettingsModal({
             className="h-11 w-11 items-center justify-center">
             <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
           </Pressable>
-          <TText
-            className="ml-4 flex-1 text-2xl"
-            style={{ color: theme.text, fontFamily: Fonts.title }}>
+          <TText variant="screenTitle" className="ml-4 flex-1" style={{ color: theme.text }}>
             Group settings
           </TText>
         </View>
@@ -100,7 +98,7 @@ export function GroupSettingsModal({
             style={{ borderColor: theme.border }}>
             <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
             <View className="flex-1">
-              <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="screenTitle" style={{ color: theme.text }}>
                 {summary.group.name}
               </TText>
               <TText className="mt-1 text-base text-black/55 dark:text-white/55">
@@ -174,7 +172,7 @@ export function GroupSettingsModal({
           <View className="flex-row items-start gap-5 px-6 py-4">
             <MaterialCommunityIcons name="call-split" size={27} color={theme.text} />
             <View className="flex-1">
-              <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="screenTitle" style={{ color: theme.text }}>
                 Simplify group debts
               </TText>
               <TText className="mt-3 text-base leading-6 text-black/55 dark:text-white/55">
@@ -183,7 +181,13 @@ export function GroupSettingsModal({
                 <TText style={{ color: theme.accent, fontFamily: Fonts.title }}>Learn more</TText>
               </TText>
             </View>
-            <SwitchControl selected={simplifyGroupDebts} onPress={onToggleSimplifyDebts} />
+            <HapticSwitch
+              value={simplifyGroupDebts}
+              onValueChange={onToggleSimplifyDebts}
+              trackColor={{ false: theme.secondary, true: theme.accent }}
+              thumbColor={theme.onAccent}
+              ios_backgroundColor={theme.secondary}
+            />
           </View>
           <Pressable
             accessibilityRole="button"
@@ -193,7 +197,7 @@ export function GroupSettingsModal({
             <MaterialCommunityIcons name="format-list-bulleted" size={27} color={theme.accent} />
             <View className="flex-1">
               <View className="flex-row items-center gap-2">
-                <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                <TText variant="screenTitle" style={{ color: theme.text }}>
                   Default split
                 </TText>
                 <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: theme.secondary }}>
@@ -333,7 +337,7 @@ function SettingsMemberRow({ label, subtitle }: { label: string; subtitle?: stri
     <View className="min-h-[82px] flex-row items-center gap-5 px-6">
       <AvatarCircle label={label} size={58} />
       <View className="flex-1">
-        <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <TText variant="cardTitle" style={{ color: theme.text }}>
           {label}
         </TText>
         {subtitle ? (

@@ -142,7 +142,7 @@ export function FriendDetailModal({
 
         <View className="-mt-16 px-8">
           <AvatarCircle label={friend.name} size={112} borderColor={theme.onAccent} />
-          <TText className="mt-4 text-4xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+          <TText variant="screenTitle" className="mt-4" style={{ color: theme.text }}>
             {friend.name}
           </TText>
           <TText className="mt-6 text-lg leading-7" style={{ color: theme.text }}>
@@ -249,7 +249,7 @@ function FriendSharedGroupRow({
         <MaterialCommunityIcons name={kindConfig.icon} size={32} color={theme.onAccent} />
       </View>
       <View className="flex-1">
-        <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <TText variant="screenTitle" style={{ color: theme.text }}>
           {summary.group.name}
         </TText>
         <TText className="mt-1 text-sm text-black/55 dark:text-white/55">Shared group</TText>

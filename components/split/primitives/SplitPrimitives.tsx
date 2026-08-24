@@ -4,21 +4,15 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { DraftFieldCard } from '@/components/transactions/DraftFieldCard';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { getMonogram } from '@/lib/monogram';
 import type { SplitFriend } from '@/lib/splits';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
-
-const getInitials = (name: string) =>
-  name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('') || '?';
 
 export function AvatarCircle({
   label,
@@ -42,7 +36,7 @@ export function AvatarCircle({
       }}>
       <TText
         style={{ color: theme.accent, fontFamily: Fonts.title, fontSize: Math.max(13, size / 3) }}>
-        {getInitials(label)}
+        {getMonogram(label, '?')}
       </TText>
     </View>
   );
@@ -69,48 +63,6 @@ export function DetailPill({
         {label}
       </TText>
     </Pressable>
-  );
-}
-
-export function InlineEmptyState({
-  icon,
-  title,
-  message,
-  actionLabel,
-  onAction,
-}: {
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  title: string;
-  message: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  const theme = useThemeTokens().colors;
-  return (
-    <View
-      className="items-center rounded-2xl border p-5"
-      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-      <View
-        className="h-12 w-12 items-center justify-center rounded-full"
-        style={{ backgroundColor: theme.secondary }}>
-        <MaterialCommunityIcons name={icon} size={22} color={theme.accent} />
-      </View>
-      <TText className="mt-3 text-sm text-center" style={{ fontFamily: Fonts.title }}>
-        {title}
-      </TText>
-      <TText className="mt-1 text-xs text-center text-black/60 dark:text-white/60">{message}</TText>
-      {actionLabel && onAction ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onAction}
-          className="mt-4 min-h-10 items-center justify-center rounded-2xl px-4"
-          style={{ backgroundColor: theme.accent }}>
-          <TText className="text-xs text-white" style={{ fontFamily: Fonts.title }}>
-            {actionLabel}
-          </TText>
-        </Pressable>
-      ) : null}
-    </View>
   );
 }
 
@@ -208,7 +160,7 @@ export function SplitModal({
         className="rounded-t-[28px] border px-5 pb-8 pt-5"
         style={{ backgroundColor: theme.card, borderColor: theme.border, flexShrink: 1 }}>
         <View className="mb-4 flex-row items-center justify-between">
-          <TText className="text-lg" style={{ fontFamily: Fonts.title }}>
+          <TText variant="sectionTitle">
             {title}
           </TText>
           <Pressable
@@ -256,9 +208,20 @@ export function FormInput({
   multiline?: boolean;
 }) {
   const theme = useThemeTokens().colors;
+  const normalizedLabel = label.toLowerCase();
+  const icon: keyof typeof MaterialCommunityIcons.glyphMap = normalizedLabel.includes('phone')
+    ? 'phone-outline'
+    : normalizedLabel.includes('email')
+      ? 'email-outline'
+      : normalizedLabel.includes('amount')
+        ? 'cash'
+        : normalizedLabel.includes('date')
+          ? 'calendar-blank-outline'
+          : normalizedLabel.includes('note')
+            ? 'note-text-outline'
+            : 'account-outline';
   return (
-    <View className="gap-2">
-      <TText className="text-xs text-black/60 dark:text-white/60">{label}</TText>
+    <DraftFieldCard label={label} icon={icon}>
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -268,18 +231,15 @@ export function FormInput({
         placeholderTextColor={`${theme.text}B3`}
         style={{
           minHeight: multiline ? 84 : 48,
-          borderWidth: 1,
-          borderColor: theme.border,
-          borderRadius: 16,
-          paddingHorizontal: 14,
-          paddingVertical: 10,
+          paddingHorizontal: 0,
+          paddingVertical: 0,
           color: theme.text,
           fontFamily: Fonts.body,
-          backgroundColor: theme.background,
+          backgroundColor: 'transparent',
           textAlignVertical: multiline ? 'top' : 'center',
         }}
       />
-    </View>
+    </DraftFieldCard>
   );
 }
 
@@ -321,20 +281,27 @@ export function PrimaryModalButton({
   loading: boolean;
   onPress: () => void;
 }) {
-  const theme = useThemeTokens().colors;
+  const themeTokens = useThemeTokens();
+  const theme = themeTokens.colors;
   return (
     <Pressable
       accessibilityRole="button"
       disabled={loading}
       onPress={onPress}
-      className="mt-2 min-h-12 items-center justify-center rounded-2xl"
-      style={{ backgroundColor: theme.accent, opacity: loading ? 0.75 : 1 }}>
+      className="mt-2 min-h-12 flex-row items-center justify-center gap-2"
+      style={[
+        { backgroundColor: theme.accent, borderRadius: 20, opacity: loading ? 0.75 : 1 },
+        themeTokens.shadows.soft,
+      ]}>
       {loading ? (
         <ActivityIndicator color={theme.onAccent} />
       ) : (
-        <TText className="text-sm text-white" style={{ fontFamily: Fonts.title }}>
-          {label}
-        </TText>
+        <>
+          <TText className="text-sm" style={{ color: theme.onAccent, fontFamily: Fonts.title }}>
+            {label}
+          </TText>
+          <MaterialCommunityIcons name="check-circle-outline" size={20} color={theme.onAccent} />
+        </>
       )}
     </Pressable>
   );
@@ -357,34 +324,9 @@ export function FloatingExpenseButton({ onPress }: { onPress: () => void }) {
         elevation: 8,
       }}>
       <MaterialCommunityIcons name="receipt-text-plus-outline" size={22} color={theme.onAccent} />
-      <TText className="text-base text-white" style={{ fontFamily: Fonts.title }}>
+      <TText variant="button" style={{ color: theme.onAccent }}>
         Add expense
       </TText>
-    </Pressable>
-  );
-}
-
-export function SwitchControl({ selected, onPress }: { selected: boolean; onPress: () => void }) {
-  const theme = useThemeTokens().colors;
-  return (
-    <Pressable
-      accessibilityRole="switch"
-      accessibilityState={{ checked: selected }}
-      onPress={onPress}
-      className="h-8 w-14 justify-center rounded-full px-1"
-      style={{ backgroundColor: selected ? theme.accent : theme.secondary }}>
-      <View
-        className="h-6 w-6 rounded-full"
-        style={{
-          backgroundColor: theme.onAccent,
-          alignSelf: selected ? 'flex-end' : 'flex-start',
-          shadowColor: theme.shadow,
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.16,
-          shadowRadius: 4,
-          elevation: 2,
-        }}
-      />
     </Pressable>
   );
 }

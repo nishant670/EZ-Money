@@ -196,7 +196,7 @@ export function AddExpenseModal({
                   <View
                     className="h-[70px] w-[70px] items-center justify-center rounded border"
                     style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                    <TText className="text-4xl" style={{ color: theme.text }}>
+                    <TText variant="amount" style={{ color: theme.text }}>
                       {CURRENCY_SYMBOL}
                     </TText>
                   </View>
@@ -223,7 +223,7 @@ export function AddExpenseModal({
                   onPress={() => onChangeFlowScreen('split_choice')}
                   className="mt-10 min-h-14 items-center justify-center self-center rounded border px-6"
                   style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                  <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                  <TText variant="cardTitle" style={{ color: theme.text }}>
                     {splitLabel}
                   </TText>
                 </Pressable>
@@ -307,9 +307,7 @@ function ExpenseTopBar({
         className="h-11 w-11 items-center justify-center">
         <MaterialCommunityIcons name="arrow-left" size={28} color={theme.text} />
       </Pressable>
-      <TText
-        className="ml-4 flex-1 text-2xl"
-        style={{ color: theme.text, fontFamily: Fonts.title }}>
+      <TText variant="screenTitle" className="ml-4 flex-1" style={{ color: theme.text }}>
         {title}
       </TText>
       <Pressable
@@ -507,7 +505,7 @@ export function SplitChoiceScreen({
             onPress={onMoreOptions}
             className="mt-12 min-h-14 items-center justify-center self-center rounded border px-8"
             style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-            <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            <TText variant="button" style={{ color: theme.text }}>
               More options
             </TText>
           </Pressable>
@@ -731,7 +729,7 @@ export function AdjustSplitScreen({
               color={theme.accent}
             />
           )}
-          <TText className="mt-7 text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+          <TText variant="screenTitle" className="mt-7" style={{ color: theme.text }}>
             {copy.heading}
           </TText>
           <TText className="mt-2 text-center text-lg text-black/55 dark:text-white/55">
@@ -772,7 +770,7 @@ export function AdjustSplitScreen({
           accessibilityState={{ checked: allSelected }}
           onPress={onToggleAll}
           className="min-h-[88px] w-40 flex-row items-center justify-center gap-4">
-          <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+          <TText variant="screenTitle" style={{ color: theme.text }}>
             All
           </TText>
           <MaterialCommunityIcons
@@ -788,7 +786,7 @@ export function AdjustSplitScreen({
           className="rounded-t-[28px] border px-5 pb-8 pt-5"
           style={{ backgroundColor: theme.card, borderColor: theme.border }}>
           <View className="mb-4 flex-row items-center justify-between">
-            <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            <TText variant="sectionTitle" style={{ color: theme.text }}>
               Paid by
             </TText>
             <Pressable
@@ -840,7 +838,7 @@ function PayerOptionRow({
       style={{ backgroundColor: selected ? theme.secondary : 'transparent' }}>
       <AvatarCircle label={label} size={44} />
       <View className="flex-1">
-        <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <TText variant="cardTitle" style={{ color: theme.text }}>
           {label}
         </TText>
         {subtitle ? (
@@ -874,7 +872,7 @@ function SplitPersonRow({
       className="min-h-[88px] flex-row items-center gap-5">
       <AvatarCircle label={label} size={54} />
       <View className="flex-1">
-        <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <TText variant="screenTitle" style={{ color: theme.text }}>
           {label}
         </TText>
         {subtitle ? (
@@ -931,7 +929,7 @@ function SplitWeightRow({
         className="flex-1 flex-row items-center gap-4">
         <AvatarCircle label={label} size={54} />
         <View className="flex-1">
-          <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+          <TText variant="screenTitle" style={{ color: theme.text }}>
             {label}
           </TText>
           {preview ? (

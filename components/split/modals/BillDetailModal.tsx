@@ -89,12 +89,10 @@ export function BillDetailModal({
               <MaterialCommunityIcons name="receipt-text-outline" size={44} color={theme.text} />
             </View>
             <View className="flex-1">
-              <TText className="text-3xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="screenTitle" style={{ color: theme.text }}>
                 {bill.title}
               </TText>
-              <TText
-                className="mt-2 text-4xl"
-                style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="amount" className="mt-2" style={{ color: theme.text }}>
                 {formatBalance(bill.total_amount)}
               </TText>
               <TText className="mt-4 text-base leading-6 text-black/55 dark:text-white/55">
@@ -105,7 +103,7 @@ export function BillDetailModal({
           </View>
 
           <View className="mt-10">
-            <TText className="text-xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            <TText variant="screenTitle" style={{ color: theme.text }}>
               {paidLine}
             </TText>
             <View className="mt-5 gap-4">

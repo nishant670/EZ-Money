@@ -31,7 +31,7 @@ export function FriendActionsSheet({
         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
         <View className="mb-4 flex-row items-center justify-between">
           <View>
-            <TText className="text-lg" style={{ fontFamily: Fonts.title }}>
+            <TText variant="sectionTitle">
               {friend?.name ?? 'Friend'}
             </TText>
             <TText className="mt-1 text-xs text-black/55 dark:text-white/55">

@@ -67,7 +67,7 @@ export function BalanceFilterSheet({
         className="rounded-t-[28px] border px-5 pb-8 pt-5"
         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
         <View className="mb-4 flex-row items-center justify-between">
-          <TText className="text-lg" style={{ fontFamily: Fonts.title }}>
+          <TText variant="sectionTitle">
             Filter balances
           </TText>
           <Pressable

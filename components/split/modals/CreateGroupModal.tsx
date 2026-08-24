@@ -3,11 +3,9 @@ import { cssInterop } from 'nativewind';
 import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  MemberToggleChip,
-  SwitchControl,
-} from '@/components/split/primitives/SplitPrimitives';
+import { MemberToggleChip } from '@/components/split/primitives/SplitPrimitives';
 import { ThemedText } from '@/components/themed-text';
+import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -83,7 +81,7 @@ export function CreateGroupModal({
             className="h-11 w-11 items-center justify-center">
             <MaterialCommunityIcons name="close" size={28} color={theme.text} />
           </Pressable>
-          <TText className="flex-1 text-center text-2xl" style={{ fontFamily: Fonts.title }}>
+          <TText variant="screenTitle" className="flex-1 text-center">
             {title}
           </TText>
           <Pressable
@@ -94,7 +92,7 @@ export function CreateGroupModal({
             {saving ? (
               <ActivityIndicator color={theme.accent} />
             ) : (
-              <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="button" style={{ color: theme.text }}>
                 {doneLabel}
               </TText>
             )}
@@ -155,12 +153,18 @@ export function CreateGroupModal({
 
           <View className="mt-9 flex-row items-center justify-between">
             <View className="flex-row items-center gap-2">
-              <TText className="text-lg" style={{ color: theme.accent, fontFamily: Fonts.title }}>
+              <TText variant="sectionTitle" style={{ color: theme.accent }}>
                 Set balance alert
               </TText>
               <MaterialCommunityIcons name="diamond-stone" size={18} color={theme.accent} />
             </View>
-            <SwitchControl selected={balanceAlertEnabled} onPress={onToggleBalanceAlert} />
+            <HapticSwitch
+              value={balanceAlertEnabled}
+              onValueChange={onToggleBalanceAlert}
+              trackColor={{ false: theme.secondary, true: theme.accent }}
+              thumbColor={theme.onAccent}
+              ios_backgroundColor={theme.secondary}
+            />
           </View>
           <TText className="mt-5 text-base leading-6 text-black/55 dark:text-white/55">
             Finnri can mark this group when someone reaches a balance limit.
@@ -177,7 +181,7 @@ export function CreateGroupModal({
                 <View
                   className="h-16 w-16 items-center justify-center rounded-lg border"
                   style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                  <TText className="text-3xl" style={{ color: theme.text }}>
+                  <TText variant="amount" style={{ color: theme.text }}>
                     {CURRENCY_SYMBOL}
                   </TText>
                 </View>

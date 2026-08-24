@@ -114,7 +114,7 @@ export function GroupMembersModal({
             {saving ? (
               <ActivityIndicator color={theme.accent} />
             ) : (
-              <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+              <TText variant="button" style={{ color: theme.text }}>
                 Save
               </TText>
             )}
@@ -242,7 +242,7 @@ function ContactsPermissionPrompt({
         {loading ? (
           <ActivityIndicator color={theme.onAccent} />
         ) : (
-          <TText className="text-base text-white" style={{ fontFamily: Fonts.title }}>
+          <TText variant="button" style={{ color: theme.onAccent }}>
             {denied ? 'Request contact access' : 'Allow contact access'}
           </TText>
         )}

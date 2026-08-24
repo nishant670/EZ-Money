@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { Segments } from '@/components/ui/Segments';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
@@ -60,7 +61,7 @@ export function SplitTopBar({
         : 'Create split friend or group';
   return (
     <View className="mb-5 flex-row items-center justify-between">
-      <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+      <TText variant="screenTitle" style={{ color: theme.text }}>
         Split
       </TText>
       <View className="flex-row items-center gap-2">
@@ -132,49 +133,17 @@ export function SegmentedSections({
   activeSection: ActiveSection;
   onChange: (section: ActiveSection) => void;
 }) {
-  const theme = useThemeTokens().colors;
-  const sections: {
-    key: ActiveSection;
-    label: string;
-    icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  }[] = [
-    { key: 'groups', label: 'Groups', icon: 'account-group-outline' },
-    { key: 'friends', label: 'Friends', icon: 'account-outline' },
-    { key: 'activity', label: 'Activity', icon: 'history' },
-  ];
-
   return (
-    <View
-      className="flex-row rounded-2xl p-1"
-      style={{ backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }}>
-      {sections.map((section) => {
-        const selected = activeSection === section.key;
-        return (
-          <Pressable
-            key={section.key}
-            accessibilityRole="button"
-            onPress={() => onChange(section.key)}
-            className="min-h-11 flex-1 flex-row items-center justify-center gap-2 rounded-xl px-2"
-            style={{
-              backgroundColor: selected ? theme.secondary : 'transparent',
-            }}>
-            <MaterialCommunityIcons
-              name={section.icon}
-              size={17}
-              color={selected ? theme.accent : `${theme.text}E6`}
-            />
-            <TText
-              className="text-xs"
-              style={{
-                color: selected ? theme.accent : `${theme.text}F2`,
-                fontFamily: Fonts.title,
-              }}>
-              {section.label}
-            </TText>
-          </Pressable>
-        );
-      })}
-    </View>
+    <Segments
+      active={activeSection}
+      options={[
+        { key: 'groups', label: 'Groups', icon: 'account-group-outline' },
+        { key: 'friends', label: 'Friends', icon: 'account-outline' },
+        { key: 'activity', label: 'Activity', icon: 'history' },
+      ]}
+      onChange={onChange}
+      contentContainerStyle={{ paddingHorizontal: 0, paddingBottom: 0 }}
+    />
   );
 }
 

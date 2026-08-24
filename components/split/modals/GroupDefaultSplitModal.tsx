@@ -8,7 +8,6 @@ import {
 } from '@/components/split/expense/AddExpenseModal';
 import { ThemedText } from '@/components/themed-text';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
-import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
   buildSeedWeights,
@@ -86,7 +85,7 @@ export function GroupDefaultSplitModal({
                 disabled={saving}
                 onPress={onReset}
                 className="mb-6 min-h-12 items-center justify-center self-center px-6">
-                <TText className="text-base" style={{ color: theme.negative, fontFamily: Fonts.title }}>
+                <TText variant="button" style={{ color: theme.negative }}>
                   Remove default split
                 </TText>
               </Pressable>

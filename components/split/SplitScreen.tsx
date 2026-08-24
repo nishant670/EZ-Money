@@ -36,10 +36,10 @@ import { GroupTile } from '@/components/split/rows/GroupTile';
 import { GroupActionModal } from '@/components/split/modals/GroupActionModal';
 import { BillDetailModal } from '@/components/split/modals/BillDetailModal';
 import {
+  AvatarCircle,
   DirectionChip,
   FloatingExpenseButton,
   FormInput,
-  InlineEmptyState,
   PrimaryModalButton,
   SplitModal,
 } from '@/components/split/primitives/SplitPrimitives';
@@ -66,7 +66,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
+import { StateView } from '@/components/ui/StateView';
 import { ThemedConfirmDialog, ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
+import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
@@ -2010,22 +2012,17 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     const balanceLabel = isReceivable ? 'owes you' : isPayable ? 'you owe' : 'settled';
 
     return (
-      <View key={friend.id} className="flex-row items-center gap-4 py-2">
+      <Card key={friend.id} compact style={{ padding: 16 }}>
+        <View className="flex-row items-center gap-4">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Open ${friend.name}`}
           onPress={() => openFriendDetail(friend.id)}
           onLongPress={() => setSelectedFriendActions(friend)}
           className="flex-1 flex-row items-center gap-4">
-          <View
-            className="h-[58px] w-[58px] items-center justify-center rounded-full"
-            style={{ backgroundColor: theme.secondary }}>
-            <TText className="text-lg" style={{ color: theme.accent, fontFamily: Fonts.title }}>
-              {friend.name.charAt(0).toUpperCase()}
-            </TText>
-          </View>
+          <AvatarCircle label={friend.name} size={58} />
           <View className="flex-1">
-            <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+            <TText variant="cardTitle" style={{ color: theme.text }}>
               {friend.name}
             </TText>
             <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
@@ -2044,7 +2041,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           style={{ backgroundColor: theme.secondary }}>
           <MaterialCommunityIcons name="archive-outline" size={18} color={theme.text} />
         </Pressable>
-      </View>
+        </View>
+      </Card>
     );
   };
 
@@ -2058,17 +2056,17 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       .join(', ');
 
     return (
-      <Pressable
-        key={group.id}
-        accessibilityRole="button"
-        onPress={() => setSelectedGroupDetailId(group.id)}
-        className="flex-row gap-4 py-2">
-        <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
-        <View className="flex-1 justify-center">
-          <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+      <Card key={group.id} compact style={{ padding: 0 }}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setSelectedGroupDetailId(group.id)}
+          className="flex-row gap-4 p-4">
+          <GroupTile variant={kindConfig.variant} icon={kindConfig.icon} />
+          <View className="flex-1 justify-center">
+          <TText variant="cardTitle" style={{ color: theme.text }}>
             {group.name}
           </TText>
-          <TText className="mt-1 text-base" style={{ color: tone.color, fontFamily: Fonts.title }}>
+          <TText variant="cardTitle" className="mt-1" style={{ color: tone.color }}>
             {tone.label}
           </TText>
           {detailLines.length > 0 ? (
@@ -2087,24 +2085,26 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                 : memberNames || 'No expenses yet'}
             </TText>
           )}
-        </View>
-      </Pressable>
+          </View>
+        </Pressable>
+      </Card>
     );
   };
 
   const renderNonGroupRow = () => {
     const tone = getBalanceTone(nonGroupSummary.netBalance, theme);
     return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => openModal('bill')}
-        className="flex-row gap-4 py-2">
-        <GroupTile variant={5} icon="receipt-text-outline" />
-        <View className="flex-1 justify-center">
-          <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+      <Card compact style={{ padding: 0 }}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => openModal('bill')}
+          className="flex-row gap-4 p-4">
+          <GroupTile variant={5} icon="receipt-text-outline" />
+          <View className="flex-1 justify-center">
+          <TText variant="cardTitle" style={{ color: theme.text }}>
             Non-group expenses
           </TText>
-          <TText className="mt-1 text-base" style={{ color: tone.color, fontFamily: Fonts.title }}>
+          <TText variant="cardTitle" className="mt-1" style={{ color: tone.color }}>
             {tone.label}
           </TText>
           {nonGroupSummary.detailLines.length > 0 ? (
@@ -2125,25 +2125,26 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                 : 'Personal shared expenses'}
             </TText>
           )}
-        </View>
-      </Pressable>
+          </View>
+        </Pressable>
+      </Card>
     );
   };
 
   const renderActivityRow = (item: (typeof recentActivity)[number]) => (
-    <Pressable
-      key={item.id}
-      accessibilityRole="button"
-      accessibilityLabel={`Open activity ${item.title}`}
-      onPress={() => openActivityTarget(item.item)}
-      className="flex-row items-center gap-4 py-2">
+    <Card key={item.id} compact style={{ padding: 0 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open activity ${item.title}`}
+        onPress={() => openActivityTarget(item.item)}
+        className="flex-row items-center gap-4 p-4">
       <View
         className="h-[58px] w-[58px] items-center justify-center rounded-xl"
         style={{ backgroundColor: theme.secondary }}>
         <MaterialCommunityIcons name={item.icon} size={26} color={theme.accent} />
       </View>
       <View className="flex-1">
-        <TText className="text-base" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <TText variant="cardTitle" style={{ color: theme.text }}>
           {item.title}
         </TText>
         <TText className="mt-1 text-xs text-black/60 dark:text-white/60">
@@ -2155,7 +2156,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           {formatBalance(item.amount)}
         </TText>
       ) : null}
-    </Pressable>
+      </Pressable>
+    </Card>
   );
 
   return (
@@ -2205,7 +2207,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
           {loadError && screenState === 'unavailable' ? (
             <View className="mt-8">
-              <InlineEmptyState
+              <StateView
+                compact
                 icon="wifi-off"
                 title="Splits did not load"
                 message={loadError}
@@ -2220,7 +2223,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             {activeSection !== 'activity' ? (
               <View className="mt-7 flex-row items-center justify-between gap-4">
                 <View className="flex-1">
-                  <TText className="text-lg" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                  <TText variant="sectionTitle" style={{ color: theme.text }}>
                     Overall, {overallTone.label}
                   </TText>
                 </View>
@@ -2259,7 +2262,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                     ) : null}
                   </>
                 ) : (
-                  <InlineEmptyState
+                  <StateView
+                    compact
                     icon="account-group-outline"
                     title={normalizedSearch ? 'No matching groups' : 'Create your first group'}
                     message={
@@ -2279,7 +2283,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                 {visibleFriends.length > 0 ? (
                   visibleFriends.map(renderFriendRow)
                 ) : (
-                  <InlineEmptyState
+                  <StateView
+                    compact
                     icon={
                       friends.length === 0
                         ? 'account-multiple-plus-outline'
@@ -2301,14 +2306,15 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             {activeSection === 'activity' && (
               <View className="mt-9 gap-4">
                 <View className="mb-2">
-                  <TText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+                  <TText variant="sectionTitle" style={{ color: theme.text }}>
                     Recent activity
                   </TText>
                 </View>
                 {visibleActivity.length > 0 ? (
                   visibleActivity.map(renderActivityRow)
                 ) : (
-                  <InlineEmptyState
+                  <StateView
+                    compact
                     icon="history"
                     title={normalizedSearch ? 'No matching activity' : 'No activity yet'}
                     message={
