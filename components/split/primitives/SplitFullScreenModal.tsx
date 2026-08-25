@@ -1,11 +1,21 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal } from 'react-native';
-import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
+import { useCallback, useEffect, useState } from 'react';
+import { Modal, useWindowDimensions } from 'react-native';
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Motion } from '@/constants/theme';
 import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+
+const ENTER_EASING = Easing.bezier(...Motion.ease.standard);
+const EXIT_EASING = Easing.bezier(...Motion.ease.exit);
 
 /**
  * The push transition for split's three full-screen screens — group detail,
@@ -20,9 +30,23 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
  * `animationType` is not the way back. It is a fixed platform curve at a fixed
  * platform duration, so it cannot honour `Motion.duration.sheet` and — the part
  * that actually matters — it cannot be turned off for reduced motion. This runs
- * the same travel through Reanimated instead, off the same token the bottom
- * sheet uses, and degrades to no animation at all when the user has asked for
- * that.
+ * the same travel off the same token the bottom sheet uses, and degrades to no
+ * animation at all when the user has asked for that.
+ *
+ * ## Why the travel is a transform and not a layout animation
+ *
+ * The obvious spelling is `entering={SlideInRight}` / `exiting={SlideOutRight}`.
+ * It was, and it cost a day. Reanimated's *layout* animations constrain the
+ * animated view's children on Android: an absolutely positioned descendant gets
+ * measured against the animating box rather than the container, and its hit box
+ * is clipped to whatever overlaps. Group detail's "Add expense" pill was the
+ * casualty — 196px of visible button reporting a 51px touch target, so every
+ * tap on it missed and the button looked simply dead. Nothing about the pill
+ * was wrong; five rewrites of it changed the number and never fixed it.
+ *
+ * A shared value driving `translateX` through `useAnimatedStyle` is the same
+ * motion with none of that: it is an ordinary transform on an ordinary view, so
+ * children lay out and hit-test exactly as they would standing still.
  *
  * ## Why it owns the close
  *
@@ -43,46 +67,50 @@ export function SplitFullScreenModal({
 }) {
   const theme = useThemeTokens().colors;
   const motion = useMotion();
+  const { width } = useWindowDimensions();
   const duration = motion.duration('sheet');
   const exitDuration = motion.exitDuration('sheet');
+  const progress = useSharedValue(duration === 0 ? 1 : 0);
   const [closing, setClosing] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (duration === 0) {
+      progress.value = 1;
+      return;
+    }
+    progress.value = withTiming(1, { duration, easing: ENTER_EASING });
+  }, [duration, progress]);
 
   const close = useCallback(() => {
-    if (closeTimer.current) return;
+    if (closing) return;
+    setClosing(true);
     if (exitDuration === 0) {
       onClose();
       return;
     }
-    setClosing(true);
-    closeTimer.current = setTimeout(onClose, exitDuration);
-  }, [exitDuration, onClose]);
+    progress.value = withTiming(0, { duration: exitDuration, easing: EXIT_EASING }, (finished) => {
+      if (finished) runOnJS(onClose)();
+    });
+  }, [closing, exitDuration, onClose, progress]);
 
-  useEffect(
-    () => () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    },
-    []
-  );
+  const travelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: (1 - progress.value) * width }],
+  }));
 
   // `transparent` so the screen underneath stays visible for the length of the
   // travel — a push that slides in over a blank white field is not a push. The
   // sliding view carries the opaque background instead.
   return (
     <Modal visible transparent animationType="none" onRequestClose={close}>
-      {closing ? null : (
-        <Animated.View
-          style={{ flex: 1, backgroundColor: theme.background }}
-          entering={duration === 0 ? undefined : SlideInRight.duration(duration)}
-          exiting={exitDuration === 0 ? undefined : SlideOutRight.duration(exitDuration)}>
-          <SafeAreaView
-            className="flex-1"
-            edges={['top', 'left', 'right']}
-            style={{ backgroundColor: theme.background }}>
-            {children(close)}
-          </SafeAreaView>
-        </Animated.View>
-      )}
+      <Animated.View
+        style={[{ flex: 1, backgroundColor: theme.background }, travelStyle]}>
+        <SafeAreaView
+          className="flex-1"
+          edges={['top', 'left', 'right']}
+          style={{ backgroundColor: theme.background }}>
+          {children(close)}
+        </SafeAreaView>
+      </Animated.View>
     </Modal>
   );
 }
