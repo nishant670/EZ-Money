@@ -553,14 +553,16 @@ export default function TransactionDetailsScreen() {
             </View>
             <View>
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
-                WHEN WAS THIS?
+                DATE &amp; TIME
               </ThemedText>
               <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
-                {displayData.date || 'Yesterday, Oct 24'}
+                {displayData.date || 'No date'}
               </ThemedText>
-              <ThemedText className="text-xs font-bold text-gray-400">
-                {displayData.time ? `At ${displayData.time}` : 'Earlier today'}
-              </ThemedText>
+              {displayData.time ? (
+                <ThemedText className="text-xs font-bold text-gray-400">
+                  At {displayData.time}
+                </ThemedText>
+              ) : null}
             </View>
           </View>
 
@@ -573,10 +575,10 @@ export default function TransactionDetailsScreen() {
             </View>
             <View>
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
-                WHAT KIND OF SPEND?
+                CATEGORY
               </ThemedText>
               <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
-                {displayData.category || 'Food & Drink'}
+                {displayData.category || 'Uncategorised'}
               </ThemedText>
             </View>
           </View>
@@ -611,10 +613,10 @@ export default function TransactionDetailsScreen() {
                   </View>
                   <View>
                     <ThemedText className="text-[9px] uppercase font-black text-gray-300">
-                      PAYMENT METHOD
+                      PAID VIA
                     </ThemedText>
                     <ThemedText className="text-sm font-black text-slate-700">
-                      {displayData.mode || 'UPI'}
+                      {displayData.mode || 'Not set'}
                     </ThemedText>
                   </View>
                 </View>
@@ -642,7 +644,7 @@ export default function TransactionDetailsScreen() {
                 </View>
                 <View className="flex-1">
                   <ThemedText className="text-[9px] uppercase font-black text-gray-300 mb-2">
-                    TAGS
+                    TAG
                   </ThemedText>
                   {/* An untagged entry showed a "Personal" chip that looked like a
                       real tag but was never stored and was not in the tag picker. */}
@@ -680,11 +682,20 @@ export default function TransactionDetailsScreen() {
             </View>
             <View className="flex-1">
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
-                YOUR NOTES
+                NOTES
               </ThemedText>
-              <ThemedText className="text-sm font-bold italic text-slate-500 leading-relaxed">
-                {displayData.notes ? `"${displayData.notes}"` : '"No notes added."'}
-              </ThemedText>
+              {/* The quotation marks belong to the user's own words. Wrapping
+                  the empty state in them too put "No notes added." on the
+                  screen as though somebody had written it. */}
+              {displayData.notes ? (
+                <ThemedText className="text-sm font-bold italic text-slate-500 leading-relaxed">
+                  {`"${displayData.notes}"`}
+                </ThemedText>
+              ) : (
+                <ThemedText className="text-sm font-bold text-gray-400 leading-relaxed">
+                  No notes
+                </ThemedText>
+              )}
             </View>
           </View>
         </View>
@@ -704,7 +715,7 @@ export default function TransactionDetailsScreen() {
                 </View>
                 <View>
                   <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest">
-                    BILL SPLIT
+                    SPLIT WITH
                   </ThemedText>
                   <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
                     {splitBill.group?.name || 'Friends'}
@@ -739,7 +750,7 @@ export default function TransactionDetailsScreen() {
             <View className="mt-5 flex-row gap-3">
               <View className="flex-1 rounded-2xl bg-emerald-50 p-4">
                 <ThemedText className="text-[10px] uppercase font-black text-emerald-500">
-                  EXPECTED BACK
+                  OWED TO YOU
                 </ThemedText>
                 <ThemedText className="mt-1 text-base font-black text-emerald-700">
                   {formatMoney(splitExpectedBack, { sign: 'never' })}

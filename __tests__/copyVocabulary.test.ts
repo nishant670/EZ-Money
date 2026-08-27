@@ -32,6 +32,14 @@ const RETIRED: { phrase: string; use: string }[] = [
   { phrase: 'Your Money Story', use: 'Transactions' },
   { phrase: 'Time to Log Out', use: 'Log out' },
   { phrase: 'Treat yourself category', use: 'nothing — the category names itself' },
+  // Field labels on the transaction detail screen, which named the same six
+  // fields differently from the edit sheet one tap away.
+  { phrase: 'WHEN WAS THIS', use: 'DATE & TIME, as the edit sheet calls it' },
+  { phrase: 'WHAT KIND OF SPEND', use: 'CATEGORY' },
+  { phrase: 'PAYMENT METHOD', use: 'PAID VIA' },
+  { phrase: 'YOUR NOTES', use: 'NOTES' },
+  { phrase: 'BILL SPLIT', use: 'SPLIT WITH' },
+  { phrase: 'EXPECTED BACK', use: 'OWED TO YOU, as the Splits tab says it' },
   // The footer read "FINNRI PLAYBOOK V3.1.2" on a 1.0.0 build. It is the one
   // string on the screen a user might quote back in a bug report, so it is read
   // from the manifest now rather than typed.
@@ -76,5 +84,31 @@ describe('the vocabulary for destructive and structural actions', () => {
     expect(detail).toContain('Delete this transaction?');
     // A destructive confirmation has to say that it is final.
     expect(detail).toContain('This can&apos;t be undone.');
+  });
+
+  /**
+   * The worse half of what the copy pass turned up.
+   *
+   * `displayData` is built from route params and only replaced once the fetch
+   * lands, so every one of these fallbacks renders whenever its field is
+   * absent — and each was a plausible *value* rather than an admission that
+   * there wasn't one. A transaction with no date read "Yesterday, Oct 24"; one
+   * with no payment mode read "UPI"; one with no category read "Food & Drink",
+   * which is not even a category this app has — the real one is "Food &
+   * Drinks". Invented facts on a money record, in the same register as the
+   * real ones and indistinguishable from them.
+   *
+   * The honest pattern was already on the same screen, two fields away:
+   * `displayData.account?.name || 'Not linked'`.
+   */
+  it.each([
+    ['Yesterday, Oct 24', 'a date nobody recorded'],
+    ['Earlier today', 'a time nobody recorded'],
+    ["'Food & Drink'", 'a category that does not exist'],
+    ["displayData.mode || 'UPI'", 'a payment method nobody chose'],
+  ])('does not invent %p — %s', (fallback) => {
+    const detail = readFileSync(join(process.cwd(), 'app', 'entry', '[id].tsx'), 'utf8');
+
+    expect(detail).not.toContain(fallback);
   });
 });
