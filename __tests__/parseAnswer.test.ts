@@ -1,4 +1,8 @@
-import { describeAnswerCount, describeAnswerScope } from '@/components/home/AnswerCard';
+import {
+  answerHasSoleEntry,
+  describeAnswerCount,
+  describeAnswerScope,
+} from '@/components/home/AnswerCard';
 import {
   isParseAnswer,
   looksLikeQuestion,
@@ -108,6 +112,16 @@ describe('looksLikeQuestion', () => {
     'show me my biggest expense',
     'kitna kharch hua food pe',
     'is my spending up',
+    // The telegraphic form. No verb, no question mark, no amount — which is
+    // how people actually type into a field that behaves like a search box,
+    // and what used to open a transaction form instead of answering.
+    'today spend',
+    'today spends',
+    'food spends',
+    'this month expense',
+    'biggest spend last week',
+    'swiggy total',
+    'spend last 30 days',
   ])('reads %p as a question', (text) => {
     expect(looksLikeQuestion(text)).toBe(true);
   });
@@ -117,6 +131,12 @@ describe('looksLikeQuestion', () => {
     'chai 80 cash',
     'netflix 199 monthly subscription',
     'paid 1200 to Rahul, split with him',
+    // An amount outranks every word around it: this is money that moved,
+    // however much it reads like the question above.
+    'today spend 250',
+    // No amount either, but nothing here asks about records — an incomplete
+    // capture still belongs in the draft sheet.
+    'paid rent to landlord',
     '',
   ])('reads %p as a capture', (text) => {
     expect(looksLikeQuestion(text)).toBe(false);
@@ -192,5 +212,55 @@ describe('what the card says around the number', () => {
     expect(describeAnswerCount(answerFixture())).toBe('from 14 transactions');
     expect(describeAnswerCount(answerFixture({ transaction_count: 1 }))).toBe('from 1 transaction');
     expect(describeAnswerCount(answerFixture({ metric: 'count' }))).toBeNull();
+  });
+});
+
+/**
+ * What the card puts under the number.
+ *
+ * "See the transaction" was a button asking the reader to go and find out what
+ * the one transaction was, and the destination was a list holding exactly that
+ * row — two taps to reach a thing the answer had already narrowed to one. The
+ * row goes on the card instead, and it opens the entry.
+ */
+describe('the evidence under an answer', () => {
+  it('treats a lone transaction as the answer itself', () => {
+    const answer = answerFixture({
+      transaction_count: 1,
+      largest_entry: {
+        entry_id: 42,
+        title: 'Paan Shop',
+        merchant: 'Paan Shop',
+        category: 'Food & Drinks',
+        amount: 45,
+        date: '2026-08-26',
+      },
+    });
+
+    expect(answerHasSoleEntry(answer)).toBe(true);
+  });
+
+  it('does not mistake the biggest of many for the only one', () => {
+    // A `largest` answer names an entry because the entry is what was asked
+    // for — the list behind it still holds every other row, and the
+    // tap-through still has somewhere to go.
+    const answer = answerFixture({
+      metric: 'largest',
+      transaction_count: 14,
+      largest_entry: {
+        entry_id: 9,
+        title: 'Rent',
+        merchant: '',
+        category: 'Bills',
+        amount: 13000,
+        date: '2026-08-22',
+      },
+    });
+
+    expect(answerHasSoleEntry(answer)).toBe(false);
+  });
+
+  it('has nothing to show when the server sent no entry', () => {
+    expect(answerHasSoleEntry(answerFixture({ transaction_count: 1 }))).toBe(false);
   });
 });

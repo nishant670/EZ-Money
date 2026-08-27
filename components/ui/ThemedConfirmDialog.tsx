@@ -61,7 +61,7 @@ export function ThemedConfirmDialog({
             styles.dialog,
             theme.shadows.soft,
             {
-              backgroundColor: colors.background,
+              backgroundColor: colors.card,
               borderColor: colors.border,
             },
           ]}>
@@ -86,7 +86,10 @@ export function ThemedConfirmDialog({
                 styles.button,
                 styles.cancelButton,
                 {
-                  backgroundColor: theme.mode === 'dark' ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+                  // The card is white in the light theme now, so the cancel
+                  // button takes the page colour to stay a visible second
+                  // option rather than a white rectangle on white.
+                  backgroundColor: theme.mode === 'dark' ? 'rgba(255,255,255,0.08)' : colors.background,
                   borderColor: colors.border,
                   opacity: pressed || loading ? 0.72 : 1,
                 },
@@ -121,6 +124,15 @@ export function ThemedConfirmDialog({
     </Modal>
   );
 }
+
+/**
+ * Both dialogs sit on `colors.card`, not `colors.background`.
+ *
+ * `background` is the colour of the page the dialog is covering — in the light
+ * theme they are the same `#FDF5F7` — so the card had nothing but a hairline
+ * border and a soft shadow separating it from what it interrupted, and its
+ * contents read as loose text on the screen rather than as a dialog.
+ */
 
 type AlertTone = 'info' | 'success' | 'danger';
 
@@ -184,7 +196,7 @@ export function ThemedAlertDialog({
           style={[
             styles.dialog,
             theme.shadows.soft,
-            { backgroundColor: colors.background, borderColor: colors.border },
+            { backgroundColor: colors.card, borderColor: colors.border },
           ]}>
           <View style={[styles.iconShell, { backgroundColor: iconBackground }]}>
             <MaterialCommunityIcons

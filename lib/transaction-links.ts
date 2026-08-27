@@ -62,3 +62,14 @@ export const openAnswerTransactions = (filters: Record<string, string>) => {
     type: type === 'expense' ? 'Expense' : type === 'income' ? 'Income' : undefined,
   });
 };
+
+/**
+ * The single transaction an answer narrowed down to.
+ *
+ * An answer computed over exactly one row has a destination more specific than
+ * the filtered list — the row itself. The list would open on one entry and ask
+ * the reader to tap it again.
+ */
+export const openAnswerEntry = (entryId: number) => {
+  router.push({ pathname: '/entry/[id]', params: { id: String(entryId) } });
+};

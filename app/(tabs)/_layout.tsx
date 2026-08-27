@@ -10,6 +10,7 @@ import {
   MARKER_LANE,
   TabMarker,
   TabMarkerProvider,
+  TabRouteFocus,
   useTabMarkerAnchor,
 } from '@/components/tab-marker';
 import { Fonts, type IconStyle } from '@/constants/theme';
@@ -91,7 +92,15 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
-        tabBarBackground: () => <TabMarker color={colors.tint} />,
+        // `TabRouteFocus` rides along here because this is the only place
+        // rendered *inside* the navigator: it is what lets the pill read the
+        // same focused route the icons are handed, rather than the URL.
+        tabBarBackground: () => (
+          <>
+            <TabRouteFocus />
+            <TabMarker color={colors.tint} />
+          </>
+        ),
         tabBarInactiveTintColor: inactiveTint,
         headerShown: false,
         animation: 'shift',

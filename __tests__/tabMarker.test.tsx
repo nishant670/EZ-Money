@@ -7,6 +7,7 @@ import {
   MARKER_WIDTH,
   TabMarker,
   TabMarkerProvider,
+  TabRouteFocus,
   activeTabName,
   markerOffset,
   useTabMarkerAnchor,
@@ -21,6 +22,19 @@ import {
  */
 let mockSegments: string[] = ['(tabs)'];
 jest.mock('expo-router', () => ({ useSegments: () => mockSegments }));
+
+/**
+ * The tab navigator's own state, as `useNavigationState` would report it.
+ *
+ * `undefined` stands for "no navigator in this tree" — every test that renders
+ * `TabMarker` on its own is in that position, and the URL has to keep working
+ * there.
+ */
+let mockNavigatorTab: string | undefined;
+jest.mock('expo-router/react-navigation', () => ({
+  useNavigationState: (selector: (state: any) => unknown) =>
+    selector({ index: 0, routes: [{ name: mockNavigatorTab }] }),
+}));
 
 /**
  * A five-tab bar, 400 wide, sitting 700 down the window with its icon stacks 12
@@ -90,6 +104,7 @@ const frames: Record<string, Frame> = { 'tab-marker': bar };
 
 beforeEach(() => {
   mockSegments = ['(tabs)'];
+  mockNavigatorTab = undefined;
   jest
     .spyOn(View.prototype, 'measureInWindow')
     .mockImplementation(function (this: { props?: { testID?: string } }, callback) {
@@ -335,5 +350,84 @@ describe('the travelling pill', () => {
 
     mockSegments = ['(tabs)'];
     expect((await pillAfterRender(screen, wholeBar)).x).toBe(200 - MARKER_WIDTH / 2);
+  });
+});
+
+/**
+ * The pill answers to the navigator when there is one, and to the URL when
+ * there is not.
+ *
+ * These are two different questions with a usually-identical answer, which is
+ * why the divergence is worth a test rather than an assumption. `useSegments()`
+ * describes the URL; the icons are drawn from the navigator's own index. The
+ * two come apart on a `replace` into the group, on a restored state, and for
+ * as long as a stacked route sits on top of the tabs — and when they do, a pill
+ * drawn from the URL sits under a tab whose icon is not the lit one.
+ */
+describe('where focus comes from', () => {
+  const barWith = (navigatorTab: string | undefined): Tree => {
+    mockNavigatorTab = navigatorTab;
+    return function NavigatorBar() {
+      return (
+        <TabMarkerProvider>
+          <TabRouteFocus />
+          <FakeTab id="tab-index" route="index" frame={tabAt(2)} />
+          <FakeTab id="tab-split" route="split" frame={tabAt(3)} />
+          <TabMarker color="#EF7C5B" />
+        </TabMarkerProvider>
+      );
+    };
+  };
+
+  it('follows the navigator, not the URL, when the two disagree', async () => {
+    // The shape of the reported bug: the bar was drawing Splits while Home was
+    // the screen on show. Whatever puts the URL and the navigator out of step,
+    // the pill has to end up under the tab whose icon React Navigation lit.
+    mockSegments = ['(tabs)', 'split'];
+    const tree = barWith('index');
+    const screen = await mount(tree);
+
+    expect((await pillAfterRender(screen, tree)).x).toBe(200 - MARKER_WIDTH / 2);
+  });
+
+  it('does not let the URL take the pill back afterwards', async () => {
+    // Both sources re-report on every render. Without a precedence they would
+    // take turns and the pill would follow whichever fired last.
+    mockSegments = ['(tabs)', 'index'];
+    const tree = barWith('split');
+    const screen = await mount(tree);
+
+    expect((await pillAfterRender(screen, tree)).x).toBe(280 - MARKER_WIDTH / 2);
+
+    mockSegments = ['(tabs)', 'index'];
+    expect((await pillAfterRender(screen, tree)).x).toBe(280 - MARKER_WIDTH / 2);
+  });
+
+  it('still moves when the navigator does', async () => {
+    mockSegments = ['(tabs)'];
+    let tree = barWith('index');
+    const screen = await mount(tree);
+
+    expect((await pillAfterRender(screen, tree)).x).toBe(200 - MARKER_WIDTH / 2);
+
+    tree = barWith('split');
+    expect((await pillAfterRender(screen, tree)).x).toBe(280 - MARKER_WIDTH / 2);
+  });
+
+  it('falls back to the URL where there is no navigator to ask', async () => {
+    // `TabMarker` is rendered outside the navigator here — in a test, and
+    // anywhere else the bar is not the host. The URL is the only answer
+    // available, and it has to keep being taken.
+    mockSegments = ['(tabs)', 'split'];
+    const tree: Tree = () => (
+      <TabMarkerProvider>
+        <FakeTab id="tab-index" route="index" frame={tabAt(2)} />
+        <FakeTab id="tab-split" route="split" frame={tabAt(3)} />
+        <TabMarker color="#EF7C5B" />
+      </TabMarkerProvider>
+    );
+    const screen = await mount(tree);
+
+    expect((await pillAfterRender(screen, tree)).x).toBe(280 - MARKER_WIDTH / 2);
   });
 });

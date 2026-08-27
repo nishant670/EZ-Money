@@ -68,6 +68,8 @@ import {
   BalanceFilterSheet,
   type BalanceFilter,
 } from '@/components/split/sheets/BalanceFilterSheet';
+import { DeleteGroupSheet } from '@/components/split/sheets/DeleteGroupSheet';
+import { notifyTransactionsChanged } from '@/lib/transaction-events';
 import { FriendActionsSheet } from '@/components/split/sheets/FriendActionsSheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -138,6 +140,7 @@ import {
   type SplitDirection,
   type SplitFriend,
   type SplitGroup,
+  type SplitGroupEntryDisposition,
   type SplitGroupDirectInvite,
   type SplitGroupMemberInvite,
 } from '@/lib/splits';
@@ -457,6 +460,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     mode: GroupActionMode;
   } | null>(null);
   const [pendingGroupDelete, setPendingGroupDelete] = useState<SplitGroupSummary | null>(null);
+  /**
+   * Reset to `keep` every time the sheet opens — see `DeleteGroupSheet`. A
+   * choice that persists across two different groups is a choice the user did
+   * not make about the second one, and one of the two answers is destructive.
+   */
+  const [groupDeleteDisposition, setGroupDeleteDisposition] =
+    useState<SplitGroupEntryDisposition>('keep');
   const [pendingGroupLeave, setPendingGroupLeave] = useState<SplitGroupSummary | null>(null);
   const [selectedFriendDetailId, setSelectedFriendDetailId] = useState<number | null>(null);
   const [selectedFriendActions, setSelectedFriendActions] = useState<SplitFriend | null>(null);
@@ -1258,31 +1268,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     removeFriendFromActiveList(friend, 'archive');
   };
 
+  /**
+   * Swiping a group and deleting it from its settings are the same operation,
+   * so they now open the same sheet.
+   *
+   * They were two flows with two vocabularies over one endpoint: a system alert
+   * saying "Archive" and promising the history was preserved, and a themed
+   * dialog saying "Delete". Both called the same handler, and neither described
+   * what it actually did to the balances.
+   */
   const handleArchiveGroup = (summary: SplitGroupSummary) => {
-    if (!token || !summary.group.viewer_can_manage) return;
-    Alert.alert(
-      `Archive ${summary.group.name}?`,
-      'Archived groups stay out of the active Split list while preserving their history.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: () => {
-            setOpenSwipeRow(null);
-            setError(null);
-            void archiveSplitGroup(token, summary.group.id)
-              .then(async () => {
-                haptics.removed();
-                await loadSplitData();
-              })
-              .catch((archiveError: unknown) => {
-                reportSplitError(archiveError, 'Unable to archive this split group.');
-              });
-          },
-        },
-      ]
-    );
+    if (!summary.group.viewer_can_manage) return;
+    setOpenSwipeRow(null);
+    openGroupDeletePrompt(summary);
   };
 
   const openFriendEditor = (friend: SplitFriend) => {
@@ -1778,9 +1776,17 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
   };
 
+  const openGroupDeletePrompt = (summary: SplitGroupSummary) => {
+    setError(null);
+    // Keeping is the answer every time the sheet opens: it is the recoverable
+    // one, and the other destroys transactions.
+    setGroupDeleteDisposition('keep');
+    setPendingGroupDelete(summary);
+  };
+
   const handleDeleteGroup = (summary: SplitGroupSummary) => {
     if (!summary.group.viewer_can_manage) return;
-    setPendingGroupDelete(summary);
+    openGroupDeletePrompt(summary);
   };
 
   const handleLeaveGroup = (summary: SplitGroupSummary) => {
@@ -1791,15 +1797,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const confirmDeleteGroup = () => {
     if (!token || !pendingGroupDelete || saving) return;
     const removedGroupId = pendingGroupDelete.group.id;
+    const disposition = groupDeleteDisposition;
     setSaving(true);
     setError(null);
-    void archiveSplitGroup(token, removedGroupId)
-      .then(async () => {
+    void archiveSplitGroup(token, removedGroupId, disposition)
+      .then(async (result) => {
         haptics.removed();
         setPendingGroupDelete(null);
         setGroupSettingsId(null);
         setSelectedGroupDetailId(null);
         await loadSplitData();
+        // The transaction feed on Home is reading the same rows this just
+        // removed, so it has to be told rather than left to notice.
+        if (result.deleted_entries > 0) notifyTransactionsChanged();
       })
       .catch((deleteError: unknown) => {
         reportSplitError(deleteError, 'Unable to delete this split group.');
@@ -2692,13 +2702,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onConfirm={confirmRevokeGroupInvite}
         />
 
-        <ThemedDeleteDialog
+        <DeleteGroupSheet
           visible={Boolean(pendingGroupDelete)}
-          title={`Delete ${pendingGroupDelete?.group.name ?? 'group'}?`}
-          message="This removes the group from your active split list. Existing split records stay preserved for history."
-          cancelLabel="Cancel"
-          confirmLabel="Delete"
-          loading={saving}
+          groupName={pendingGroupDelete?.group.name ?? 'this group'}
+          expenseCount={pendingGroupDelete?.billCount ?? 0}
+          disposition={groupDeleteDisposition}
+          saving={saving}
+          onChangeDisposition={setGroupDeleteDisposition}
           onCancel={() => {
             if (!saving) setPendingGroupDelete(null);
           }}

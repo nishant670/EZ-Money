@@ -530,14 +530,39 @@ export const acceptSplitGroupInvite = async (
   return response.json();
 };
 
-export const archiveSplitGroup = async (token: string, groupId: number): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/v1/split/groups/${groupId}`, {
-    method: 'DELETE',
-    headers: authHeaders(token),
-  });
+/**
+ * What happens to the transactions behind a group's split expenses when the
+ * group goes.
+ *
+ * They are two records of the same evening: the split bill says who owed whom,
+ * and the transaction says money left the account — which it did, and which
+ * deleting a group does not undo. So the two are separable, and which one the
+ * user meant is a question only they can answer.
+ */
+export type SplitGroupEntryDisposition = 'keep' | 'delete';
+
+export type ArchiveSplitGroupResult = {
+  /** How many transactions the server actually deleted. */
+  deleted_entries: number;
+};
+
+export const archiveSplitGroup = async (
+  token: string,
+  groupId: number,
+  entries: SplitGroupEntryDisposition = 'keep'
+): Promise<ArchiveSplitGroupResult> => {
+  const response = await fetch(
+    `${API_BASE_URL}/v1/split/groups/${groupId}?entries=${entries}`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    }
+  );
   if (!response.ok) {
     throw await readSplitError(response, 'Unable to delete this split group right now.');
   }
+  const payload = (await response.json().catch(() => null)) as ArchiveSplitGroupResult | null;
+  return { deleted_entries: payload?.deleted_entries ?? 0 };
 };
 
 export const leaveSplitGroup = async (token: string, groupId: number): Promise<void> => {
