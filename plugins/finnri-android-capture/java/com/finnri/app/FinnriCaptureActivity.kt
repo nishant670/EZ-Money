@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.graphics.Typeface
 import android.media.MediaRecorder
 import android.net.Uri
@@ -55,19 +54,19 @@ class FinnriCaptureActivity : Activity() {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
       setPadding((32 * density).toInt(), (32 * density).toInt(), (32 * density).toInt(), (32 * density).toInt())
-      setBackgroundColor(Color.parseColor("#2D2D2D"))
+      setBackgroundColor(getColor(R.color.finnri_background))
     }
     val title = TextView(this).apply {
       text = "Finnri quick capture"
       textSize = 24f
-      setTextColor(Color.WHITE)
+      setTextColor(getColor(R.color.finnri_text))
       setTypeface(typeface, Typeface.BOLD)
       gravity = Gravity.CENTER
     }
     status = TextView(this).apply {
       text = "Starting microphone…"
       textSize = 16f
-      setTextColor(Color.parseColor("#CBD5E1"))
+      setTextColor(getColor(R.color.finnri_text_muted))
       gravity = Gravity.CENTER
       setPadding(0, (18 * density).toInt(), 0, (28 * density).toInt())
     }
@@ -75,14 +74,19 @@ class FinnriCaptureActivity : Activity() {
       text = "Stop and review"
       textSize = 16f
       isAllCaps = false
-      setTextColor(Color.WHITE)
-      setBackgroundColor(Color.parseColor("#8257E5"))
+      setTextColor(getColor(R.color.finnri_on_accent))
+      // A drawable rather than setBackgroundColor: the flat colour also
+      // squared the corners, and every primary action in the app is a pill.
+      setBackgroundResource(R.drawable.capture_button)
+      // The platform button carries a press elevation that lifts a shadow off
+      // the pill's square bounds rather than its rounded edge.
+      stateListAnimator = null
       minHeight = (56 * density).toInt()
     }
     val privacy = TextView(this).apply {
       text = "Capture only. Balances and transactions stay behind your lock screen."
       textSize = 12f
-      setTextColor(Color.parseColor("#94A3B8"))
+      setTextColor(getColor(R.color.finnri_text_dim))
       gravity = Gravity.CENTER
       setPadding(0, (24 * density).toInt(), 0, 0)
     }

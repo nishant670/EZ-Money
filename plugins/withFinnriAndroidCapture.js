@@ -85,12 +85,16 @@ const withCaptureStyle = (config) =>
     );
     styles.push({
       $: { name: 'FinnriCaptureTheme', parent: 'Theme.AppCompat.DayNight.NoActionBar' },
+      // Colours come from `res/values/finnri_capture_colors.xml`, which the
+      // resource copy below drops into the same `values/` folder. `colorAccent`
+      // is what tints AppCompat widgets, so leaving it off-palette here is what
+      // made the capture button render purple no matter what the view set.
       item: [
-        { $: { name: 'android:windowBackground' }, _: '#2D2D2D' },
-        { $: { name: 'android:colorAccent' }, _: '#8257E5' },
+        { $: { name: 'android:windowBackground' }, _: '@color/finnri_background' },
+        { $: { name: 'android:colorAccent' }, _: '@color/finnri_accent' },
         { $: { name: 'android:windowLightStatusBar' }, _: 'false' },
-        { $: { name: 'android:statusBarColor' }, _: '#2D2D2D' },
-        { $: { name: 'android:navigationBarColor' }, _: '#2D2D2D' },
+        { $: { name: 'android:statusBarColor' }, _: '@color/finnri_background' },
+        { $: { name: 'android:navigationBarColor' }, _: '@color/finnri_background' },
       ],
     });
     nextConfig.modResults.resources.style = styles;
