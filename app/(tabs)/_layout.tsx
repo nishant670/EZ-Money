@@ -90,6 +90,25 @@ export default function TabLayout() {
       */}
     <SplitInvitePrompt />
     <Tabs
+      /*
+       * Home is where Back goes, and where a cold launch starts.
+       *
+       * The tab router's default is `firstRoute`, which returns to
+       * `routes[0]` — the first `Tabs.Screen` declared below, which is
+       * Insights. So the device back button from Money, Splits or Profile
+       * landed on a tab the user had not asked for and might never have
+       * opened. The bar is ordered Insights · Money · Home · Splits · Profile
+       * because Home belongs under the thumb, not first, so the first tab and
+       * the home tab are different routes and the default cannot be right here.
+       *
+       * `initialRouteName` has to be spelled out for `initialRoute` to mean
+       * anything: the router resolves it with `findIndex`, and falls back to
+       * index 0 — Insights again — when the name matches nothing. It also
+       * fixes a smaller thing, that the navigator used to mount on Insights and
+       * be navigated to Home a frame later, because `/` resolves to `index`.
+       */
+      backBehavior="initialRoute"
+      initialRouteName="index"
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
         // `TabRouteFocus` rides along here because this is the only place
