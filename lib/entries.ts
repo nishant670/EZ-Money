@@ -98,6 +98,13 @@ export const deleteEntry = async (token: string, id: string | number): Promise<v
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
+  // A row that is already gone is the outcome the caller asked for, so a 404 is
+  // success rather than failure. Deleting the same entry twice is reachable in
+  // ordinary use — the undo window commits the pending delete as soon as a
+  // second one is requested, so an impatient double tap sends the same id twice
+  // — and the caller's failure path says "it is still in your ledger", which in
+  // that race is the one thing that is definitely not true.
+  if (response.status === 404) return;
   if (!response.ok) {
     throw await readApiError(response, 'Unable to delete the transaction right now.', entryFieldLabels);
   }

@@ -9,7 +9,10 @@ import { TransactionItem, type RowOrigin } from '@/components/home/TransactionIt
 import { ThemedText } from '@/components/themed-text';
 import { AdvancedFilter } from '@/components/transactions/AdvancedFilter';
 import { TransactionListSkeleton } from '@/components/transactions/TransactionListSkeleton';
-import { useTransactionDelete } from '@/components/transactions/TransactionDeleteProvider';
+import {
+  TransactionUndoToast,
+  useTransactionDelete,
+} from '@/components/transactions/TransactionDeleteProvider';
 import { Colors } from '@/constants/theme';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { encodeFrame } from '@/hooks/use-shared-element';
@@ -639,6 +642,11 @@ export default function TransactionsScreen() {
           )}
         </View>
       </AnimatedBottomSheet>
+      {/* Mounted here, not left to the provider: this screen is pushed over the
+          navigator, and the provider's own toast draws underneath it. Without
+          this the delete is silent and the five seconds the confirmation
+          promises cannot be reached — on the screen where most deletes happen. */}
+      <TransactionUndoToast />
     </SafeAreaView>
   );
 }

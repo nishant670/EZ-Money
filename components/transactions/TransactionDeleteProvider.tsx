@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert, TouchableOpacity, View } from 'react-native';
 import Animated, {
   interpolate,
@@ -25,12 +25,28 @@ type TransactionDeleteContextValue = {
   pending: PendingTransactionDelete | null;
   requestDelete: (transaction: PendingTransactionDelete) => void;
   undoDelete: () => void;
+  /**
+   * Claims the toast for the screen calling it, and releases it on unmount.
+   *
+   * The provider sits above the navigator, so its own toast is a sibling of
+   * `<Stack>` — which puts it *behind* any screen the stack has pushed. That is
+   * invisible on the tab screens, where nothing is pushed over it, and total on
+   * `/transactions`, where the delete then looks like it happened silently and
+   * the five seconds the confirmation promises are unreachable.
+   *
+   * A pushed screen that can delete therefore renders its own
+   * `TransactionUndoToast`, and claiming makes the provider stand down while it
+   * does — two toasts would otherwise draw twice and, worse, announce twice to
+   * a screen reader.
+   */
+  claimToastHost: () => () => void;
 };
 
 const TransactionDeleteContext = createContext<TransactionDeleteContextValue | null>(null);
 
 export function TransactionDeleteProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
+  const [toastHosts, setToastHosts] = useState(0);
   const { pending, request, undo } = useUndoableDelete<PendingTransactionDelete>((target) => {
     if (!token) return;
     void deleteEntry(token, target.id)
@@ -43,17 +59,35 @@ export function TransactionDeleteProvider({ children }: { children: React.ReactN
         notifyTransactionsChanged();
       });
   });
+  const claimToastHost = useCallback(() => {
+    setToastHosts((count) => count + 1);
+    return () => setToastHosts((count) => Math.max(0, count - 1));
+  }, []);
+
   const value = useMemo(
-    () => ({ pending, requestDelete: request, undoDelete: undo }),
-    [pending, request, undo]
+    () => ({ pending, requestDelete: request, undoDelete: undo, claimToastHost }),
+    [claimToastHost, pending, request, undo]
   );
 
   return (
     <TransactionDeleteContext.Provider value={value}>
       {children}
-      <UndoDeleteToast pending={pending} onUndo={undo} />
+      {toastHosts === 0 && <UndoDeleteToast pending={pending} onUndo={undo} />}
     </TransactionDeleteContext.Provider>
   );
+}
+
+/**
+ * The undo toast, mounted inside a screen rather than above the navigator.
+ *
+ * Any screen the stack *pushes* has to render this, because the provider's own
+ * copy is drawn underneath it. Screens that sit at the stack's root do not need
+ * it — the provider already covers them.
+ */
+export function TransactionUndoToast() {
+  const { pending, undoDelete, claimToastHost } = useTransactionDelete();
+  useEffect(() => claimToastHost(), [claimToastHost]);
+  return <UndoDeleteToast pending={pending} onUndo={undoDelete} />;
 }
 
 export function useTransactionDelete() {
