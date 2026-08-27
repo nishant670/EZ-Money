@@ -208,3 +208,34 @@ export function groupMatchesSearch(
     .toLowerCase()
     .includes(normalizedSearch);
 }
+
+/**
+ * The group members the expense composer can actually put a row on screen for.
+ *
+ * A group keeps its membership rows when a friend is archived, so `members` can
+ * name somebody the friends list will never return. That split the composer in
+ * two: these keys decide who *carries* a share, and the people list — which
+ * resolves every member through the friends it has — decides who gets a *row*.
+ * When the two disagree, the difference is a participant that counts toward the
+ * total with nothing on screen to edit.
+ *
+ * The symptom was a percentage split reporting **150.00%** over two visible
+ * rows reading 60 and 40: a third participant, invisible, still holding the 50
+ * it had been seeded with when the split was two people. There was no way to
+ * fix it from the UI, because the row it belonged to had been filtered out of
+ * the UI.
+ *
+ * `resolvable` is the same lookup the people list uses. Passing it in rather
+ * than a friends array keeps the two reading from one map instead of two copies
+ * of the same filter.
+ */
+export function composerMemberKeys(
+  members: { friend_id: number }[] | undefined,
+  resolvable: { has: (friendId: number) => boolean },
+  fallback: SplitFriend[]
+): string[] {
+  const keys = members
+    ? members.filter((member) => resolvable.has(member.friend_id)).map((member) => String(member.friend_id))
+    : fallback.map((friend) => String(friend.id));
+  return [...new Set(keys)];
+}

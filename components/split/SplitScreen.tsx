@@ -47,6 +47,7 @@ import {
   SplitModal,
 } from '@/components/split/primitives/SplitPrimitives';
 import {
+  composerMemberKeys,
   contactMatchesFriend,
   countHiddenSettledGroups,
   formatBalance,
@@ -1301,12 +1302,9 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const handleSelectBillGroup = (groupId: number | null) => {
     const nextGroup = groups.find((group) => group.id === groupId) ?? null;
-    const memberKeys = [
-      ...new Set(
-        nextGroup?.members?.map((member) => friendSplitKey(member.friend_id)).filter(Boolean) ??
-          friends.map((friend) => friendSplitKey(friend.id))
-      ),
-    ];
+    // Only members the composer can draw a row for — see `composerMemberKeys`,
+    // which is where the 150%-over-two-people bug is written up.
+    const memberKeys = composerMemberKeys(nextGroup?.members, friendById, friends);
     setBillGroupId(groupId);
 
     /**
