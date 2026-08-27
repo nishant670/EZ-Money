@@ -11,6 +11,7 @@ import { SkeletonCards, SkeletonFrame } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { categoryVisual } from '@/lib/categories';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { formatChangeMagnitude } from '@/lib/insights';
 import { formatMoney } from '@/lib/money';
@@ -104,6 +105,13 @@ export default function MonthlyReviewScreen() {
 
   const comparison = review ? describeMonthlyChange(review) : null;
   const net = review ? review.summary.total_income - review.summary.total_spent : 0;
+  // The headline pairs this with a spend total, so it counts the rows that
+  // total is made of. `transaction_count` includes income, which made the two
+  // halves of the sentence describe different sets of rows. The fallback keeps
+  // an older backend readable rather than rendering "across undefined".
+  const spentAcross = review
+    ? (review.summary.expense_count ?? review.summary.transaction_count)
+    : 0;
 
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }}>
@@ -166,8 +174,8 @@ export default function MonthlyReviewScreen() {
               {formatMoney(review.summary.total_spent)}
             </ThemedText>
             <ThemedText variant="caption" style={{ marginTop: 4, color: muted }}>
-              across {review.summary.transaction_count} transaction
-              {review.summary.transaction_count === 1 ? '' : 's'}
+              across {spentAcross} transaction
+              {spentAcross === 1 ? '' : 's'}
               {comparison ? ` · ${comparison}` : ''}
             </ThemedText>
 
@@ -215,7 +223,11 @@ export default function MonthlyReviewScreen() {
               {review.top_categories.slice(0, 5).map((category) => (
                 <ReviewRow
                   key={category.category}
-                  icon="shape-outline"
+                  // The same icon map every other surface uses. A single
+                  // `shape-outline` for all five rows was X8's defect one
+                  // screen over: the category is the thing being named, so it
+                  // should look the way it looks everywhere else.
+                  icon={categoryVisual(category.category).icon}
                   title={category.category}
                   body={`${formatMoney(category.amount)} · ${Math.round(category.percentage)}% of spend${
                     category.change_comparable

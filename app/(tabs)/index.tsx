@@ -52,7 +52,7 @@ import {
   formatApiDate,
   formatDateLabel,
   groupTransactionsBySection,
-  loadTransactions,
+  loadTransactionPage,
   mapEntryToTransaction,
   normalizeDateLabel,
   parseDateLabel,
@@ -298,6 +298,13 @@ export default function HomeScreen() {
   const [parseFailure, setParseFailure] = useState<ParseFailure | null>(null);
   const [isTextInputVisible, setIsTextInputVisible] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  /**
+   * How many entries the account actually holds, which is not the same as how
+   * many this screen drew. The feed is one page — 50 by the backend's default —
+   * so the guest prompt was offering to save "50 transactions" to anyone with
+   * more than that, and the count is the whole point of that sentence.
+   */
+  const [entryTotal, setEntryTotal] = useState(0);
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
   const [monthDashboard, setMonthDashboard] = useState<DashboardResponse | null>(null);
@@ -502,8 +509,10 @@ export default function HomeScreen() {
       if (!silent) setIsEntriesLoading(true);
       setEntriesError(null);
       try {
-        const mapped = await loadTransactions(token);
+        const { transactions: page, total } = await loadTransactionPage(token);
+        const mapped = [...page].sort((a, b) => (b.occurredAt ?? 0) - (a.occurredAt ?? 0));
         setTransactions(mapped);
+        setEntryTotal(total);
       } catch (error) {
         setEntriesError(getFriendlyErrorMessage(error, 'Unable to load entries right now.'));
       } finally {
@@ -670,7 +679,7 @@ export default function HomeScreen() {
    */
   const showGuestUpgradePrompt = shouldShowGuestUpgradePrompt({
     isGuest: !!user?.is_guest,
-    entryCount: transactions.length,
+    entryCount: Math.max(entryTotal, transactions.length),
     isSnoozed: isGuestUpgradeSnoozed,
   });
 
@@ -1486,7 +1495,7 @@ export default function HomeScreen() {
 
           {showGuestUpgradePrompt ? (
             <GuestUpgradePrompt
-              entryCount={transactions.length}
+              entryCount={Math.max(entryTotal, transactions.length)}
               onUpgrade={() => router.push('/auth?mode=link')}
               onDismiss={() => {
                 setIsGuestUpgradeSnoozed(true);

@@ -16,7 +16,9 @@ const reviewFixture = (overrides: Partial<MonthlyReview> = {}): MonthlyReview =>
     total_spent: 40091,
     total_income: 90000,
     daily_average: 1293.26,
-    transaction_count: 33,
+    // 34 rows in the month, one of them income — the sentence describes the 33.
+    transaction_count: 34,
+    expense_count: 33,
     previous_total_spent: 45558,
     spend_change: -12,
     spend_change_comparable: true,
@@ -96,6 +98,26 @@ describe('the share text', () => {
     expect(text).not.toMatch(/\d{5,}/);
   });
 
+
+  // The sentence pairs a spend total with a count, so the count must be the
+  // rows that total is made of. A salary in the same month used to be counted
+  // inside it, which made the two halves describe different sets of rows.
+  it('counts only the transactions the spend is made of', () => {
+    const text = monthlyReviewShareText(reviewFixture());
+    expect(text).toContain('across 33 transactions');
+    expect(text).not.toContain('across 34 transactions');
+  });
+
+  // A backend that predates `expense_count` must still produce a readable
+  // sentence rather than "across undefined transactions".
+  it('falls back to the total count when the server does not send an expense count', () => {
+    const base = reviewFixture();
+    const summary = { ...base.summary };
+    delete (summary as { expense_count?: number }).expense_count;
+    const text = monthlyReviewShareText(reviewFixture({ summary }));
+    expect(text).toContain('across 34 transactions');
+  });
+
   it('drops the comparison rather than quoting an unpublishable one', () => {
     const text = monthlyReviewShareText(
       reviewFixture({
@@ -152,6 +174,7 @@ describe('the share text', () => {
         summary: {
           ...reviewFixture().summary,
           transaction_count: 1,
+          expense_count: 1,
           spend_change_comparable: false,
         },
       })
