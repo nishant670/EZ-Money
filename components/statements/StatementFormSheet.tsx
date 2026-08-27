@@ -112,7 +112,14 @@ export function StatementFormSheet({
 
   return (
     <AnimatedBottomSheet visible={visible} onClose={onClose} avoidKeyboard>
-      <View className="px-6 pb-8 pt-2">
+      <View
+        /*
+         * The sheet paints its own surface. Without it the form floated on the
+         * dimmed screen behind it — the backdrop was doing all the work and the
+         * fields read as though they belonged to the page underneath.
+         */
+        className="rounded-t-[28px] border px-6 pb-8 pt-5"
+        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
         <View className="mb-5 flex-row items-center justify-between">
           <TText className="text-xl" style={{ fontFamily: Fonts.title, color: theme.text }}>
             {initial ? 'Edit statement' : 'Add statement'}

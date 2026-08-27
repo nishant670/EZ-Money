@@ -102,7 +102,7 @@ export function SwipeActionRow({
           {actions.map((action) => {
             const destructive = action.tone === 'destructive';
             const backgroundColor = destructive ? theme.negative : theme.secondary;
-            const color = destructive ? theme.onAccent : theme.accent;
+            const color = destructive ? theme.onNegative : theme.accent;
             return (
               <Pressable
                 key={action.label}

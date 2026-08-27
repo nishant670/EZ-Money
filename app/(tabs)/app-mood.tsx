@@ -129,7 +129,7 @@ export default function AppMoodScreen() {
                 borderRadius: themeTokens.icon.activeContainerRadius,
               }}>
               <MaterialCommunityIcons
-                name={getMoodIconName('sparkles', iconStyle) as any}
+                name={getMoodIconName('star-four-points', iconStyle) as any}
                 size={18}
                 color="#FFFFFF"
               />

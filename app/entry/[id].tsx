@@ -492,7 +492,7 @@ export default function TransactionDetailsScreen() {
         <ThemedText
           className="text-base font-bold ml-4 flex-1 text-center pr-10"
           style={{ color: theme.text }}>
-          A Peek at Your Spend
+          Transaction
         </ThemedText>
       </View>
 
@@ -553,14 +553,16 @@ export default function TransactionDetailsScreen() {
             </View>
             <View>
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
-                WHEN WAS THIS?
+                DATE &amp; TIME
               </ThemedText>
               <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
-                {displayData.date || 'Yesterday, Oct 24'}
+                {displayData.date || 'No date'}
               </ThemedText>
-              <ThemedText className="text-xs font-bold text-gray-400">
-                {displayData.time ? `At ${displayData.time}` : 'Earlier today'}
-              </ThemedText>
+              {displayData.time ? (
+                <ThemedText className="text-xs font-bold text-gray-400">
+                  At {displayData.time}
+                </ThemedText>
+              ) : null}
             </View>
           </View>
 
@@ -573,13 +575,10 @@ export default function TransactionDetailsScreen() {
             </View>
             <View>
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
-                WHAT KIND OF SPEND?
+                CATEGORY
               </ThemedText>
               <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
-                {displayData.category || 'Food & Drink'}
-              </ThemedText>
-              <ThemedText className="text-xs font-bold text-gray-400">
-                Treat yourself category
+                {displayData.category || 'Uncategorised'}
               </ThemedText>
             </View>
           </View>
@@ -614,10 +613,10 @@ export default function TransactionDetailsScreen() {
                   </View>
                   <View>
                     <ThemedText className="text-[9px] uppercase font-black text-gray-300">
-                      PAYMENT METHOD
+                      PAID VIA
                     </ThemedText>
                     <ThemedText className="text-sm font-black text-slate-700">
-                      {displayData.mode || 'UPI'}
+                      {displayData.mode || 'Not set'}
                     </ThemedText>
                   </View>
                 </View>
@@ -645,7 +644,7 @@ export default function TransactionDetailsScreen() {
                 </View>
                 <View className="flex-1">
                   <ThemedText className="text-[9px] uppercase font-black text-gray-300 mb-2">
-                    TAGS
+                    TAG
                   </ThemedText>
                   {/* An untagged entry showed a "Personal" chip that looked like a
                       real tag but was never stored and was not in the tag picker. */}
@@ -683,11 +682,20 @@ export default function TransactionDetailsScreen() {
             </View>
             <View className="flex-1">
               <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
-                YOUR NOTES
+                NOTES
               </ThemedText>
-              <ThemedText className="text-sm font-bold italic text-slate-500 leading-relaxed">
-                {displayData.notes ? `"${displayData.notes}"` : '"No notes added."'}
-              </ThemedText>
+              {/* The quotation marks belong to the user's own words. Wrapping
+                  the empty state in them too put "No notes added." on the
+                  screen as though somebody had written it. */}
+              {displayData.notes ? (
+                <ThemedText className="text-sm font-bold italic text-slate-500 leading-relaxed">
+                  {`"${displayData.notes}"`}
+                </ThemedText>
+              ) : (
+                <ThemedText className="text-sm font-bold text-gray-400 leading-relaxed">
+                  No notes
+                </ThemedText>
+              )}
             </View>
           </View>
         </View>
@@ -707,7 +715,7 @@ export default function TransactionDetailsScreen() {
                 </View>
                 <View>
                   <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest">
-                    BILL SPLIT
+                    SPLIT WITH
                   </ThemedText>
                   <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
                     {splitBill.group?.name || 'Friends'}
@@ -742,7 +750,7 @@ export default function TransactionDetailsScreen() {
             <View className="mt-5 flex-row gap-3">
               <View className="flex-1 rounded-2xl bg-emerald-50 p-4">
                 <ThemedText className="text-[10px] uppercase font-black text-emerald-500">
-                  EXPECTED BACK
+                  OWED TO YOU
                 </ThemedText>
                 <ThemedText className="mt-1 text-base font-black text-emerald-700">
                   {formatMoney(splitExpectedBack, { sign: 'never' })}
@@ -811,8 +819,8 @@ export default function TransactionDetailsScreen() {
           className="w-full py-5 rounded-full items-center justify-center shadow-xl mb-6 active:opacity-90"
           style={{ backgroundColor: theme.accent }}>
           <View className="flex-row items-center gap-3">
-            <MaterialCommunityIcons name="tune-variant" size={24} color="#FFF" />
-            <ThemedText className="text-white font-black text-lg">Tweak this</ThemedText>
+            <MaterialCommunityIcons name="pencil-outline" size={24} color="#FFF" />
+            <ThemedText className="text-white font-black text-lg">Edit</ThemedText>
           </View>
         </Pressable>
 
@@ -824,7 +832,7 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
             )}
             <ThemedText className="font-bold text-[#FF6B6B]">
-              {isDeleting ? 'Forgetting...' : 'Forget this transaction'}
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </ThemedText>
           </View>
         </Pressable>
@@ -872,10 +880,11 @@ export default function TransactionDetailsScreen() {
             </View>
 
             <ThemedText className="text-center text-xl font-black" style={{ color: theme.text }}>
-              Forget this transaction?
+              Delete this transaction?
             </ThemedText>
             <ThemedText className="mt-2 text-center text-sm font-semibold leading-5 text-gray-400">
-              This will permanently remove it from your activity, insights, and linked split details.
+              This can&apos;t be undone. It will be removed from your activity, your insights, and
+              any split linked to it.
             </ThemedText>
           </View>
 
@@ -918,7 +927,7 @@ export default function TransactionDetailsScreen() {
               ) : (
                 <View className="flex-row items-center gap-2">
                   <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
-                  <ThemedText className="text-base font-black text-white">Forget it</ThemedText>
+                  <ThemedText className="text-base font-black text-white">Delete</ThemedText>
                 </View>
               )}
             </Pressable>
@@ -932,7 +941,7 @@ export default function TransactionDetailsScreen() {
                 backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.06)' : '#F7F2F3',
               }}>
               <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
-                Keep transaction
+                Cancel
               </ThemedText>
             </Pressable>
           </View>

@@ -30,8 +30,20 @@ export function AppHeader({
 
   return (
     <View
-      className="flex-row items-center px-6 py-4"
-      style={[{ backgroundColor: colors.background }, style]}>
+      /*
+       * The padding is a style rather than `px-6 py-4`, so that a caller can
+       * turn it off. Tailwind's `px-*` compiles to `paddingLeft`/`paddingRight`,
+       * and Yoga reads a longhand as more specific than the `paddingHorizontal`
+       * an override would naturally reach for — so the override lost and the
+       * Split header sat at 48pt while every other screen sat at 24. Same
+       * shorthand on both sides means the last one written wins, which is what
+       * an override is for.
+       */
+      className="flex-row items-center"
+      style={[
+        { backgroundColor: colors.background, paddingHorizontal: 24, paddingVertical: 16 },
+        style,
+      ]}>
       {onBack && (
         <Pressable
           onPress={onBack}

@@ -157,3 +157,85 @@ export const formatApiDate = (date: Date) => {
 };
 
 export const parseAmount = (value: string) => Number(value.replace(/,/g, '').trim());
+
+/**
+ * How many settled groups a balance filter is actually holding back.
+ *
+ * Derived from the rendered list rather than counted independently, because
+ * counting it independently is what put "Hiding groups that are settled up"
+ * directly above the settled group it claimed to be hiding. Two cases broke
+ * the old count: under the `all` filter nothing is held back, and a
+ * freshly-made group is settled by definition but is deliberately kept on
+ * screen so it does not vanish the moment it is created.
+ *
+ * Taking `visible` as the source of truth means the hint cannot disagree with
+ * the list again, whatever exceptions that list grows later. `matchesSearch`
+ * is separate because a group hidden by a query is not hidden for being
+ * settled, and switching the balance filter would not bring it back.
+ */
+export function countHiddenSettledGroups<T extends { group: { id: number }; netBalance: number }>(
+  summaries: readonly T[],
+  visible: readonly T[],
+  matchesSearch: (summary: T) => boolean
+): number {
+  const visibleIds = new Set(visible.map((summary) => summary.group.id));
+  return summaries.filter(
+    (summary) =>
+      !visibleIds.has(summary.group.id) && summary.netBalance === 0 && matchesSearch(summary)
+  ).length;
+}
+
+/**
+ * Whether a group answers the search box — its name, its detail lines, or any
+ * member's name.
+ *
+ * Shared so the list and the settled-up hint cannot drift apart on what
+ * "matches" means; they disagreed once already, and a search predicate copied
+ * into two places is how that happens a second time.
+ */
+export function groupMatchesSearch(
+  summary: SplitGroupSummary,
+  normalizedSearch: string,
+  friendById: Map<number, SplitFriend>
+): boolean {
+  if (!normalizedSearch) return true;
+  return [
+    summary.group.name,
+    ...summary.detailLines,
+    ...summary.memberIds.map((memberId) => friendById.get(memberId)?.name ?? ''),
+  ]
+    .join(' ')
+    .toLowerCase()
+    .includes(normalizedSearch);
+}
+
+/**
+ * The group members the expense composer can actually put a row on screen for.
+ *
+ * A group keeps its membership rows when a friend is archived, so `members` can
+ * name somebody the friends list will never return. That split the composer in
+ * two: these keys decide who *carries* a share, and the people list — which
+ * resolves every member through the friends it has — decides who gets a *row*.
+ * When the two disagree, the difference is a participant that counts toward the
+ * total with nothing on screen to edit.
+ *
+ * The symptom was a percentage split reporting **150.00%** over two visible
+ * rows reading 60 and 40: a third participant, invisible, still holding the 50
+ * it had been seeded with when the split was two people. There was no way to
+ * fix it from the UI, because the row it belonged to had been filtered out of
+ * the UI.
+ *
+ * `resolvable` is the same lookup the people list uses. Passing it in rather
+ * than a friends array keeps the two reading from one map instead of two copies
+ * of the same filter.
+ */
+export function composerMemberKeys(
+  members: { friend_id: number }[] | undefined,
+  resolvable: { has: (friendId: number) => boolean },
+  fallback: SplitFriend[]
+): string[] {
+  const keys = members
+    ? members.filter((member) => resolvable.has(member.friend_id)).map((member) => String(member.friend_id))
+    : fallback.map((friend) => String(friend.id));
+  return [...new Set(keys)];
+}

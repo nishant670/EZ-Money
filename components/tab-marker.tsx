@@ -15,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useSegments } from 'expo-router';
+import { useNavigationState } from 'expo-router/react-navigation';
 
 import { useMotion } from '@/hooks/use-motion';
 
@@ -111,9 +112,27 @@ type TabMarkerStore = {
   shown: SharedValue<number>;
   /** Every tab reports, keyed by its route name; the focused one is looked up. */
   reportTab: (name: string, frame: Frame) => void;
-  focusTab: (name: string) => void;
+  focusTab: (name: string, source?: FocusSource) => void;
   reportBar: (frame: Frame) => void;
 };
+
+/**
+ * Who is naming the focused tab.
+ *
+ * `navigator` is the tab navigator's own state — the same value React
+ * Navigation hands each icon as `focused`, so a pill drawn from it cannot
+ * disagree with the icon it is sitting under. `url` is `useSegments()`, which
+ * is a different question with a usually-identical answer: the URL and the
+ * navigator's index diverge on a `replace` into the group, on a restored
+ * state, and for the whole time a stacked route is on top — and `useSegments()`
+ * then names a route the bar has no tab for.
+ *
+ * The navigator wins whenever it is present. It is not always present: it can
+ * only be read from inside the navigator, and the pill is also rendered in
+ * tests and could be rendered elsewhere, so the URL stays as the fallback
+ * rather than as a second opinion.
+ */
+export type FocusSource = 'url' | 'navigator';
 
 const TabMarkerContext = createContext<TabMarkerStore | null>(null);
 
@@ -173,6 +192,8 @@ export function TabMarkerProvider({ children }: { children: ReactNode }) {
    */
   const tabFrames = useRef(new Map<string, Frame>());
   const focusedTab = useRef<string | null>(null);
+  /** True from the first `navigator`-sourced report onward. See `FocusSource`. */
+  const hasNavigatorFocus = useRef(false);
   const barFrame = useRef<Frame | null>(null);
   // The first placement is a jump, every one after it is a journey: a pill that
   // slid in from the left edge on launch would be announcing a tab change that
@@ -213,7 +234,12 @@ export function TabMarkerProvider({ children }: { children: ReactNode }) {
         // trip through the native measurement.
         if (name === focusedTab.current) place();
       },
-      focusTab: (name) => {
+      focusTab: (name, source = 'url') => {
+        // Once the navigator has spoken, the URL is no longer consulted —
+        // otherwise the two would take turns and the pill would follow
+        // whichever re-rendered last.
+        if (source === 'navigator') hasNavigatorFocus.current = true;
+        else if (hasNavigatorFocus.current) return;
         if (focusedTab.current === name) return;
         focusedTab.current = name;
         place();
@@ -258,6 +284,30 @@ export function useTabMarkerAnchor(name: string) {
   useEffect(measure, [measure]);
 
   return { ref, onLayout: measure };
+}
+
+/**
+ * Names the focused tab from the tab navigator's own state.
+ *
+ * Rendered *inside* `tabBarBackground` and nowhere else, because
+ * `useNavigationState` can only be read from within the navigator — which is
+ * the whole reason this is a component rather than a hook in the provider. The
+ * provider wraps the navigator; only the bar is inside it.
+ *
+ * `state.routes[state.index]` is the same route React Navigation marks
+ * `focused: true` on when it builds each icon, so the pill and the icon it sits
+ * under now come from one value. The URL fallback in the provider stays for
+ * the renders this component is not part of.
+ */
+export function TabRouteFocus() {
+  const { focusTab } = useTabMarkerStore();
+  const active = useNavigationState((state) => state.routes[state.index]?.name);
+
+  useEffect(() => {
+    if (active) focusTab(active, 'navigator');
+  }, [active, focusTab]);
+
+  return null;
 }
 
 /** The pill. Give this to `tabBarBackground`. */

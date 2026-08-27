@@ -1579,7 +1579,7 @@ export function TransactionFormModal({
         <Pressable
           onPress={onDelete}
           className="w-full py-4 items-center justify-center active:opacity-50">
-          <ThemedText className="font-bold text-red-500">Forget this prompt</ThemedText>
+          <ThemedText className="font-bold text-red-500">Delete prompt</ThemedText>
         </Pressable>
       )}
       {formError && (

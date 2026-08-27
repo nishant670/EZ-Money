@@ -47,10 +47,13 @@ import {
   SplitModal,
 } from '@/components/split/primitives/SplitPrimitives';
 import {
+  composerMemberKeys,
   contactMatchesFriend,
+  countHiddenSettledGroups,
   formatBalance,
   getGroupKindConfig,
   getGroupBalanceRows,
+  groupMatchesSearch,
   parseAmount,
   todayApiDate,
 } from '@/components/split/split-utils';
@@ -66,6 +69,8 @@ import {
   BalanceFilterSheet,
   type BalanceFilter,
 } from '@/components/split/sheets/BalanceFilterSheet';
+import { DeleteGroupSheet } from '@/components/split/sheets/DeleteGroupSheet';
+import { notifyTransactionsChanged } from '@/lib/transaction-events';
 import { FriendActionsSheet } from '@/components/split/sheets/FriendActionsSheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -136,6 +141,7 @@ import {
   type SplitDirection,
   type SplitFriend,
   type SplitGroup,
+  type SplitGroupEntryDisposition,
   type SplitGroupDirectInvite,
   type SplitGroupMemberInvite,
 } from '@/lib/splits';
@@ -455,6 +461,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     mode: GroupActionMode;
   } | null>(null);
   const [pendingGroupDelete, setPendingGroupDelete] = useState<SplitGroupSummary | null>(null);
+  /**
+   * Reset to `keep` every time the sheet opens — see `DeleteGroupSheet`. A
+   * choice that persists across two different groups is a choice the user did
+   * not make about the second one, and one of the two answers is destructive.
+   */
+  const [groupDeleteDisposition, setGroupDeleteDisposition] =
+    useState<SplitGroupEntryDisposition>('keep');
   const [pendingGroupLeave, setPendingGroupLeave] = useState<SplitGroupSummary | null>(null);
   const [selectedFriendDetailId, setSelectedFriendDetailId] = useState<number | null>(null);
   const [selectedFriendActions, setSelectedFriendActions] = useState<SplitFriend | null>(null);
@@ -995,14 +1008,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const visibleGroupSummaries = useMemo(() => {
     return groupSummaries.filter((summary) => {
-      const searchText = [
-        summary.group.name,
-        ...summary.detailLines,
-        ...summary.memberIds.map((memberId) => friendById.get(memberId)?.name ?? ''),
-      ]
-        .join(' ')
-        .toLowerCase();
-      const matchesSearch = !normalizedSearch || searchText.includes(normalizedSearch);
+      const matchesSearch = groupMatchesSearch(summary, normalizedSearch, friendById);
       const isNewEmptyGroup = summary.billCount === 0 && summary.netBalance === 0;
       const matchesBalance =
         balanceFilter === 'open' && isNewEmptyGroup
@@ -1011,6 +1017,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       return matchesSearch && matchesBalance;
     });
   }, [balanceFilter, balanceMatchesFilter, friendById, groupSummaries, normalizedSearch]);
+
+  const hiddenSettledCount = useMemo(
+    () =>
+      countHiddenSettledGroups(groupSummaries, visibleGroupSummaries, (summary) =>
+        groupMatchesSearch(summary, normalizedSearch, friendById)
+      ),
+    [friendById, groupSummaries, normalizedSearch, visibleGroupSummaries]
+  );
 
   const showNonGroupSummary =
     nonGroupSummary.billCount > 0 &&
@@ -1255,31 +1269,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     removeFriendFromActiveList(friend, 'archive');
   };
 
+  /**
+   * Swiping a group and deleting it from its settings are the same operation,
+   * so they now open the same sheet.
+   *
+   * They were two flows with two vocabularies over one endpoint: a system alert
+   * saying "Archive" and promising the history was preserved, and a themed
+   * dialog saying "Delete". Both called the same handler, and neither described
+   * what it actually did to the balances.
+   */
   const handleArchiveGroup = (summary: SplitGroupSummary) => {
-    if (!token || !summary.group.viewer_can_manage) return;
-    Alert.alert(
-      `Archive ${summary.group.name}?`,
-      'Archived groups stay out of the active Split list while preserving their history.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: () => {
-            setOpenSwipeRow(null);
-            setError(null);
-            void archiveSplitGroup(token, summary.group.id)
-              .then(async () => {
-                haptics.removed();
-                await loadSplitData();
-              })
-              .catch((archiveError: unknown) => {
-                reportSplitError(archiveError, 'Unable to archive this split group.');
-              });
-          },
-        },
-      ]
-    );
+    if (!summary.group.viewer_can_manage) return;
+    setOpenSwipeRow(null);
+    openGroupDeletePrompt(summary);
   };
 
   const openFriendEditor = (friend: SplitFriend) => {
@@ -1300,12 +1302,9 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const handleSelectBillGroup = (groupId: number | null) => {
     const nextGroup = groups.find((group) => group.id === groupId) ?? null;
-    const memberKeys = [
-      ...new Set(
-        nextGroup?.members?.map((member) => friendSplitKey(member.friend_id)).filter(Boolean) ??
-          friends.map((friend) => friendSplitKey(friend.id))
-      ),
-    ];
+    // Only members the composer can draw a row for — see `composerMemberKeys`,
+    // which is where the 150%-over-two-people bug is written up.
+    const memberKeys = composerMemberKeys(nextGroup?.members, friendById, friends);
     setBillGroupId(groupId);
 
     /**
@@ -1775,9 +1774,17 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     }
   };
 
+  const openGroupDeletePrompt = (summary: SplitGroupSummary) => {
+    setError(null);
+    // Keeping is the answer every time the sheet opens: it is the recoverable
+    // one, and the other destroys transactions.
+    setGroupDeleteDisposition('keep');
+    setPendingGroupDelete(summary);
+  };
+
   const handleDeleteGroup = (summary: SplitGroupSummary) => {
     if (!summary.group.viewer_can_manage) return;
-    setPendingGroupDelete(summary);
+    openGroupDeletePrompt(summary);
   };
 
   const handleLeaveGroup = (summary: SplitGroupSummary) => {
@@ -1788,15 +1795,19 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const confirmDeleteGroup = () => {
     if (!token || !pendingGroupDelete || saving) return;
     const removedGroupId = pendingGroupDelete.group.id;
+    const disposition = groupDeleteDisposition;
     setSaving(true);
     setError(null);
-    void archiveSplitGroup(token, removedGroupId)
-      .then(async () => {
+    void archiveSplitGroup(token, removedGroupId, disposition)
+      .then(async (result) => {
         haptics.removed();
         setPendingGroupDelete(null);
         setGroupSettingsId(null);
         setSelectedGroupDetailId(null);
         await loadSplitData();
+        // The transaction feed on Home is reading the same rows this just
+        // removed, so it has to be told rather than left to notice.
+        if (result.deleted_entries > 0) notifyTransactionsChanged();
       })
       .catch((deleteError: unknown) => {
         reportSplitError(deleteError, 'Unable to delete this split group.');
@@ -2424,22 +2435,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                     {showNonGroupSummary
                       ? renderNonGroupRow(visibleGroupSummaries.length)
                       : null}
-                    {balanceFilter !== 'settled' ? (
-                      <SettledHint
-                        settledCount={
-                          groups.filter((group) => {
-                            const memberIds = (group.members ?? []).map((member) => member.friend_id);
-                            return memberIds.every(
-                              (memberId) => (balanceByFriendId.get(memberId)?.net_balance ?? 0) === 0
-                            );
-                          }).length
-                        }
-                        onShowSettled={() => {
-                          setBalanceFilter('settled');
-                          setFilterSheetVisible(false);
-                        }}
-                      />
-                    ) : null}
+                    <SettledHint
+                      settledCount={hiddenSettledCount}
+                      onShowSettled={() => {
+                        setBalanceFilter('settled');
+                        setFilterSheetVisible(false);
+                      }}
+                    />
+
                   </>
                 ) : (
                   <StateView
@@ -2697,13 +2700,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onConfirm={confirmRevokeGroupInvite}
         />
 
-        <ThemedDeleteDialog
+        <DeleteGroupSheet
           visible={Boolean(pendingGroupDelete)}
-          title={`Delete ${pendingGroupDelete?.group.name ?? 'group'}?`}
-          message="This removes the group from your active split list. Existing split records stay preserved for history."
-          cancelLabel="Cancel"
-          confirmLabel="Delete"
-          loading={saving}
+          groupName={pendingGroupDelete?.group.name ?? 'this group'}
+          expenseCount={pendingGroupDelete?.billCount ?? 0}
+          disposition={groupDeleteDisposition}
+          saving={saving}
+          onChangeDisposition={setGroupDeleteDisposition}
           onCancel={() => {
             if (!saving) setPendingGroupDelete(null);
           }}
@@ -2743,32 +2746,61 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onClose={closeModal}>
           <FormInput label="Name" value={friendName} onChangeText={setFriendName} />
           <FormInput
-            label="Phone"
+            label="Phone (optional)"
             value={friendPhone}
             onChangeText={setFriendPhone}
             keyboardType="phone-pad"
           />
           <FormInput
-            label="Email"
+            label="Email (optional)"
             value={friendEmail}
             onChangeText={setFriendEmail}
             keyboardType="email-address"
             autoCapitalize="none"
           />
+          {/*
+            * Saying what these are *for* is the point. Typing a phone number
+            * into a friend row looks like the thing that reaches the person,
+            * and it is not — nothing is ever sent to it. It is a matching hint,
+            * and it only pays off if it happens to be the same address they
+            * sign up with.
+            */}
+          <TText className="text-xs" style={{ color: theme.muted }}>
+            Nothing is sent to these. They are how Finnri recognises this person
+            if they join, so the balance you keep for them follows them in.
+          </TText>
         </SplitModal>
 
+        {/*
+          * The button used to say "Send invite" and what happened next was the
+          * share sheet. Nothing is emailed or texted — there is no mail or SMS
+          * provider behind this — so the label promised a delivery the app has
+          * never made, and an invite that was recorded but never shared looked
+          * exactly like one that was sent and did not arrive.
+          *
+          * The address is still worth collecting, but for the other reason: it
+          * is what matches the person to the friend row when they open the
+          * link, so they land on the balance already kept for them rather than
+          * on a second row of their own.
+          */}
         <SplitModal
           visible={modal === 'group_invite'}
-          title="Invite friend"
+          title="Invite a specific person"
           errorMessage={modal === 'group_invite' ? error : null}
           footer={
             <PrimaryModalButton
-              label="Send invite"
+              label="Share invite link"
               loading={saving}
               onPress={() => void handleSendGroupInvite()}
             />
           }
           onClose={closeModal}>
+          <TText className="text-xs" style={{ color: theme.muted }}>
+            Finnri does not send emails or texts — the share sheet opens next and
+            you send the link yourself. The address here is how Finnri recognises
+            them when they open it, so they join on the balance you have already
+            been keeping for them.
+          </TText>
           <FormInput
             label="Email"
             value={groupInviteEmail}

@@ -210,6 +210,7 @@ function createColors(mood: MoodPalette) {
       negative: mood.light.negative,
       neutral: mood.light.neutral,
       onAccent: '#FFFFFF',
+      onNegative: '#FFFFFF',
       shadow: '#000000',
       tabIconDefault: '#9BA1A6',
       tabIconSelected: mood.accent,
@@ -229,6 +230,16 @@ function createColors(mood: MoodPalette) {
       negative: mood.dark.negative,
       neutral: mood.dark.neutral,
       onAccent: '#FFFFFF',
+      /**
+       * Not white, because `negative` is not the same kind of colour in the
+       * two modes. In light it is a deep red that white sits on cleanly; in
+       * dark it is a pale rose — picked to be *read* against a dark
+       * background, not to be filled with. White on `#FDA4AF` is the roughly
+       * 1.7:1 that made a swipe-to-archive label hard to read. The mode's own
+       * background inverts it back to legible without hand-picking a fill per
+       * mood.
+       */
+      onNegative: mood.dark.background,
       shadow: '#000000',
       tabIconDefault: '#9BA1A6',
       tabIconSelected: mood.accent,
@@ -278,6 +289,7 @@ const outlineIconNames: Record<string, string> = {
   'piggy-bank': 'piggy-bank-outline',
   robot: 'robot-outline',
   'shield-check': 'shield-check-outline',
+  'star-four-points': 'star-four-points-outline',
   sync: 'sync',
   wallet: 'wallet-outline',
 };
@@ -296,6 +308,7 @@ const filledIconNames: Record<string, string> = {
   'piggy-bank-outline': 'piggy-bank',
   'robot-outline': 'robot',
   'shield-check-outline': 'shield-check',
+  'star-four-points-outline': 'star-four-points',
   'wallet-outline': 'wallet',
 };
 

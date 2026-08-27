@@ -99,13 +99,47 @@ export const isParseAnswer = (result: ParseResult): result is ParseAnswer =>
  * never a draft that is not shown or an answer treated as a transaction.
  */
 const questionOpeners =
-  /^(how|what|what's|whats|where|when|which|who|why|do i|did i|am i|was i|have i|has|is my|are my|show me|tell me|kitna|kitne)\b/i;
+  /^(how|what|what's|whats|where|when|which|who|why|do i|did i|am i|was i|have i|has|is my|are my|show|show me|tell me|list|give me|kitna|kitne|kahan|kaha)\b/i;
+
+/**
+ * Words that can only be asking about records that already exist.
+ *
+ * None of these describes money moving. "Spent" is the one that looks like it
+ * does, and it is here because "spent 250 on food" carries an amount and is
+ * excluded by the digit test below — while "food spent" carries none and is
+ * plainly a question.
+ */
+const ledgerMetricWords =
+  /\b(spend|spends|spending|spent|expense|expenses|income|earned|total|totals|breakdown|summary|biggest|largest|highest|average|kharch|kharcha)\b/i;
+
+/**
+ * A number is the difference between "today spend 250" and "today spend".
+ *
+ * Money that moved has an amount, so a digit is the single strongest capture
+ * signal there is — strong enough to outrank every word in the sentence.
+ * Period names that contain their own digits are removed before the test, so
+ * "spend last 30 days" is not read as an amount.
+ */
+const digitBearingPeriods = /\blast\s+(7|30|90)\s+days\b/gi;
 
 export const looksLikeQuestion = (text: string) => {
   const trimmed = text.trim();
   if (!trimmed) return false;
   if (trimmed.endsWith('?')) return true;
-  return questionOpeners.test(trimmed);
+  if (questionOpeners.test(trimmed)) return true;
+
+  /*
+   * The telegraphic form: "today spend", "food spends", "biggest expense".
+   *
+   * People type into this field the way they type into a search box — no verb,
+   * no question mark — and the old rule read every one of those as a capture,
+   * so asking Finnri for a number opened a transaction form instead. A
+   * spending word with no amount anywhere in the sentence is not a capture,
+   * because there is nothing to capture.
+   */
+  const withoutPeriodDigits = trimmed.replace(digitBearingPeriods, ' ');
+  if (/\d/.test(withoutPeriodDigits)) return false;
+  return ledgerMetricWords.test(withoutPeriodDigits);
 };
 
 export type ParseDraft = {
