@@ -292,7 +292,7 @@ export function BudgetsPanel({ embedded = false }: MoneyPanelProps) {
           />
         ) : (
           <AppHeader
-            title="Budget alerts"
+            title="Budgets"
             subtitle={locked ? 'On the Finnri plan' : `${activeBudgets} active`}
             onBack={() => router.back()}
             rightIcon={locked ? undefined : 'plus'}

@@ -1248,7 +1248,7 @@ function BudgetWatchSection({
   if (visible.length === 0) return null;
 
   return (
-    <SectionHeader title="Budget Watch">
+    <SectionHeader title="Budgets">
       <View className="gap-3">
         {visible.map((budget) => (
           <BudgetWatchCard

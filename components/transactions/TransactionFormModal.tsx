@@ -33,17 +33,12 @@ import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
 import { UpgradeSheet } from '@/components/billing/UpgradeSheet';
-import type { Account } from '@/lib/accounts';
-import {
-  getAccountsForPaymentMode,
-  getAutoAccountPayloadForPaymentMode,
-  getPreferredAccountForPaymentMode,
-} from '@/lib/accounts';
+import type { Account, AccountSuggestion } from '@/lib/accounts';
+import { getAccountsForPaymentMode, getPreferredAccountForPaymentMode } from '@/lib/accounts';
 import { formatTime, uses24HourClock } from '@/lib/datetime';
 import { haptics } from '@/lib/haptics';
-import { roundToPaise, toAmountInputValue, toKeypadValue } from '@/lib/money';
+import { toAmountInputValue, toKeypadValue } from '@/lib/money';
 import { ATTACHMENT_PICKER_TYPES, isLocalAttachmentUri } from '@/lib/uploads';
-import { buildParticipantsForGroup } from '@/lib/split-draft';
 import type { SplitFriend, SplitGroup } from '@/lib/splits';
 import type { BillingInterval } from '@/lib/subscriptions';
 import { inferNextSubscriptionDate } from '@/lib/subscription-schedule';
@@ -52,6 +47,7 @@ import {
   DEFAULT_CATEGORY,
   categoryOptionsFor,
   categoryVisual,
+  defaultCategoryForType,
   resolveCategory,
 } from '@/lib/categories';
 import { buildQuickFills, type QuickFill } from '@/lib/quick-fills';
@@ -65,6 +61,11 @@ import {
 import type { Transaction } from '@/types/transaction';
 import { AmountDisplay, AmountKeypad, hasEnteredAmount } from './AmountKeypad';
 import { DraftFieldCard } from './DraftFieldCard';
+import {
+  shareFromPercent,
+  TransactionSplitFields,
+  type TransactionSplitShareMode,
+} from './TransactionSplitFields';
 
 export type SplitParticipantForm = {
   friendId: number | null;
@@ -154,6 +155,8 @@ interface TransactionFormModalProps {
   splitFriends?: SplitFriend[];
   splitGroups?: SplitGroup[];
   onManageAccounts?: () => void;
+  accountSuggestion?: AccountSuggestion | null;
+  onCreateSuggestedAccount?: (suggestion: AccountSuggestion) => void;
   onDraftChange?: (data: EntryForm) => void;
   initialFocus?: 'category' | 'account';
   categorySuggestions?: string[];
@@ -217,9 +220,7 @@ const subscriptionIntervalOptions: BillingInterval[] = [
   'quarterly',
   'yearly',
 ];
-const defaultFallbackCategory = DEFAULT_CATEGORY;
 const tagOptions = ['Investment', 'Lending', 'EMI', 'Subscription', 'General'];
-type SplitShareMode = 'amount' | 'percentage';
 
 const splitParticipantDivisor = (participantCount: number) => participantCount + 1;
 
@@ -239,22 +240,6 @@ const equalSharePercent = (participantCount: number) => {
   return String(Math.round(percent * 100) / 100);
 };
 
-const percentFromShare = (shareAmount: string, totalAmount: string) => {
-  const share = Number(shareAmount || 0);
-  const total = Number(totalAmount || 0);
-  if (!Number.isFinite(share) || !Number.isFinite(total) || total <= 0) return '';
-  const percent = (share / total) * 100;
-  // A percentage, not money — two decimal places is as fine as it needs to be.
-  return String(Math.round(percent * 100) / 100);
-};
-
-const shareFromPercent = (percent: string, totalAmount: string) => {
-  const parsedPercent = Number(percent || 0);
-  const total = Number(totalAmount || 0);
-  if (!Number.isFinite(parsedPercent) || !Number.isFinite(total) || total <= 0) return '';
-  return toAmountInputValue((total * parsedPercent) / 100);
-};
-
 const formatFieldName = (field: string) => {
   const normalized = field === 'account_hint' ? 'account' : field;
   if (normalized === 'accountId') return 'Account';
@@ -269,12 +254,12 @@ const formatFieldName = (field: string) => {
  * title when none was typed — so a legacy label stops being invisible.
  * An unrecognised value is a custom category and is passed through untouched.
  */
-const normalizeCategoryValue = (category?: string | null) => {
+const normalizeCategoryValue = (category?: string | null, type?: string | null) => {
   const trimmed = category?.trim();
   if (!trimmed) {
-    return defaultFallbackCategory;
+    return defaultCategoryForType(type);
   }
-  return resolveCategory(trimmed) ?? trimmed;
+  return resolveCategory(trimmed, type) ?? trimmed;
 };
 
 const normalizeDateValue = (date?: string | null) => {
@@ -282,8 +267,8 @@ const normalizeDateValue = (date?: string | null) => {
   return trimmed && trimmed.length > 0 ? trimmed : formatDateLabel(new Date());
 };
 
-const mergeCategoryOptions = (category: string) =>
-  categoryOptionsFor(normalizeCategoryValue(category));
+const mergeCategoryOptions = (category: string, type: string) =>
+  categoryOptionsFor(normalizeCategoryValue(category, type), type);
 
 const formatApiDate = (value: Date) => {
   const year = value.getFullYear();
@@ -378,6 +363,8 @@ export function TransactionFormModal({
   splitFriends = emptySplitFriends,
   splitGroups = emptySplitGroups,
   onManageAccounts,
+  accountSuggestion = null,
+  onCreateSuggestedAccount,
   onDraftChange,
   initialFocus,
   categorySuggestions = [],
@@ -502,10 +489,11 @@ export function TransactionFormModal({
     dismiss: dismissUpgrade,
   } = useEntitlementGate();
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const [splitShareMode, setSplitShareMode] = useState<SplitShareMode>('amount');
+  const [splitShareMode, setSplitShareMode] = useState<TransactionSplitShareMode>('amount');
   const [isDiscardDialogVisible, setIsDiscardDialogVisible] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
   const autoFocusedFieldRef = useRef<string | null>(null);
+  const amountInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) onDraftChange?.(form);
@@ -543,18 +531,12 @@ export function TransactionFormModal({
     () => getAccountsForPaymentMode(accounts, form.mode),
     [accounts, form.mode]
   );
-  const selectedSplitGroup = useMemo(
-    () => splitGroups.find((group) => group.id === form.splitGroupId) ?? null,
-    [form.splitGroupId, splitGroups]
-  );
-  const pendingAutoAccountPayload = useMemo(
-    () => getAutoAccountPayloadForPaymentMode(form.mode),
-    [form.mode]
-  );
-  const willCreateAccountOnSave =
-    mode !== 'quick-prompt' &&
-    compatibleAccounts.length === 0 &&
-    pendingAutoAccountPayload !== null;
+  const [dismissedSuggestionKey, setDismissedSuggestionKey] = useState('');
+  const suggestionKey = accountSuggestion
+    ? `${accountSuggestion.type}:${accountSuggestion.provider}:${accountSuggestion.identifier}`
+    : '';
+  const visibleAccountSuggestion =
+    accountSuggestion && suggestionKey !== dismissedSuggestionKey ? accountSuggestion : null;
 
   const reviewFields = useMemo(() => {
     const fields = new Set(aiReview?.missingFields ?? []);
@@ -574,15 +556,15 @@ export function TransactionFormModal({
   );
   const categoryNeedsReview = reviewFields.includes('category');
   const accountNeedsReview = reviewFields.includes('account') || reviewFields.includes('accountId');
-  const displayedCategory = normalizeCategoryValue(form.category);
+  const displayedCategory = normalizeCategoryValue(form.category, form.type);
   const selectableCategoryOptions = useMemo(
-    () => mergeCategoryOptions(form.category),
-    [form.category]
+    () => mergeCategoryOptions(form.category, form.type),
+    [form.category, form.type]
   );
   const visibleCategorySuggestions = useMemo(() => {
     const unique = new Set<string>();
     categorySuggestions.forEach((suggestion) => {
-      const normalized = normalizeCategoryValue(suggestion);
+      const normalized = normalizeCategoryValue(suggestion, form.type);
       if (
         normalized &&
         normalized.toLowerCase() !== displayedCategory.toLowerCase() &&
@@ -592,7 +574,7 @@ export function TransactionFormModal({
       }
     });
     return Array.from(unique).slice(0, 3);
-  }, [categorySuggestions, displayedCategory]);
+  }, [categorySuggestions, displayedCategory, form.type]);
 
   /**
    * The keypad is up whenever the sheet is in its capture state. Opening More
@@ -795,48 +777,48 @@ export function TransactionFormModal({
    * the original reason this is not a plain dependency.
    */
   const seedForm = useCallback(() => {
-      // Read through the ref, never the closure. `seedForm` is memoized on
-      // things that rarely change, so a captured `initialData` would be
-      // whatever it was when those last moved — which for the draft path is the
-      // empty form the sheet opened on, two seconds before the parse landed.
-      const initialData = initialDataRef.current;
-      const seeded = resolveEntryFormAccount({
-          title: '',
-          amount: '',
-          type: 'Expense',
-          mode: 'Cash',
-          category: 'Food & Drinks',
-          date: formatDateLabel(new Date()),
-          time: formatTime(new Date()) ?? '',
-          notes: '',
-          tag: 'General',
-          currency: DEFAULT_CURRENCY,
-          accountId: null,
-          account: '',
-          merchant: '',
-          attachment: null,
-          splitEnabled: false,
-          splitGroupId: null,
-          splitGroupName: '',
-          splitParticipants: [],
-          subscriptionEnabled: false,
-          subscriptionName: '',
-          subscriptionMerchant: '',
-          subscriptionCategory: '',
-          subscriptionAmount: '',
-          subscriptionBillingInterval: '',
-          subscriptionNextDueDate: '',
-          subscriptionReminderDays: '3',
-          subscriptionCancelBeforeDue: false,
-          subscriptionCancelOnDate: '',
-          subscriptionAutopay: false,
-          subscriptionNotes: '',
-          ...initialData,
-        });
-      // A quick prompt seeds "120.00"; the keypad would then refuse every
-      // further digit because both decimal places are already spent.
-      setForm(fastEntry ? { ...seeded, amount: toKeypadValue(seeded.amount) } : seeded);
-      typeSwitchAnim.value = (initialData?.type || 'Expense') === 'Income' ? 1 : 0;
+    // Read through the ref, never the closure. `seedForm` is memoized on
+    // things that rarely change, so a captured `initialData` would be
+    // whatever it was when those last moved — which for the draft path is the
+    // empty form the sheet opened on, two seconds before the parse landed.
+    const initialData = initialDataRef.current;
+    const seeded = resolveEntryFormAccount({
+      title: '',
+      amount: '',
+      type: 'Expense',
+      mode: 'Cash',
+      category: 'Food & Drinks',
+      date: formatDateLabel(new Date()),
+      time: formatTime(new Date()) ?? '',
+      notes: '',
+      tag: 'General',
+      currency: DEFAULT_CURRENCY,
+      accountId: null,
+      account: '',
+      merchant: '',
+      attachment: null,
+      splitEnabled: false,
+      splitGroupId: null,
+      splitGroupName: '',
+      splitParticipants: [],
+      subscriptionEnabled: false,
+      subscriptionName: '',
+      subscriptionMerchant: '',
+      subscriptionCategory: '',
+      subscriptionAmount: '',
+      subscriptionBillingInterval: '',
+      subscriptionNextDueDate: '',
+      subscriptionReminderDays: '3',
+      subscriptionCancelBeforeDue: false,
+      subscriptionCancelOnDate: '',
+      subscriptionAutopay: false,
+      subscriptionNotes: '',
+      ...initialData,
+    });
+    // A quick prompt seeds "120.00"; the keypad would then refuse every
+    // further digit because both decimal places are already spent.
+    setForm(fastEntry ? { ...seeded, amount: toKeypadValue(seeded.amount) } : seeded);
+    typeSwitchAnim.value = (initialData?.type || 'Expense') === 'Income' ? 1 : 0;
     // No `initialData` dependency, and no suppression needed for its absence:
     // the local read above shadows the prop, so the linter sees a callback that
     // genuinely does not close over it. That is the point — reseeding on every
@@ -1024,12 +1006,12 @@ export function TransactionFormModal({
       // Every other mode still asks, because there the title is under review.
       title:
         fastEntry && form.title.trim().length === 0
-          ? form.merchant.trim() || normalizeCategoryValue(form.category)
+          ? form.merchant.trim() || normalizeCategoryValue(form.category, form.type)
           : form.title,
-      category: normalizeCategoryValue(form.category),
+      category: normalizeCategoryValue(form.category, form.type),
       date: normalizeDateValue(form.date),
       subscriptionCategory: form.subscriptionEnabled
-        ? normalizeCategoryValue(form.subscriptionCategory || form.category)
+        ? normalizeCategoryValue(form.subscriptionCategory || form.category, 'Expense')
         : form.subscriptionCategory,
     };
     const missingField = requiredFields.find((field) => {
@@ -1041,7 +1023,7 @@ export function TransactionFormModal({
       rejectSave(`Please provide ${fieldLabels[missingField]}.`);
       return;
     }
-    if (mode !== 'quick-prompt' && form.accountId === null && !willCreateAccountOnSave) {
+    if (mode !== 'quick-prompt' && form.accountId === null) {
       rejectSave(
         compatibleAccounts.length === 0
           ? `Add a ${form.mode || 'matching'} account before saving this transaction.`
@@ -1105,11 +1087,18 @@ export function TransactionFormModal({
         rejectSave('Reminder must be between 0 and 30 days.');
         return;
       }
-      if (form.subscriptionCancelBeforeDue && !/^\d{4}-\d{2}-\d{2}$/.test(form.subscriptionCancelOnDate.trim())) {
+      if (
+        form.subscriptionCancelBeforeDue &&
+        !/^\d{4}-\d{2}-\d{2}$/.test(form.subscriptionCancelOnDate.trim())
+      ) {
         rejectSave('Please choose the date when you want the cancellation reminder.');
         return;
       }
-      if ((form.subscriptionBillingInterval === 'daily' || form.subscriptionBillingInterval === 'business_daily') && !form.subscriptionAutopay) {
+      if (
+        (form.subscriptionBillingInterval === 'daily' ||
+          form.subscriptionBillingInterval === 'business_daily') &&
+        !form.subscriptionAutopay
+      ) {
         rejectSave('Enable Autopay for daily or market-day transactions.');
         return;
       }
@@ -1255,8 +1244,7 @@ export function TransactionFormModal({
         accessibilityRole="button"
         accessibilityLabel={form.attachment ? 'Change receipt' : 'Attach a receipt'}
         className="w-full min-h-[64px] rounded-[20px] border px-4 py-3 flex-row items-center justify-between shadow-sm"
-        style={{ backgroundColor: theme.card, borderColor: theme.border }}
-      >
+        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
         <View className="flex-row items-center gap-3 flex-1 pr-3">
           <MaterialCommunityIcons
             name={form.attachment ? 'file-check-outline' : 'file-upload-outline'}
@@ -1267,8 +1255,7 @@ export function TransactionFormModal({
             <ThemedText
               className="text-sm font-bold"
               numberOfLines={1}
-              style={{ color: form.attachment ? theme.text : detailInputPlaceholderColor }}
-            >
+              style={{ color: form.attachment ? theme.text : detailInputPlaceholderColor }}>
               {form.attachment
                 ? decodeURIComponent(form.attachment.split('?')[0].split('/').pop() ?? 'Receipt')
                 : 'Attach a photo or PDF'}
@@ -1287,8 +1274,7 @@ export function TransactionFormModal({
             onPress={handleRemoveAttachment}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Remove receipt"
-          >
+            accessibilityLabel="Remove receipt">
             <MaterialCommunityIcons name="close-circle" size={20} color="#EF4444" />
           </Pressable>
         ) : (
@@ -1322,7 +1308,12 @@ export function TransactionFormModal({
     switch (field) {
       case 'type':
         return (
-          <DraftFieldCard key={field} label="Type" icon="swap-vertical" flagged={flagged} checked={checked}>
+          <DraftFieldCard
+            key={field}
+            label="Type"
+            icon="swap-vertical"
+            flagged={flagged}
+            checked={checked}>
             <View className="mt-1.5 flex-row gap-2">
               {(['Expense', 'Income'] as const).map((option) => {
                 const isSelected = form.type === option;
@@ -1333,7 +1324,11 @@ export function TransactionFormModal({
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected }}
                     onPress={() => {
-                      setForm((previous) => ({ ...previous, type: option }));
+                      setForm((previous) => ({
+                        ...previous,
+                        type: option,
+                        category: defaultCategoryForType(option),
+                      }));
                       animateTypeSwitch(option === 'Income');
                       markDraftFieldChecked('type');
                     }}
@@ -1421,11 +1416,9 @@ export function TransactionFormModal({
             label="Paid from account"
             value={form.account}
             placeholder={
-              willCreateAccountOnSave
-                ? `${pendingAutoAccountPayload?.name} will be created`
-                : compatibleAccounts.length === 0
-                  ? `Add a ${form.mode || 'matching'} account`
-                  : 'Select an account'
+              compatibleAccounts.length === 0
+                ? `Add a ${form.mode || 'matching'} account`
+                : 'Select an account'
             }
             icon="wallet-outline"
             iconColor="#3B82F6"
@@ -1481,7 +1474,12 @@ export function TransactionFormModal({
         );
       case 'tag':
         return (
-          <DraftFieldCard key={field} label="Tag" icon="tag-outline" flagged={flagged} checked={checked}>
+          <DraftFieldCard
+            key={field}
+            label="Tag"
+            icon="tag-outline"
+            flagged={flagged}
+            checked={checked}>
             <View className="mt-1.5 flex-row flex-wrap gap-2">
               {tagOptions.map((tag) => {
                 const isSelected = form.tag === tag;
@@ -1641,9 +1639,7 @@ export function TransactionFormModal({
                 <View className={fastEntry ? 'items-center px-5 mb-2' : 'items-center px-5 mb-6'}>
                   <ThemedText
                     className={
-                      fastEntry
-                        ? 'text-base font-black mt-2'
-                        : 'text-xl font-black mt-4 mb-1.5'
+                      fastEntry ? 'text-base font-black mt-2' : 'text-xl font-black mt-4 mb-1.5'
                     }
                     style={{ color: theme.text }}>
                     {isEdit
@@ -1677,10 +1673,7 @@ export function TransactionFormModal({
                   )}
                 </View>
 
-                <View
-                  className={
-                    isKeypadVisible ? 'px-5 mb-6 flex-1 justify-center' : 'px-5 mb-6'
-                  }>
+                <View className={isKeypadVisible ? 'px-5 mb-6 flex-1 justify-center' : 'px-5 mb-6'}>
                   {draftReview && aiReview?.sourceText ? (
                     <View
                       className="mb-3 rounded-[20px] border px-4 py-3"
@@ -1749,17 +1742,17 @@ export function TransactionFormModal({
                           sitting under that line contradicts it. */}
                       {(!draftReview || draftPendingCount > 0) &&
                         aiReview?.clarifications?.map((clarification) => (
-                        <View key={clarification} className="mt-2 flex-row items-start">
-                          <MaterialCommunityIcons
-                            name="help-circle-outline"
-                            size={16}
-                            color="#D97706"
-                          />
-                          <ThemedText className="ml-2 flex-1 text-sm text-amber-900 dark:text-amber-100">
-                            {clarification}
-                          </ThemedText>
-                        </View>
-                      ))}
+                          <View key={clarification} className="mt-2 flex-row items-start">
+                            <MaterialCommunityIcons
+                              name="help-circle-outline"
+                              size={16}
+                              color="#D97706"
+                            />
+                            <ThemedText className="ml-2 flex-1 text-sm text-amber-900 dark:text-amber-100">
+                              {clarification}
+                            </ThemedText>
+                          </View>
+                        ))}
                       <ThemedText className="mt-3 text-xs text-amber-800 dark:text-amber-200">
                         AI suggestions are never saved until you confirm.
                       </ThemedText>
@@ -1771,37 +1764,40 @@ export function TransactionFormModal({
                   {draftReview && !isParsing && draftPlan && (
                     <>
                       <SettleIn index={draftSettleOrder.amount} emphasis>
-                       <View className="mb-4">
-                        <DraftFieldCard
-                          label="Amount"
-                          icon="currency-inr"
-                          iconColor={form.type === 'Income' ? '#10B981' : accent}
-                          flagged={draftPlan.flagged.includes('amount')}
-                          checked={checkedDraftFields.includes('amount')}>
-                          <View className="flex-row items-center gap-1">
-                            <ThemedText
-                              className="text-2xl font-black"
-                              style={{ color: form.type === 'Income' ? '#10B981' : accent }}>
-                              {CURRENCY_SYMBOL}
-                            </ThemedText>
-                            <TextInput
-                              testID="entry-amount-input"
-                              value={form.amount}
-                              onChangeText={(text) => {
-                                handleAmountChange(text);
-                                markDraftFieldChecked('amount');
-                              }}
-                              keyboardType="decimal-pad"
-                              className="flex-1 p-0 text-3xl font-black"
-                              selectionColor={accent}
-                              style={{
-                                color: form.type === 'Income' ? '#10B981' : accent,
-                                height: 38,
-                              }}
-                            />
-                          </View>
-                        </DraftFieldCard>
-                       </View>
+                        <View className="mb-4">
+                          <DraftFieldCard
+                            label="Amount"
+                            icon="currency-inr"
+                            onPress={() => amountInputRef.current?.focus()}
+                            accessibilityLabel="Edit amount"
+                            iconColor={form.type === 'Income' ? '#10B981' : accent}
+                            flagged={draftPlan.flagged.includes('amount')}
+                            checked={checkedDraftFields.includes('amount')}>
+                            <View className="flex-row items-center gap-1">
+                              <ThemedText
+                                className="text-2xl font-black"
+                                style={{ color: form.type === 'Income' ? '#10B981' : accent }}>
+                                {CURRENCY_SYMBOL}
+                              </ThemedText>
+                              <TextInput
+                                ref={amountInputRef}
+                                testID="entry-amount-input"
+                                value={form.amount}
+                                onChangeText={(text) => {
+                                  handleAmountChange(text);
+                                  markDraftFieldChecked('amount');
+                                }}
+                                keyboardType="decimal-pad"
+                                className="flex-1 p-0 text-3xl font-black"
+                                selectionColor={accent}
+                                style={{
+                                  color: form.type === 'Income' ? '#10B981' : accent,
+                                  height: 38,
+                                }}
+                              />
+                            </View>
+                          </DraftFieldCard>
+                        </View>
                       </SettleIn>
 
                       {draftFlaggedFields.length > 0 && (
@@ -1817,49 +1813,81 @@ export function TransactionFormModal({
                         </View>
                       )}
 
+                      {draftReview && visibleAccountSuggestion && onCreateSuggestedAccount && (
+                        <View
+                          testID="account-suggestion"
+                          className="mb-4 rounded-[20px] border p-4"
+                          style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+                          <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
+                            Add {visibleAccountSuggestion.name}?
+                          </ThemedText>
+                          <ThemedText className="mt-1 text-xs text-gray-400">
+                            {visibleAccountSuggestion.reason}. Nothing is created until you confirm
+                            setup.
+                          </ThemedText>
+                          <View className="mt-3 flex-row gap-3">
+                            <Pressable
+                              onPress={() => onCreateSuggestedAccount(visibleAccountSuggestion)}
+                              className="rounded-full px-4 py-2"
+                              style={{ backgroundColor: accent }}>
+                              <ThemedText className="text-xs font-black text-white">
+                                Set up account
+                              </ThemedText>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => setDismissedSuggestionKey(suggestionKey)}
+                              className="rounded-full px-3 py-2">
+                              <ThemedText className="text-xs font-black text-gray-400">
+                                Not now
+                              </ThemedText>
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
+
                       <SettleIn index={draftSettleOrder.summary}>
-                       <View className="mb-2">
-                        <Pressable
-                          testID="draft-summary-toggle"
-                          accessibilityRole="button"
-                          accessibilityState={{ expanded: isDraftSummaryExpanded }}
-                          onPress={() => setIsDraftSummaryExpanded((expanded) => !expanded)}
-                          className="w-full flex-row items-center justify-between rounded-[20px] border p-3"
-                          style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                          <View className="flex-1 flex-row items-center gap-3 pr-2">
-                            <MaterialCommunityIcons
-                              name="check-circle-outline"
-                              size={20}
-                              color="#10B981"
-                            />
-                            <View className="flex-1">
-                              <ThemedText className="text-[10px] font-bold uppercase text-gray-400">
-                                {draftConfidentCount > 0
-                                  ? `${draftConfidentCount} field${draftConfidentCount === 1 ? '' : 's'} the AI is sure about`
-                                  : 'Everything else'}
-                              </ThemedText>
-                              <ThemedText
-                                testID="draft-summary-line"
-                                numberOfLines={1}
-                                className="text-sm font-black"
-                                style={{ color: theme.text }}>
-                                {draftSummaryLine || 'Merchant, tags, notes and receipt'}
-                              </ThemedText>
+                        <View className="mb-2">
+                          <Pressable
+                            testID="draft-summary-toggle"
+                            accessibilityRole="button"
+                            accessibilityState={{ expanded: isDraftSummaryExpanded }}
+                            onPress={() => setIsDraftSummaryExpanded((expanded) => !expanded)}
+                            className="w-full flex-row items-center justify-between rounded-[20px] border p-3"
+                            style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                            <View className="flex-1 flex-row items-center gap-3 pr-2">
+                              <MaterialCommunityIcons
+                                name="check-circle-outline"
+                                size={20}
+                                color="#10B981"
+                              />
+                              <View className="flex-1">
+                                <ThemedText className="text-[10px] font-bold uppercase text-gray-400">
+                                  {draftConfidentCount > 0
+                                    ? `${draftConfidentCount} field${draftConfidentCount === 1 ? '' : 's'} the AI is sure about`
+                                    : 'Everything else'}
+                                </ThemedText>
+                                <ThemedText
+                                  testID="draft-summary-line"
+                                  numberOfLines={1}
+                                  className="text-sm font-black"
+                                  style={{ color: theme.text }}>
+                                  {draftSummaryLine || 'Merchant, tags, notes and receipt'}
+                                </ThemedText>
+                              </View>
                             </View>
-                          </View>
-                          <MaterialCommunityIcons
-                            name={isDraftSummaryExpanded ? 'chevron-up' : 'chevron-down'}
-                            size={22}
-                            color="#D1D5DB"
-                          />
-                        </Pressable>
-                        {isDraftSummaryExpanded && (
-                          <View className="mt-3 gap-3">
-                            {draftCollapsedFields.map(renderDraftField)}
-                            {renderReceiptField(false)}
-                          </View>
-                        )}
-                       </View>
+                            <MaterialCommunityIcons
+                              name={isDraftSummaryExpanded ? 'chevron-up' : 'chevron-down'}
+                              size={22}
+                              color="#D1D5DB"
+                            />
+                          </Pressable>
+                          {isDraftSummaryExpanded && (
+                            <View className="mt-3 gap-3">
+                              {draftCollapsedFields.map(renderDraftField)}
+                              {renderReceiptField(false)}
+                            </View>
+                          )}
+                        </View>
                       </SettleIn>
                     </>
                   )}
@@ -1867,11 +1895,7 @@ export function TransactionFormModal({
                   {isEdit && reviewFields.length > 0 && (
                     <View className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
                       <View className="flex-row items-center">
-                        <MaterialCommunityIcons
-                          name="playlist-check"
-                          size={18}
-                          color="#D97706"
-                        />
+                        <MaterialCommunityIcons name="playlist-check" size={18} color="#D97706" />
                         <ThemedText className="ml-2 text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
                           Review cleanup
                         </ThemedText>
@@ -1880,7 +1904,8 @@ export function TransactionFormModal({
                         Fix: {reviewFields.map(formatFieldName).join(', ')}
                       </ThemedText>
                       <ThemedText className="mt-2 text-xs text-amber-800 dark:text-amber-200">
-                        The highlighted field is opened first so you can resolve this transaction quickly.
+                        The highlighted field is opened first so you can resolve this transaction
+                        quickly.
                       </ThemedText>
                     </View>
                   )}
@@ -1910,7 +1935,11 @@ export function TransactionFormModal({
                         />
                         <Pressable
                           onPress={() => {
-                            setForm((p) => ({ ...p, type: 'Expense' }));
+                            setForm((p) => ({
+                              ...p,
+                              type: 'Expense',
+                              category: defaultCategoryForType('Expense'),
+                            }));
                             animateTypeSwitch(false);
                           }}
                           className="flex-1 py-3 items-center justify-center z-10">
@@ -1921,7 +1950,11 @@ export function TransactionFormModal({
                         </Pressable>
                         <Pressable
                           onPress={() => {
-                            setForm((p) => ({ ...p, type: 'Income' }));
+                            setForm((p) => ({
+                              ...p,
+                              type: 'Income',
+                              category: defaultCategoryForType('Income'),
+                            }));
                             animateTypeSwitch(true);
                           }}
                           className="flex-1 py-3 items-center justify-center z-10">
@@ -1951,9 +1984,7 @@ export function TransactionFormModal({
                             size={15}
                             color={displayedCategoryVisual.color}
                           />
-                          <ThemedText
-                            className="text-xs font-black"
-                            style={{ color: theme.text }}>
+                          <ThemedText className="text-xs font-black" style={{ color: theme.text }}>
                             {displayedCategory}
                           </ThemedText>
                           <MaterialCommunityIcons name="chevron-down" size={15} color="#9CA3AF" />
@@ -1967,9 +1998,7 @@ export function TransactionFormModal({
                           className="flex-row items-center gap-1.5 rounded-full border px-3 py-2 active:opacity-60"
                           style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                           <MaterialCommunityIcons name="cash-multiple" size={15} color="#8B5CF6" />
-                          <ThemedText
-                            className="text-xs font-black"
-                            style={{ color: theme.text }}>
+                          <ThemedText className="text-xs font-black" style={{ color: theme.text }}>
                             {form.mode}
                           </ThemedText>
                           <MaterialCommunityIcons name="chevron-down" size={15} color="#9CA3AF" />
@@ -1987,10 +2016,7 @@ export function TransactionFormModal({
                             numberOfLines={1}
                             className="text-xs font-black"
                             style={{ color: theme.text }}>
-                            {form.account ||
-                              (willCreateAccountOnSave
-                                ? `New ${pendingAutoAccountPayload?.name}`
-                                : `Add ${form.mode} account`)}
+                            {form.account || `Add ${form.mode} account`}
                           </ThemedText>
                           <MaterialCommunityIcons name="chevron-down" size={15} color="#9CA3AF" />
                         </Pressable>
@@ -2051,74 +2077,81 @@ export function TransactionFormModal({
                   )}
 
                   {showFullForm && (
-                  <View
-                    className="rounded-[20px] p-3 border shadow-sm mb-3"
-                    style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                    <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">
-                      Transaction Title
-                    </ThemedText>
-                    <View className="flex-row items-center gap-3">
-                      <MaterialCommunityIcons
-                        name="label-variant-outline"
-                        size={22}
-                        color={accent}
-                      />
-                      <TextInput
-                        testID="entry-title-input"
-                        value={form.title}
-                        onChangeText={(t) => setForm((p) => ({ ...p, title: t }))}
-                        className="text-base font-black flex-1 p-0"
-                        style={{ color: theme.text, height: 24 }}
-                        // On the amount-first path a blank title is saved as
-                        // this, so the placeholder is the actual outcome.
-                        placeholder={
-                          fastEntry
-                            ? form.merchant.trim() || normalizeCategoryValue(form.category)
-                            : 'Short title'
-                        }
-                        placeholderTextColor="#9CA3AF"
-                      />
-                    </View>
-                  </View>
-                  )}
-
-                  {showFullForm && (
-                  <View className="flex-row gap-3 mb-3">
                     <View
-                      className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
+                      className="rounded-[20px] p-3 border shadow-sm mb-3"
                       style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                      <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
-                        Amount
+                      <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">
+                        Transaction Title
                       </ThemedText>
-                      <View className="flex-row items-center gap-1">
-                        <ThemedText className="text-lg font-black" style={{ color: accent }}>
-                          {CURRENCY_SYMBOL}
-                        </ThemedText>
+                      <View className="flex-row items-center gap-3">
+                        <MaterialCommunityIcons
+                          name="label-variant-outline"
+                          size={22}
+                          color={accent}
+                        />
                         <TextInput
-                          testID="entry-amount-input"
-                          value={form.amount}
-                          onChangeText={(text) => setForm((p) => ({ ...p, amount: text }))}
-                          className="text-xl font-black p-0 flex-1"
-                          style={{ color: theme.text, height: 32 }}
-                          keyboardType="decimal-pad"
+                          testID="entry-title-input"
+                          value={form.title}
+                          onChangeText={(t) => setForm((p) => ({ ...p, title: t }))}
+                          className="text-base font-black flex-1 p-0"
+                          style={{ color: theme.text, height: 24 }}
+                          // On the amount-first path a blank title is saved as
+                          // this, so the placeholder is the actual outcome.
+                          placeholder={
+                            fastEntry
+                              ? form.merchant.trim() ||
+                                normalizeCategoryValue(form.category, form.type)
+                              : 'Short title'
+                          }
+                          placeholderTextColor="#9CA3AF"
                         />
                       </View>
                     </View>
-                    <Pressable
-                      onPress={() => setIsModePickerVisible(true)}
-                      className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
-                      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                      <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
-                        Paid Via
-                      </ThemedText>
-                      <View className="flex-row items-center gap-2">
-                        <MaterialCommunityIcons name="cash-multiple" size={21} color="#8B5CF6" />
-                        <ThemedText className="text-base font-black" style={{ color: theme.text }}>
-                          {form.mode}
+                  )}
+
+                  {showFullForm && (
+                    <View className="flex-row gap-3 mb-3">
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit amount"
+                        onPress={() => amountInputRef.current?.focus()}
+                        className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
+                        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
+                          Amount
                         </ThemedText>
-                      </View>
-                    </Pressable>
-                  </View>
+                        <View className="flex-row items-center gap-1">
+                          <ThemedText className="text-lg font-black" style={{ color: accent }}>
+                            {CURRENCY_SYMBOL}
+                          </ThemedText>
+                          <TextInput
+                            ref={amountInputRef}
+                            testID="entry-amount-input"
+                            value={form.amount}
+                            onChangeText={(text) => setForm((p) => ({ ...p, amount: text }))}
+                            className="text-xl font-black p-0 flex-1"
+                            style={{ color: theme.text, height: 32 }}
+                            keyboardType="decimal-pad"
+                          />
+                        </View>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setIsModePickerVisible(true)}
+                        className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
+                        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
+                          Paid Via
+                        </ThemedText>
+                        <View className="flex-row items-center gap-2">
+                          <MaterialCommunityIcons name="cash-multiple" size={21} color="#8B5CF6" />
+                          <ThemedText
+                            className="text-base font-black"
+                            style={{ color: theme.text }}>
+                            {form.mode}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    </View>
                   )}
 
                   {mode !== 'quick-prompt' && showFullForm && (
@@ -2181,21 +2214,58 @@ export function TransactionFormModal({
                             </ThemedText>
                             <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>
                               {form.account ||
-                                (willCreateAccountOnSave
-                                  ? `${pendingAutoAccountPayload?.name} will be created`
-                                  : compatibleAccounts.length === 0
-                                    ? `Add a ${form.mode || 'matching'} account`
-                                    : 'Select an account')}
+                                (compatibleAccounts.length === 0
+                                  ? `Add a ${form.mode || 'matching'} account`
+                                  : 'Select an account')}
                             </ThemedText>
-                            {willCreateAccountOnSave && (
-                              <ThemedText className="mt-1 text-[11px] font-medium text-gray-400">
-                                First transaction will set it up automatically.
-                              </ThemedText>
-                            )}
                           </View>
                         </View>
                         <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
                       </Pressable>
+                      {!draftReview && visibleAccountSuggestion && onCreateSuggestedAccount && (
+                        <View
+                          testID="account-suggestion"
+                          className="mt-3 rounded-[20px] border p-4"
+                          style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
+                          <View className="flex-row items-start gap-3">
+                            <MaterialCommunityIcons
+                              name="credit-card-plus-outline"
+                              size={22}
+                              color={accent}
+                            />
+                            <View className="flex-1">
+                              <ThemedText
+                                className="text-sm font-black"
+                                style={{ color: theme.text }}>
+                                Add {visibleAccountSuggestion.name}?
+                              </ThemedText>
+                              <ThemedText className="mt-1 text-xs text-gray-400">
+                                {visibleAccountSuggestion.reason}. Setup opens prefilled; nothing is
+                                created until you confirm it.
+                              </ThemedText>
+                              <View className="mt-3 flex-row gap-3">
+                                <Pressable
+                                  accessibilityRole="button"
+                                  onPress={() => onCreateSuggestedAccount(visibleAccountSuggestion)}
+                                  className="rounded-full px-4 py-2"
+                                  style={{ backgroundColor: accent }}>
+                                  <ThemedText className="text-xs font-black text-white">
+                                    Set up account
+                                  </ThemedText>
+                                </Pressable>
+                                <Pressable
+                                  accessibilityRole="button"
+                                  onPress={() => setDismissedSuggestionKey(suggestionKey)}
+                                  className="rounded-full px-3 py-2">
+                                  <ThemedText className="text-xs font-black text-gray-400">
+                                    Not now
+                                  </ThemedText>
+                                </Pressable>
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+                      )}
                     </>
                   )}
                 </View>
@@ -2207,396 +2277,19 @@ export function TransactionFormModal({
                   // pushing Confirm off a clean draft.
                   (showFullForm ||
                     (draftReview && (form.splitEnabled || isDraftSummaryExpanded))) && (
-                  <View className="px-5 mb-6">
-                    <View
-                      className="rounded-[24px] border p-3"
-                      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-3">
-                          <View
-                            className="h-10 w-10 items-center justify-center rounded-2xl"
-                            style={{ backgroundColor: accentSurface }}>
-                            <MaterialCommunityIcons
-                              name="account-multiple-outline"
-                              size={20}
-                              color={accent}
-                            />
-                          </View>
-                          <View>
-                            <ThemedText
-                              className="text-sm font-black"
-                              style={{ color: theme.text }}>
-                              Split this expense
-                            </ThemedText>
-                            <ThemedText className="text-xs text-gray-500">
-                              Track friends who owe you back.
-                            </ThemedText>
-                          </View>
-                        </View>
-                        <Pressable
-                          accessibilityRole="switch"
-                          accessibilityState={{ checked: form.splitEnabled }}
-                          onPress={() =>
-                            setForm((prev) => ({
-                              ...prev,
-                              splitEnabled: !prev.splitEnabled,
-                              splitParticipants:
-                                !prev.splitEnabled && prev.splitParticipants.length === 0
-                                  ? [
-                                      {
-                                        friendId: splitFriends[0]?.id ?? null,
-                                        friendName: '',
-                                        shareAmount: prev.amount
-                                          ? toAmountInputValue(roundToPaise(prev.amount) / 2)
-                                          : '',
-                                        sharePercent: '50',
-                                        direction: 'friend_owes_user',
-                                      },
-                                    ]
-                                  : prev.splitParticipants,
-                            }))
-                          }
-                          className="h-8 w-14 justify-center rounded-full px-1"
-                          style={{ backgroundColor: form.splitEnabled ? accent : '#E5E7EB' }}>
-                          <View
-                            className="h-6 w-6 rounded-full bg-white"
-                            style={{ alignSelf: form.splitEnabled ? 'flex-end' : 'flex-start' }}
-                          />
-                        </Pressable>
-                      </View>
-
-                      {form.splitEnabled && (
-                        <View className="mt-5 gap-4">
-                          {splitGroups.length > 0 && (
-                            <View>
-                              <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                Group
-                              </ThemedText>
-                              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                <View className="flex-row gap-2">
-                                  <Pressable
-                                    onPress={() => setForm((p) => ({ ...p, splitGroupId: null }))}
-                                    className="rounded-full border px-4 py-2"
-                                    style={{
-                                      backgroundColor:
-                                        form.splitGroupId === null ? accentSurface : 'transparent',
-                                      borderColor:
-                                        form.splitGroupId === null ? accent : theme.border,
-                                    }}>
-                                    <ThemedText
-                                      className="text-xs font-bold"
-                                      style={{
-                                        color: form.splitGroupId === null ? accent : theme.text,
-                                      }}>
-                                      New
-                                    </ThemedText>
-                                  </Pressable>
-                                  {splitGroups.map((group) => (
-                                    <Pressable
-                                      key={group.id}
-                                      onPress={() =>
-                                        setForm((p) => ({
-                                          ...p,
-                                          splitGroupId: group.id,
-                                          splitGroupName: '',
-                                          splitParticipants:
-                                            buildParticipantsForGroup(group, p.amount).length > 0
-                                              ? buildParticipantsForGroup(group, p.amount)
-                                              : p.splitParticipants,
-                                        }))
-                                      }
-                                      className="rounded-full border px-4 py-2"
-                                      style={{
-                                        backgroundColor:
-                                          form.splitGroupId === group.id
-                                            ? accentSurface
-                                            : 'transparent',
-                                        borderColor:
-                                          form.splitGroupId === group.id ? accent : theme.border,
-                                      }}>
-                                      <ThemedText
-                                        className="text-xs font-bold"
-                                        style={{
-                                          color:
-                                            form.splitGroupId === group.id ? accent : theme.text,
-                                        }}>
-                                        {group.name}
-                                      </ThemedText>
-                                    </Pressable>
-                                  ))}
-                                </View>
-                              </ScrollView>
-                              {selectedSplitGroup &&
-                                (selectedSplitGroup.members?.length ?? 0) > 0 && (
-                                  <Pressable
-                                    accessibilityRole="button"
-                                    onPress={() =>
-                                      applyEqualSplit(
-                                        buildParticipantsForGroup(selectedSplitGroup, form.amount)
-                                      )
-                                    }
-                                    className="mt-3 flex-row items-center justify-center gap-2 rounded-2xl border py-3"
-                                    style={{ borderColor: theme.border }}>
-                                    <MaterialCommunityIcons
-                                      name="account-group-outline"
-                                      size={18}
-                                      color={accent}
-                                    />
-                                    <ThemedText
-                                      className="text-xs font-black"
-                                      style={{ color: accent }}>
-                                      Split equally
-                                    </ThemedText>
-                                  </Pressable>
-                                )}
-                            </View>
-                          )}
-
-                          {form.splitGroupId === null && (
-                            <View className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
-                              <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                New group name
-                              </ThemedText>
-                              <TextInput
-                                value={form.splitGroupName}
-                                onChangeText={(text) =>
-                                  setForm((p) => ({ ...p, splitGroupName: text }))
-                                }
-                                placeholder="Trip, flatmates, dinner crew"
-                                placeholderTextColor="#9CA3AF"
-                                className="p-0 text-sm font-bold"
-                                style={{ color: theme.text }}
-                              />
-                            </View>
-                          )}
-
-                          {form.splitParticipants.length > 0 && (
-                            <View className="gap-3 rounded-2xl bg-gray-50 p-3 dark:bg-gray-800/50">
-                              <View className="flex-row gap-2">
-                                <Pressable
-                                  accessibilityRole="button"
-                                  onPress={() => setSplitShareMode('amount')}
-                                  className="flex-1 rounded-2xl px-3 py-3"
-                                  style={{
-                                    backgroundColor:
-                                      splitShareMode === 'amount' ? accentSurface : 'transparent',
-                                    borderColor:
-                                      splitShareMode === 'amount' ? accent : theme.border,
-                                    borderWidth: 1,
-                                  }}>
-                                  <ThemedText
-                                    className="text-center text-xs font-black"
-                                    style={{
-                                      color: splitShareMode === 'amount' ? accent : theme.text,
-                                    }}>
-                                    Amount
-                                  </ThemedText>
-                                </Pressable>
-                                <Pressable
-                                  accessibilityRole="button"
-                                  onPress={() => setSplitShareMode('percentage')}
-                                  className="flex-1 rounded-2xl px-3 py-3"
-                                  style={{
-                                    backgroundColor:
-                                      splitShareMode === 'percentage'
-                                        ? accentSurface
-                                        : 'transparent',
-                                    borderColor:
-                                      splitShareMode === 'percentage' ? accent : theme.border,
-                                    borderWidth: 1,
-                                  }}>
-                                  <ThemedText
-                                    className="text-center text-xs font-black"
-                                    style={{
-                                      color: splitShareMode === 'percentage' ? accent : theme.text,
-                                    }}>
-                                    Percentage
-                                  </ThemedText>
-                                </Pressable>
-                              </View>
-                              <Pressable
-                                accessibilityRole="button"
-                                onPress={() => applyEqualSplit()}
-                                className="flex-row items-center justify-center gap-2 rounded-2xl border py-3"
-                                style={{ borderColor: theme.border }}>
-                                <MaterialCommunityIcons
-                                  name="call-split"
-                                  size={18}
-                                  color={accent}
-                                />
-                                <ThemedText
-                                  className="text-xs font-black"
-                                  style={{ color: accent }}>
-                                  Split equally
-                                </ThemedText>
-                              </Pressable>
-                            </View>
-                          )}
-
-                          <View className="gap-3">
-                            {form.splitParticipants.map((participant, index) => (
-                              <View
-                                key={index}
-                                className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
-                                <View className="flex-row items-center justify-between">
-                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                    Share {index + 1}
-                                  </ThemedText>
-                                  <Pressable onPress={() => removeSplitParticipant(index)}>
-                                    <MaterialCommunityIcons
-                                      name="close"
-                                      size={18}
-                                      color={theme.text}
-                                    />
-                                  </Pressable>
-                                </View>
-                                {splitFriends.length > 0 && (
-                                  <ScrollView
-                                    horizontal
-                                    showsHorizontalScrollIndicator={false}
-                                    className="mt-3">
-                                    <View className="flex-row gap-2">
-                                      <Pressable
-                                        onPress={() =>
-                                          updateSplitParticipant(index, { friendId: null })
-                                        }
-                                        className="rounded-full border px-3 py-2"
-                                        style={{
-                                          backgroundColor:
-                                            participant.friendId === null
-                                              ? accentSurface
-                                              : 'transparent',
-                                          borderColor:
-                                            participant.friendId === null ? accent : theme.border,
-                                        }}>
-                                        <ThemedText
-                                          className="text-xs font-bold"
-                                          style={{
-                                            color:
-                                              participant.friendId === null ? accent : theme.text,
-                                          }}>
-                                          New friend
-                                        </ThemedText>
-                                      </Pressable>
-                                      {splitFriends.map((friend) => (
-                                        <Pressable
-                                          key={friend.id}
-                                          onPress={() =>
-                                            updateSplitParticipant(index, {
-                                              friendId: friend.id,
-                                              friendName: '',
-                                            })
-                                          }
-                                          className="rounded-full border px-3 py-2"
-                                          style={{
-                                            backgroundColor:
-                                              participant.friendId === friend.id
-                                                ? accentSurface
-                                                : 'transparent',
-                                            borderColor:
-                                              participant.friendId === friend.id
-                                                ? accent
-                                                : theme.border,
-                                          }}>
-                                          <ThemedText
-                                            className="text-xs font-bold"
-                                            style={{
-                                              color:
-                                                participant.friendId === friend.id
-                                                  ? accent
-                                                  : theme.text,
-                                            }}>
-                                            {friend.name}
-                                          </ThemedText>
-                                        </Pressable>
-                                      ))}
-                                    </View>
-                                  </ScrollView>
-                                )}
-                                {participant.friendId === null && (
-                                  <TextInput
-                                    value={participant.friendName}
-                                    onChangeText={(text) =>
-                                      updateSplitParticipant(index, { friendName: text })
-                                    }
-                                    placeholder="Friend name"
-                                    placeholderTextColor="#9CA3AF"
-                                    className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-bold dark:bg-gray-900"
-                                    style={{ color: theme.text }}
-                                  />
-                                )}
-                                <View className="mt-3 flex-row gap-3">
-                                  <TextInput
-                                    value={
-                                      splitShareMode === 'percentage'
-                                        ? (participant.sharePercent ??
-                                          percentFromShare(participant.shareAmount, form.amount))
-                                        : participant.shareAmount
-                                    }
-                                    onChangeText={(text) => {
-                                      if (splitShareMode === 'percentage') {
-                                        updateSplitParticipant(index, {
-                                          sharePercent: text,
-                                          shareAmount: shareFromPercent(text, form.amount),
-                                        });
-                                        return;
-                                      }
-                                      // An amount typed by hand is the whole
-                                      // instruction; a percentage left over
-                                      // from before would overwrite it the
-                                      // next time the total changed.
-                                      updateSplitParticipant(index, {
-                                        shareAmount: text,
-                                        sharePercent: undefined,
-                                      });
-                                    }}
-                                    keyboardType="decimal-pad"
-                                    placeholder={
-                                      splitShareMode === 'percentage' ? 'Percent' : 'Amount'
-                                    }
-                                    placeholderTextColor="#9CA3AF"
-                                    className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-bold dark:bg-gray-900"
-                                    style={{ color: theme.text }}
-                                  />
-                                  <Pressable
-                                    onPress={() =>
-                                      updateSplitParticipant(index, {
-                                        direction:
-                                          participant.direction === 'friend_owes_user'
-                                            ? 'user_owes_friend'
-                                            : 'friend_owes_user',
-                                      })
-                                    }
-                                    className="justify-center rounded-2xl px-4"
-                                    style={{ backgroundColor: accentSurface }}>
-                                    <ThemedText
-                                      className="text-xs font-black"
-                                      style={{ color: accent }}>
-                                      {participant.direction === 'friend_owes_user'
-                                        ? 'Owes me'
-                                        : 'I owe'}
-                                    </ThemedText>
-                                  </Pressable>
-                                </View>
-                              </View>
-                            ))}
-                          </View>
-
-                          <Pressable
-                            accessibilityRole="button"
-                            onPress={addSplitParticipant}
-                            className="flex-row items-center justify-center gap-2 rounded-2xl border py-3"
-                            style={{ borderColor: theme.border }}>
-                            <MaterialCommunityIcons name="plus" size={18} color={accent} />
-                            <ThemedText className="text-sm font-black" style={{ color: accent }}>
-                              Add friend share
-                            </ThemedText>
-                          </Pressable>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                )}
+                    <TransactionSplitFields
+                      form={form}
+                      setForm={setForm}
+                      friends={splitFriends}
+                      groups={splitGroups}
+                      shareMode={splitShareMode}
+                      onChangeShareMode={setSplitShareMode}
+                      onApplyEqualSplit={applyEqualSplit}
+                      onAddParticipant={addSplitParticipant}
+                      onUpdateParticipant={updateSplitParticipant}
+                      onRemoveParticipant={removeSplitParticipant}
+                    />
+                  )}
 
                 {mode !== 'quick-prompt' &&
                   !isEdit &&
@@ -2721,13 +2414,23 @@ export function TransactionFormModal({
                                 {subscriptionIntervalOptions.map((interval) => (
                                   <Pressable
                                     key={interval}
-                                    onPress={() => setForm((p) => ({
-                                      ...p,
-                                      subscriptionBillingInterval: interval,
-                                      subscriptionNextDueDate: p.subscriptionNextDueDate || inferNextSubscriptionDate(p.date, interval),
-                                      subscriptionAutopay: interval === 'daily' || interval === 'business_daily' ? true : p.subscriptionAutopay,
-                                      subscriptionReminderDays: interval === 'daily' || interval === 'business_daily' ? '0' : (p.subscriptionReminderDays || '3'),
-                                    }))}
+                                    onPress={() =>
+                                      setForm((p) => ({
+                                        ...p,
+                                        subscriptionBillingInterval: interval,
+                                        subscriptionNextDueDate:
+                                          p.subscriptionNextDueDate ||
+                                          inferNextSubscriptionDate(p.date, interval),
+                                        subscriptionAutopay:
+                                          interval === 'daily' || interval === 'business_daily'
+                                            ? true
+                                            : p.subscriptionAutopay,
+                                        subscriptionReminderDays:
+                                          interval === 'daily' || interval === 'business_daily'
+                                            ? '0'
+                                            : p.subscriptionReminderDays || '3',
+                                      }))
+                                    }
                                     className="rounded-full border px-3 py-2"
                                     style={{
                                       backgroundColor:
@@ -2755,65 +2458,107 @@ export function TransactionFormModal({
                             </View>
 
                             <View className="flex-row gap-3">
-                              {form.subscriptionBillingInterval !== 'daily' && form.subscriptionBillingInterval !== 'business_daily' ? <Pressable
-                                testID="subscription-next-payment-picker"
-                                accessibilityRole="button"
-                                accessibilityLabel="Choose next payment date"
-                                onPress={handleOpenSubscriptionDatePicker}
-                                className="flex-1 flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
-                                <View className="flex-1">
-                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                    Next payment date
+                              {form.subscriptionBillingInterval !== 'daily' &&
+                              form.subscriptionBillingInterval !== 'business_daily' ? (
+                                <Pressable
+                                  testID="subscription-next-payment-picker"
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Choose next payment date"
+                                  onPress={handleOpenSubscriptionDatePicker}
+                                  className="flex-1 flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+                                  <View className="flex-1">
+                                    <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                      Next payment date
+                                    </ThemedText>
+                                    <ThemedText
+                                      className="mt-1 text-sm font-bold"
+                                      style={{
+                                        color: form.subscriptionNextDueDate
+                                          ? theme.text
+                                          : detailInputPlaceholderColor,
+                                      }}>
+                                      {form.subscriptionNextDueDate || 'Choose date'}
+                                    </ThemedText>
+                                  </View>
+                                  <MaterialCommunityIcons
+                                    name="calendar-month-outline"
+                                    size={20}
+                                    color={accent}
+                                  />
+                                </Pressable>
+                              ) : (
+                                <View
+                                  className="flex-1 rounded-2xl px-4 py-3"
+                                  style={{ backgroundColor: accentSurface }}>
+                                  <ThemedText
+                                    className="text-[10px] font-black uppercase tracking-widest"
+                                    style={{ color: accent }}>
+                                    Automatic schedule
                                   </ThemedText>
                                   <ThemedText
-                                    className="mt-1 text-sm font-bold"
-                                    style={{
-                                      color: form.subscriptionNextDueDate
-                                        ? theme.text
-                                        : detailInputPlaceholderColor,
-                                    }}>
-                                    {form.subscriptionNextDueDate || 'Choose date'}
+                                    className="mt-1 text-xs font-bold"
+                                    style={{ color: theme.text }}>
+                                    {form.subscriptionBillingInterval === 'business_daily'
+                                      ? 'Next market day; weekends and holidays are skipped.'
+                                      : 'Runs every day automatically.'}
                                   </ThemedText>
                                 </View>
-                                <MaterialCommunityIcons
-                                  name="calendar-month-outline"
-                                  size={20}
-                                  color={accent}
-                                />
-                              </Pressable> : <View className="flex-1 rounded-2xl px-4 py-3" style={{ backgroundColor: accentSurface }}>
-                                <ThemedText className="text-[10px] font-black uppercase tracking-widest" style={{ color: accent }}>Automatic schedule</ThemedText>
-                                <ThemedText className="mt-1 text-xs font-bold" style={{ color: theme.text }}>{form.subscriptionBillingInterval === 'business_daily' ? 'Next market day; weekends and holidays are skipped.' : 'Runs every day automatically.'}</ThemedText>
-                              </View>}
-                              {form.subscriptionBillingInterval !== 'daily' && form.subscriptionBillingInterval !== 'business_daily' ? <View className="w-28 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
-                                <ThemedText className="text-[9px] font-black uppercase tracking-wider text-gray-400">
-                                  Remind before
-                                </ThemedText>
-                                <TextInput
-                                  value={form.subscriptionReminderDays}
-                                  onChangeText={(text) =>
-                                    setForm((p) => ({
-                                      ...p,
-                                      subscriptionReminderDays: text.replace(/[^0-9]/g, ''),
-                                    }))
-                                  }
-                                  keyboardType="number-pad"
-                                  placeholder="Days"
-                                  placeholderTextColor="#9CA3AF"
-                                  className="p-0 pt-1 text-sm font-bold"
-                                  style={{ color: theme.text }}
-                                />
-                                <ThemedText className="text-[10px] text-gray-400">days</ThemedText>
-                              </View> : null}
+                              )}
+                              {form.subscriptionBillingInterval !== 'daily' &&
+                              form.subscriptionBillingInterval !== 'business_daily' ? (
+                                <View className="w-28 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
+                                  <ThemedText className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                                    Remind before
+                                  </ThemedText>
+                                  <TextInput
+                                    value={form.subscriptionReminderDays}
+                                    onChangeText={(text) =>
+                                      setForm((p) => ({
+                                        ...p,
+                                        subscriptionReminderDays: text.replace(/[^0-9]/g, ''),
+                                      }))
+                                    }
+                                    keyboardType="number-pad"
+                                    placeholder="Days"
+                                    placeholderTextColor="#9CA3AF"
+                                    className="p-0 pt-1 text-sm font-bold"
+                                    style={{ color: theme.text }}
+                                  />
+                                  <ThemedText className="text-[10px] text-gray-400">
+                                    days
+                                  </ThemedText>
+                                </View>
+                              ) : null}
                             </View>
 
                             <Pressable
-                              onPress={() => setForm((p) => ({ ...p, subscriptionAutopay: !p.subscriptionAutopay }))}
+                              onPress={() =>
+                                setForm((p) => ({
+                                  ...p,
+                                  subscriptionAutopay: !p.subscriptionAutopay,
+                                }))
+                              }
                               className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
                               <View className="flex-1 pr-3">
-                                <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>Autopay</ThemedText>
-                                <ThemedText className="mt-1 text-[11px] text-gray-400">Automatically add each payment from the selected account, then ask you to confirm or correct it.</ThemedText>
+                                <ThemedText
+                                  className="text-sm font-bold"
+                                  style={{ color: theme.text }}>
+                                  Autopay
+                                </ThemedText>
+                                <ThemedText className="mt-1 text-[11px] text-gray-400">
+                                  Automatically add each payment from the selected account, then ask
+                                  you to confirm or correct it.
+                                </ThemedText>
                               </View>
-                              <MaterialCommunityIcons name={form.subscriptionAutopay ? 'toggle-switch' : 'toggle-switch-off-outline'} size={34} color={form.subscriptionAutopay ? accent : '#9CA3AF'} />
+                              <MaterialCommunityIcons
+                                name={
+                                  form.subscriptionAutopay
+                                    ? 'toggle-switch'
+                                    : 'toggle-switch-off-outline'
+                                }
+                                size={34}
+                                color={form.subscriptionAutopay ? accent : '#9CA3AF'}
+                              />
                             </Pressable>
 
                             <Pressable
@@ -2844,15 +2589,27 @@ export function TransactionFormModal({
                               <Pressable
                                 accessibilityRole="button"
                                 onPress={() => {
-                                  setPendingCancellationDate(form.subscriptionCancelOnDate ? new Date(`${form.subscriptionCancelOnDate}T12:00:00`) : new Date());
+                                  setPendingCancellationDate(
+                                    form.subscriptionCancelOnDate
+                                      ? new Date(`${form.subscriptionCancelOnDate}T12:00:00`)
+                                      : new Date()
+                                  );
                                   setIsCancellationDatePickerVisible(true);
                                 }}
                                 className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
                                 <View>
-                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cancellation reminder date</ThemedText>
-                                  <ThemedText className="mt-1 text-sm font-bold">{form.subscriptionCancelOnDate || 'Choose date'}</ThemedText>
+                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                    Cancellation reminder date
+                                  </ThemedText>
+                                  <ThemedText className="mt-1 text-sm font-bold">
+                                    {form.subscriptionCancelOnDate || 'Choose date'}
+                                  </ThemedText>
                                 </View>
-                                <MaterialCommunityIcons name="calendar-month-outline" size={20} color={accent} />
+                                <MaterialCommunityIcons
+                                  name="calendar-month-outline"
+                                  size={20}
+                                  color={accent}
+                                />
                               </Pressable>
                             )}
 
@@ -2875,90 +2632,92 @@ export function TransactionFormModal({
                   )}
 
                 {showFullForm && (
-                <View className="px-5 mb-6">
-                  <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">
-                    {categoryNeedsReview ? 'Needs Attention' : 'Category'}
-                  </ThemedText>
-                  {visibleCategorySuggestions.length > 0 && (
-                    <View className="mb-3">
-                      <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                        Suggested from history
-                      </ThemedText>
-                      <View className="flex-row flex-wrap gap-2">
-                        {visibleCategorySuggestions.map((suggestion) => (
-                          <Pressable
-                            key={suggestion}
-                            accessibilityRole="button"
-                            onPress={() => setForm((p) => ({ ...p, category: suggestion }))}
-                            className="flex-row items-center rounded-full px-3 py-2"
-                            style={{ backgroundColor: accentSurface }}>
-                            <MaterialCommunityIcons
-                              name="creation-outline"
-                              size={13}
-                              color={accent}
-                            />
-                            <ThemedText
-                              className="ml-1.5 text-[11px] font-black"
-                              style={{ color: accent }}>
-                              {suggestion}
-                            </ThemedText>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                  <View className="relative mb-4">
-                    {categoryNeedsReview && (
-                      <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
-                        <ThemedText className="text-[8px] font-black text-black">
-                          Check this
+                  <View className="px-5 mb-6">
+                    <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">
+                      {categoryNeedsReview ? 'Needs Attention' : 'Category'}
+                    </ThemedText>
+                    {visibleCategorySuggestions.length > 0 && (
+                      <View className="mb-3">
+                        <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                          Suggested from history
                         </ThemedText>
+                        <View className="flex-row flex-wrap gap-2">
+                          {visibleCategorySuggestions.map((suggestion) => (
+                            <Pressable
+                              key={suggestion}
+                              accessibilityRole="button"
+                              onPress={() => setForm((p) => ({ ...p, category: suggestion }))}
+                              className="flex-row items-center rounded-full px-3 py-2"
+                              style={{ backgroundColor: accentSurface }}>
+                              <MaterialCommunityIcons
+                                name="creation-outline"
+                                size={13}
+                                color={accent}
+                              />
+                              <ThemedText
+                                className="ml-1.5 text-[11px] font-black"
+                                style={{ color: accent }}>
+                                {suggestion}
+                              </ThemedText>
+                            </Pressable>
+                          ))}
+                        </View>
                       </View>
                     )}
-                    <Pressable
-                      testID="entry-category-picker"
-                      onPress={() => setIsCategoryPickerVisible(true)}
-                      className="w-full rounded-[24px] border p-3 flex-row items-center justify-between"
-                      style={{
-                        backgroundColor: categoryNeedsReview
-                          ? colorScheme === 'dark'
-                            ? theme.secondary
-                            : '#FFFCF0'
-                          : theme.card,
-                        borderColor: categoryNeedsReview ? '#FDE68A' : theme.border,
-                      }}>
-                      <View className="flex-row items-center gap-4">
-                        <View
-                          className="h-10 w-10 items-center justify-center"
-                          style={{
-                            backgroundColor: categoryNeedsReview ? '#FEF3C7' : accentSurface,
-                            borderRadius: themeTokens.icon.containerRadius,
-                          }}>
-                          <MaterialCommunityIcons
-                            // Was hardcoded to a car, so Misc and Bills both
-                            // showed one. The amount-first chip renders the
-                            // real icon a few dp away, which made the two
-                            // disagree on the same screen. The amber tint and
-                            // the "Check this" badge still carry the review
-                            // state; the icon does not have to.
-                            name={displayedCategoryVisual.icon}
-                            size={21}
-                            color={categoryNeedsReview ? '#F59E0B' : accent}
-                          />
-                        </View>
-                        <View>
-                          <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
-                            Category
-                          </ThemedText>
-                          <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
-                            {displayedCategory}
+                    <View className="relative mb-4">
+                      {categoryNeedsReview && (
+                        <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
+                          <ThemedText className="text-[8px] font-black text-black">
+                            Check this
                           </ThemedText>
                         </View>
-                      </View>
-                      <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
-                    </Pressable>
+                      )}
+                      <Pressable
+                        testID="entry-category-picker"
+                        onPress={() => setIsCategoryPickerVisible(true)}
+                        className="w-full rounded-[24px] border p-3 flex-row items-center justify-between"
+                        style={{
+                          backgroundColor: categoryNeedsReview
+                            ? colorScheme === 'dark'
+                              ? theme.secondary
+                              : '#FFFCF0'
+                            : theme.card,
+                          borderColor: categoryNeedsReview ? '#FDE68A' : theme.border,
+                        }}>
+                        <View className="flex-row items-center gap-4">
+                          <View
+                            className="h-10 w-10 items-center justify-center"
+                            style={{
+                              backgroundColor: categoryNeedsReview ? '#FEF3C7' : accentSurface,
+                              borderRadius: themeTokens.icon.containerRadius,
+                            }}>
+                            <MaterialCommunityIcons
+                              // Was hardcoded to a car, so Misc and Bills both
+                              // showed one. The amount-first chip renders the
+                              // real icon a few dp away, which made the two
+                              // disagree on the same screen. The amber tint and
+                              // the "Check this" badge still carry the review
+                              // state; the icon does not have to.
+                              name={displayedCategoryVisual.icon}
+                              size={21}
+                              color={categoryNeedsReview ? '#F59E0B' : accent}
+                            />
+                          </View>
+                          <View>
+                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
+                              Category
+                            </ThemedText>
+                            <ThemedText
+                              className="text-sm font-black"
+                              style={{ color: theme.text }}>
+                              {displayedCategory}
+                            </ThemedText>
+                          </View>
+                        </View>
+                        <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
+                      </Pressable>
+                    </View>
                   </View>
-                </View>
                 )}
 
                 {/* The review sheet has its own expandable summary; a second
@@ -3160,14 +2919,37 @@ export function TransactionFormModal({
         )}
 
         {isCancellationDatePickerVisible && (
-          <AnimatedBottomSheet visible onClose={() => setIsCancellationDatePickerVisible(false)} backdropOpacity={0.3}>
-            <View className="rounded-t-3xl px-4 pb-6 pt-4" style={{ backgroundColor: theme.background }}>
-              <ThemedText className="text-center text-sm font-bold">Cancellation reminder date</ThemedText>
-              <DateTimePicker value={pendingCancellationDate} mode="date" display="spinner" minimumDate={new Date()} onValueChange={(_event, date) => date && setPendingCancellationDate(date)} onDismiss={() => setIsCancellationDatePickerVisible(false)} style={{ width: '100%' }} />
-              <Pressable className="mt-4 items-center rounded-2xl py-3" style={{ backgroundColor: accent }} onPress={() => {
-                setForm((p) => ({ ...p, subscriptionCancelOnDate: formatApiDate(pendingCancellationDate) }));
-                setIsCancellationDatePickerVisible(false);
-              }}><ThemedText className="font-bold text-white">Set reminder date</ThemedText></Pressable>
+          <AnimatedBottomSheet
+            visible
+            onClose={() => setIsCancellationDatePickerVisible(false)}
+            backdropOpacity={0.3}>
+            <View
+              className="rounded-t-3xl px-4 pb-6 pt-4"
+              style={{ backgroundColor: theme.background }}>
+              <ThemedText className="text-center text-sm font-bold">
+                Cancellation reminder date
+              </ThemedText>
+              <DateTimePicker
+                value={pendingCancellationDate}
+                mode="date"
+                display="spinner"
+                minimumDate={new Date()}
+                onValueChange={(_event, date) => date && setPendingCancellationDate(date)}
+                onDismiss={() => setIsCancellationDatePickerVisible(false)}
+                style={{ width: '100%' }}
+              />
+              <Pressable
+                className="mt-4 items-center rounded-2xl py-3"
+                style={{ backgroundColor: accent }}
+                onPress={() => {
+                  setForm((p) => ({
+                    ...p,
+                    subscriptionCancelOnDate: formatApiDate(pendingCancellationDate),
+                  }));
+                  setIsCancellationDatePickerVisible(false);
+                }}>
+                <ThemedText className="font-bold text-white">Set reminder date</ThemedText>
+              </Pressable>
             </View>
           </AnimatedBottomSheet>
         )}
@@ -3337,7 +3119,7 @@ export function TransactionFormModal({
                     testID="entry-add-custom-category-button"
                     accessibilityRole="button"
                     onPress={() => {
-                      const nextCategory = normalizeCategoryValue(customCategory);
+                      const nextCategory = normalizeCategoryValue(customCategory, form.type);
                       setForm((p) => ({ ...p, category: nextCategory }));
                       setCustomCategory('');
                       setIsCategoryPickerVisible(false);
@@ -3387,9 +3169,7 @@ export function TransactionFormModal({
               {compatibleAccounts.length === 0 && (
                 <View className="items-center gap-4 py-4">
                   <ThemedText className="text-center text-sm text-gray-500">
-                    {willCreateAccountOnSave
-                      ? `${pendingAutoAccountPayload?.name} will be created when you save.`
-                      : `No ${form.mode || 'matching'} account found.`}
+                    {`No ${form.mode || 'matching'} account found.`}
                   </ThemedText>
                   {onManageAccounts && (
                     <Pressable
@@ -3406,9 +3186,18 @@ export function TransactionFormModal({
                 </View>
               )}
               {compatibleAccounts.length > 0 && onManageAccounts && (
-                <Pressable accessibilityRole="button" onPress={() => { setIsAccountPickerVisible(false); onManageAccounts(); }} className="mt-2 flex-row items-center justify-center gap-2 rounded-2xl border p-4" style={{ borderColor: accent }}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setIsAccountPickerVisible(false);
+                    onManageAccounts();
+                  }}
+                  className="mt-2 flex-row items-center justify-center gap-2 rounded-2xl border p-4"
+                  style={{ borderColor: accent }}>
                   <MaterialCommunityIcons name="plus-circle-outline" size={20} color={accent} />
-                  <ThemedText className="font-bold" style={{ color: accent }}>Add or manage payment accounts</ThemedText>
+                  <ThemedText className="font-bold" style={{ color: accent }}>
+                    Add or manage payment accounts
+                  </ThemedText>
                 </Pressable>
               )}
             </View>

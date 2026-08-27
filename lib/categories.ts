@@ -28,10 +28,15 @@ export const CATEGORIES = [
   'Misc',
 ] as const;
 
-export type Category = (typeof CATEGORIES)[number];
+export const INCOME_CATEGORIES = ['Salary', 'Freelance', 'Interest', 'Refund', 'Other'] as const;
+
+export type ExpenseCategory = (typeof CATEGORIES)[number];
+export type IncomeCategory = (typeof INCOME_CATEGORIES)[number];
+export type Category = ExpenseCategory | IncomeCategory;
 
 /** Confirm-first fallback when the category is unknown. */
-export const DEFAULT_CATEGORY: Category = 'Misc';
+export const DEFAULT_CATEGORY: ExpenseCategory = 'Misc';
+export const DEFAULT_INCOME_CATEGORY: IncomeCategory = 'Other';
 
 export type CategoryVisual = {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -49,9 +54,14 @@ export const CATEGORY_VISUALS: Record<string, CategoryVisual> = {
   entertainment: { icon: 'play-circle-outline', color: '#5C6BC0', bgColor: '#E8EAF6' },
   'family/gifts': { icon: 'gift-outline', color: '#EC407A', bgColor: '#FCE4EC' },
   misc: { icon: 'dots-horizontal', color: '#90A4AE', bgColor: '#F5F5F5' },
+  salary: { icon: 'briefcase-outline', color: '#16A34A', bgColor: '#DCFCE7' },
+  freelance: { icon: 'account-cash-outline', color: '#0D9488', bgColor: '#CCFBF1' },
+  interest: { icon: 'percent-outline', color: '#2563EB', bgColor: '#DBEAFE' },
+  refund: { icon: 'cash-refund', color: '#7C3AED', bgColor: '#EDE9FE' },
+  other: { icon: 'dots-horizontal', color: '#64748B', bgColor: '#F1F5F9' },
 };
 
-/** Income has no category of its own; it is rendered from the entry type. */
+/** Legacy fallback for an income row whose old category cannot be resolved. */
 export const INCOME_VISUAL: CategoryVisual = {
   icon: 'briefcase-outline',
   color: '#FF7043',
@@ -108,29 +118,55 @@ const CATEGORY_ALIASES: Record<string, Category> = {
   split: 'Misc',
 };
 
+const INCOME_CATEGORY_ALIASES: Record<string, IncomeCategory> = {
+  'salary income': 'Salary',
+  wages: 'Salary',
+  paycheck: 'Salary',
+  freelancing: 'Freelance',
+  consulting: 'Freelance',
+  'side hustle': 'Freelance',
+  'interest income': 'Interest',
+  'bank interest': 'Interest',
+  cashback: 'Refund',
+  reimbursement: 'Refund',
+  'returned purchase': 'Refund',
+};
+
 /** Resolves a raw value to its canonical form, or null when unrecognised. */
-export const resolveCategory = (value?: string | null): Category | null => {
+export const resolveCategory = (
+  value?: string | null,
+  type?: string | null
+): Category | null => {
   const normalized = value?.toLowerCase().trim();
   if (!normalized) {
     return null;
   }
-  const exact = CATEGORIES.find((category) => category.toLowerCase() === normalized);
+  const income = type?.toLowerCase() === 'income';
+  const options = income ? INCOME_CATEGORIES : CATEGORIES;
+  const exact = options.find((category) => category.toLowerCase() === normalized);
   if (exact) {
     return exact;
   }
-  return CATEGORY_ALIASES[normalized] ?? null;
+  return income
+    ? (INCOME_CATEGORY_ALIASES[normalized] ?? null)
+    : (CATEGORY_ALIASES[normalized] ?? null);
 };
+
+export const defaultCategoryForType = (type?: string | null): Category =>
+  type?.toLowerCase() === 'income' ? DEFAULT_INCOME_CATEGORY : DEFAULT_CATEGORY;
 
 /**
  * The picker list. An unrecognised category from an older row is appended so
  * editing that entry never silently rewrites it.
  */
-export const categoryOptionsFor = (current?: string | null): string[] => {
-  const resolved = resolveCategory(current);
+export const categoryOptionsFor = (current?: string | null, type?: string | null): string[] => {
+  const income = type?.toLowerCase() === 'income';
+  const options = income ? INCOME_CATEGORIES : CATEGORIES;
+  const resolved = resolveCategory(current, type);
   if (resolved || !current?.trim()) {
-    return [...CATEGORIES];
+    return [...options];
   }
-  return [...CATEGORIES, current.trim()];
+  return [...options, current.trim()];
 };
 
 /** Icon and colour for a category, falling back to income or unknown. */
@@ -138,7 +174,7 @@ export const categoryVisual = (
   category?: string | null,
   type?: string | null
 ): CategoryVisual => {
-  const resolved = resolveCategory(category);
+  const resolved = resolveCategory(category, type);
   if (resolved) {
     return CATEGORY_VISUALS[resolved.toLowerCase()];
   }

@@ -39,20 +39,16 @@ const tenurePresets = [
   { label: '20Y', months: 240 },
 ];
 
-type ToolID = 'sip' | 'emi' | 'hra' | 'itr' | 'more';
+type ToolID = 'sip' | 'emi';
 
 const toolOptions: {
   id: ToolID;
   label: string;
   caption: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  available: boolean;
 }[] = [
-  { id: 'sip', label: 'SIP', caption: 'Investments', icon: 'chart-timeline-variant', available: true },
-  { id: 'emi', label: 'EMI', caption: 'Loans', icon: 'calculator-variant', available: true },
-  { id: 'hra', label: 'HRA', caption: 'Tax rent', icon: 'home-city-outline', available: false },
-  { id: 'itr', label: 'ITR', caption: 'Tax filing', icon: 'file-document-outline', available: false },
-  { id: 'more', label: 'More', caption: 'Planned', icon: 'dots-grid', available: false },
+  { id: 'sip', label: 'SIP', caption: 'Investments', icon: 'chart-timeline-variant' },
+  { id: 'emi', label: 'EMI', caption: 'Loans', icon: 'calculator-variant' },
 ];
 
 const parseDecimalInput = (value: string) => Number(value.replace(/,/g, '').trim());
@@ -605,15 +601,6 @@ export default function ToolsScreen() {
           )}
             </>
           ) : null}
-
-          {!activeToolOption.available ? (
-            <StateView
-              compact
-              icon={activeToolOption.icon}
-              title={`${activeToolOption.label} calculator`}
-              message="This tool is planned for a later release after its rules and assumptions are modeled."
-            />
-          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -750,21 +737,13 @@ function ToolSelector({
             style={{
               backgroundColor: active ? secondaryColor : surfaceColor,
               borderColor: active ? accentColor : borderColor,
-              opacity: tool.available ? 1 : 0.72,
             }}>
             <View className="mb-3 flex-row items-center justify-between">
               <MaterialCommunityIcons
                 name={tool.icon}
                 size={20}
-                color={active || tool.available ? accentColor : mutedTextColor}
+                color={accentColor}
               />
-              {!tool.available ? (
-                <View className="rounded-full px-2 py-1" style={{ backgroundColor: secondaryColor }}>
-                  <ThemedText className="text-[10px] font-black" style={{ color: accentColor }}>
-                    Soon
-                  </ThemedText>
-                </View>
-              ) : null}
             </View>
             <ThemedText className="text-sm font-black" style={{ color: textColor }}>
               {tool.label}

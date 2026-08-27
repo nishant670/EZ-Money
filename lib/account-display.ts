@@ -31,9 +31,30 @@ export const accountVisuals: Record<
   other: { icon: 'wallet-outline', color: '#64748B', bg: '#F1F5F9' },
 };
 
+const providerVisualIcons: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
+  bank: 'bank',
+  'credit-card': 'credit-card',
+  wallet: 'wallet',
+  'qrcode-scan': 'qrcode-scan',
+  google: 'google',
+  'alpha-p-circle': 'alpha-p-circle',
+  amazon: 'shopping-outline',
+};
+
+/** Provider-specific local icon when the catalogue has one, with the account
+ * type's established colour/background so a provider never introduces an
+ * unthemed brand colour. */
+export const getAccountVisual = (account: Account) => {
+  const fallback = accountVisuals[normalizeAccountType(account.type)];
+  const icon = providerVisualIcons[account.provider_details?.asset_key ?? ''];
+  return icon ? { ...fallback, icon } : fallback;
+};
+
 export const formatAccountIdentifier = (account: Account) => {
-  const lastDigits = account.identifier?.replace(/\D/g, '').slice(-4);
+  const lastDigits = (account.last4 || account.identifier)?.replace(/\D/g, '').slice(-4);
   if (lastDigits) return `•••• ${lastDigits}`;
+  if (account.upi_handle) return account.upi_handle;
+  if (account.wallet_nickname) return account.wallet_nickname;
   if (account.provider) return account.provider;
   return accountTypeLabels[normalizeAccountType(account.type)];
 };
@@ -156,4 +177,34 @@ export const getCreditDueLabel = (dueDay?: number) => {
   if (diffDays === 1) return 'Due tomorrow';
   if (diffDays <= 7) return `Due in ${diffDays} days`;
   return `Due on ${dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+};
+
+/** The next user-visible state of a card's configurable due reminder. */
+export const getCreditReminderLabel = (account: Account) => {
+  if (account.reminder_enabled === false) return 'Reminders off';
+  if (!account.due_day || account.due_day < 1 || account.due_day > 31) {
+    return 'Add a due date to schedule reminders';
+  }
+
+  const leadDays = Math.min(30, Math.max(0, account.reminder_days_before ?? 3));
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const statementDue = account.summary?.current_statement?.due_date;
+  let dueDate = statementDue ? new Date(`${statementDue}T00:00:00`) : new Date(NaN);
+  if (Number.isNaN(dueDate.getTime()) || account.summary?.current_statement?.status === 'paid') {
+    dueDate = new Date(today.getFullYear(), today.getMonth(), account.due_day);
+    if (dueDate < startOfToday) dueDate.setMonth(dueDate.getMonth() + 1);
+  }
+
+  const reminderDate = new Date(dueDate);
+  reminderDate.setDate(reminderDate.getDate() - leadDays);
+  const daysUntil = Math.ceil((reminderDate.getTime() - startOfToday.getTime()) / 86400000);
+  if (daysUntil === 0) return 'Reminder today';
+  if (daysUntil === 1) return 'Reminder tomorrow';
+  if (daysUntil > 1) {
+    return `Reminder ${reminderDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+  }
+  return dueDate >= startOfToday
+    ? 'Reminder active for this bill'
+    : 'Reminder active · bill overdue';
 };

@@ -18,7 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { StateView } from '@/components/ui/StateView';
-import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
+import { ThemedConfirmDialog, ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -26,8 +26,10 @@ import {
   accountVisuals,
   formatAccountIdentifier,
   getAccountHeadline,
+  getAccountVisual,
   getCardLimit,
   getCreditDueLabel,
+  getCreditReminderLabel,
   getCreditUsage,
   getCurrentStatement,
   getLastActivityLabel,
@@ -39,17 +41,13 @@ import {
   AccountApiError,
   deleteAccount,
   fetchAccounts,
+  markCardPaidOff,
   normalizeAccountType,
   toAccountPayload,
   updateAccount,
 } from '@/lib/accounts';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
-import {
-  EMIPlan,
-  EMIPlanPayload,
-  createCardEMIPlan,
-  fetchCardEMIPlans,
-} from '@/lib/emi-plans';
+import { EMIPlan, EMIPlanPayload, createCardEMIPlan, fetchCardEMIPlans } from '@/lib/emi-plans';
 import {
   CardStatement,
   CardStatementPayload,
@@ -151,9 +149,7 @@ function NoStatementCard({ onAdd }: { onAdd: () => void }) {
           <TText className="text-base" style={{ fontFamily: Fonts.title, color: theme.text }}>
             Track your bill
           </TText>
-          <TText
-            className="mt-1 text-sm"
-            style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
+          <TText className="mt-1 text-sm" style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
             Add the total from your statement and Finnri will track what&apos;s due, what
             you&apos;ve paid, and how much of your limit is free.
           </TText>
@@ -189,6 +185,7 @@ export default function AccountDetailsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isActionsSheetVisible, setIsActionsSheetVisible] = useState(false);
   const [isDeleteDialogVisible, setIsDeleteDialogVisible] = useState(false);
+  const [isPaidOffDialogVisible, setIsPaidOffDialogVisible] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
 
   // The account list carries the bill, but not its reconciliation — that is
@@ -259,25 +256,36 @@ export default function AccountDetailsScreen() {
   );
 
   const visual = useMemo(() => {
-    const type = account ? normalizeAccountType(account.type) : 'other';
-    return accountVisuals[type];
+    return account ? getAccountVisual(account) : accountVisuals.other;
   }, [account]);
 
   const accountType = account ? normalizeAccountType(account.type) : 'other';
   const isCreditCard = accountType === 'credit_card';
   const dueLabel = account ? getCreditDueLabel(account.due_day) : null;
+  const reminderLabel = account ? getCreditReminderLabel(account) : null;
   // The hero was labelled "Balance"/"Total Due" over a number that was neither:
   // a stale manual figure, or on a card the credit limit itself.
   const headline = account ? getAccountHeadline(account) : null;
   const creditUsage = account ? getCreditUsage(account) : null;
   const cardLimit = account ? getCardLimit(account) : null;
   const currentStatement = account ? getCurrentStatement(account) : null;
+  const canMarkPaidOff = Boolean(
+    isCreditCard &&
+      !currentStatement &&
+      cardLimit?.outstanding_source === 'ledger' &&
+      cardLimit.outstanding > 0
+  );
   const runningBalance = account ? getRunningBalance(account) : null;
   const lastActivity = account ? getLastActivityLabel(account) : null;
   const setupItems = useMemo<SetupItem[]>(() => {
     if (!account) return [];
     const hasProvider = Boolean(account.provider?.trim());
-    const hasIdentifier = Boolean(account.identifier?.trim());
+    const hasIdentifier = Boolean(
+      account.last4?.trim() ||
+        account.upi_handle?.trim() ||
+        account.wallet_nickname?.trim() ||
+        account.identifier?.trim()
+    );
     const hasBalance = typeof account.balance === 'number' && account.balance !== 0;
     const hasCreditLimit = Boolean(account.credit_limit && account.credit_limit > 0);
     const hasDueDay = Boolean(account.due_day && account.due_day >= 1 && account.due_day <= 31);
@@ -299,7 +307,11 @@ export default function AccountDetailsScreen() {
     // what it actually is now that the ledger runs a balance forward from it.
 
     const providerLabel =
-      accountType === 'upi' ? 'UPI app added' : accountType === 'wallet' ? 'Wallet added' : 'Provider added';
+      accountType === 'upi'
+        ? 'UPI app added'
+        : accountType === 'wallet'
+          ? 'Wallet added'
+          : 'Provider added';
     const identifierLabel =
       accountType === 'upi'
         ? 'UPI handle or nickname added'
@@ -348,16 +360,29 @@ export default function AccountDetailsScreen() {
         router.back();
       })
       .catch((deleteError: unknown) => {
-        if (
-          deleteError instanceof AccountApiError &&
-          deleteError.code === 'account_in_use'
-        ) {
+        if (deleteError instanceof AccountApiError && deleteError.code === 'account_in_use') {
           setError('Move or delete linked transactions before deleting this account.');
           return;
         }
         setError(getFriendlyErrorMessage(deleteError, 'Unable to delete account.'));
       })
       .finally(() => setIsPending(false));
+  };
+
+  const handleMarkPaidOff = async () => {
+    if (!token || !account || !canMarkPaidOff || isPending) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      await markCardPaidOff(token, account.id);
+      setIsPaidOffDialogVisible(false);
+      await loadDetails();
+    } catch (paidOffError) {
+      setIsPaidOffDialogVisible(false);
+      setError(getFriendlyErrorMessage(paidOffError, 'Unable to mark this card paid off.'));
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const openSettings = () => {
@@ -405,9 +430,7 @@ export default function AccountDetailsScreen() {
       pathname: '/transactions',
       params: {
         accountId: String(account.id),
-        ...(statement
-          ? { start_date: statement.cycle_start, end_date: statement.cycle_end }
-          : {}),
+        ...(statement ? { start_date: statement.cycle_start, end_date: statement.cycle_end } : {}),
       },
     });
   };
@@ -686,6 +709,47 @@ export default function AccountDetailsScreen() {
               />
             ))}
 
+          {isCreditCard && reminderLabel && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${reminderLabel}. Edit reminder settings`}
+              onPress={() => handleEdit('details')}
+              className="mt-3 flex-row items-center rounded-[22px] border px-4 py-4"
+              style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+              <MaterialCommunityIcons
+                name={account.reminder_enabled === false ? 'bell-off-outline' : 'bell-ring-outline'}
+                size={22}
+                color={theme.accent}
+              />
+              <View className="ml-3 flex-1">
+                <TText
+                  className="text-xs uppercase"
+                  style={{ fontFamily: Fonts.title, color: '#8EA0B8' }}>
+                  Reminder
+                </TText>
+                <TText
+                  className="mt-1 text-sm"
+                  style={{ fontFamily: Fonts.title, color: theme.text }}>
+                  {reminderLabel}
+                </TText>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={22} color="#8EA0B8" />
+            </Pressable>
+          )}
+
+          {canMarkPaidOff && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setIsPaidOffDialogVisible(true)}
+              className="mt-3 flex-row items-center justify-center gap-2 rounded-full border py-3"
+              style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+              <MaterialCommunityIcons name="check-circle-outline" size={18} color={theme.accent} />
+              <TText className="text-sm" style={{ fontFamily: Fonts.title, color: theme.accent }}>
+                Mark card paid off
+              </TText>
+            </Pressable>
+          )}
+
           {isCreditCard && (
             <EMIPlansSection
               plans={emiPlans}
@@ -704,28 +768,20 @@ export default function AccountDetailsScreen() {
 
           <View className="mt-7 flex-row gap-3">
             <DetailActionButton
-              icon={setupComplete ? 'receipt-text-outline' : 'clipboard-check-outline'}
-              label={setupComplete ? 'Activity' : 'Complete'}
-              active
-              onPress={setupComplete ? openAllTransactions : () => handleEdit('details')}
-              textColor="#FFFFFF"
-              backgroundColor={setupComplete ? theme.accent : '#0F172A'}
-            />
-            <DetailActionButton
               icon="pencil-outline"
               label="Edit"
+              active
               onPress={() => handleEdit()}
-              textColor={theme.text}
-              backgroundColor={theme.card}
-              borderColor={theme.border}
+              textColor="#FFFFFF"
+              backgroundColor={theme.accent}
             />
             <DetailActionButton
-              icon="cog-outline"
-              label="Settings"
-              onPress={openSettings}
-              textColor={theme.text}
+              icon="delete-outline"
+              label="Delete"
+              onPress={() => setIsDeleteDialogVisible(true)}
+              textColor="#EF4444"
               backgroundColor={theme.card}
-              borderColor={theme.border}
+              borderColor="#FCA5A5"
             />
           </View>
 
@@ -734,9 +790,7 @@ export default function AccountDetailsScreen() {
             style={{ backgroundColor: theme.card, borderColor: theme.border }}>
             <View className="flex-row items-start justify-between gap-4">
               <View className="min-w-0 flex-1">
-                <TText
-                  className="text-base"
-                  style={{ fontFamily: Fonts.title, color: theme.text }}>
+                <TText className="text-base" style={{ fontFamily: Fonts.title, color: theme.text }}>
                   {setupComplete ? 'Setup complete' : 'Complete setup'}
                 </TText>
                 <TText
@@ -753,9 +807,7 @@ export default function AccountDetailsScreen() {
                   onPress={() => handleEdit('details')}
                   className="rounded-full px-4 py-2"
                   style={{ backgroundColor: theme.accent }}>
-                  <TText
-                    className="text-xs"
-                    style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
+                  <TText className="text-xs" style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
                     Update
                   </TText>
                 </Pressable>
@@ -784,7 +836,10 @@ export default function AccountDetailsScreen() {
                   </View>
                   <TText
                     className="flex-1 text-sm"
-                    style={{ fontFamily: Fonts.body, color: item.complete ? theme.text : '#64748B' }}>
+                    style={{
+                      fontFamily: Fonts.body,
+                      color: item.complete ? theme.text : '#64748B',
+                    }}>
                     {item.label}
                   </TText>
                 </View>
@@ -836,7 +891,9 @@ export default function AccountDetailsScreen() {
                 <TText className="text-lg" style={{ fontFamily: Fonts.title, color: theme.text }}>
                   {account.name}
                 </TText>
-                <TText className="mt-1 text-xs" style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
+                <TText
+                  className="mt-1 text-xs"
+                  style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
                   Account actions
                 </TText>
               </View>
@@ -904,6 +961,20 @@ export default function AccountDetailsScreen() {
           loading={isPending}
           onCancel={() => setIsDeleteDialogVisible(false)}
           onConfirm={handleDelete}
+        />
+
+        <ThemedConfirmDialog
+          visible={isPaidOffDialogVisible}
+          title="Mark this card paid off?"
+          message="Use this only after the full card balance has been paid. Finnri will reset its transaction-based estimate to zero and count new card spends from here."
+          iconName="check-circle-outline"
+          confirmLabel="Mark paid off"
+          cancelLabel="Cancel"
+          loading={isPending}
+          onCancel={() => {
+            if (!isPending) setIsPaidOffDialogVisible(false);
+          }}
+          onConfirm={() => void handleMarkPaidOff()}
         />
 
         {isCreditCard && (
@@ -1102,7 +1173,10 @@ function DetailActionButton({
         elevation: active ? 3 : 0,
       }}>
       <MaterialCommunityIcons name={icon} size={24} color={textColor} />
-      <TText className="mt-2 text-sm" numberOfLines={1} style={{ fontFamily: Fonts.title, color: textColor }}>
+      <TText
+        className="mt-2 text-sm"
+        numberOfLines={1}
+        style={{ fontFamily: Fonts.title, color: textColor }}>
         {label}
       </TText>
     </Pressable>

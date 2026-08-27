@@ -33,7 +33,7 @@ const values = [
 ] as const;
 
 const stats = [
-  { label: 'Budget Watch', value: 'Limits + alerts' },
+  { label: 'Budgets', value: 'Limits + alerts' },
   { label: 'Subscriptions', value: 'Renewal tracking' },
   { label: 'Splits', value: 'Shared expenses' },
 ];

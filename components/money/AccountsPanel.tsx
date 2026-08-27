@@ -16,6 +16,7 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
   accountVisuals,
   formatAccountIdentifier,
+  getAccountVisual,
   getAccountHeadline,
   getCreditDueLabel,
   getCreditUsage,
@@ -25,12 +26,7 @@ import {
   hasOpeningBalance,
 } from '@/lib/account-display';
 import { formatMoney } from '@/lib/money';
-import {
-  Account,
-  type AccountType,
-  fetchAccounts,
-  normalizeAccountType,
-} from '@/lib/accounts';
+import { Account, type AccountType, fetchAccounts, normalizeAccountType } from '@/lib/accounts';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
 
 const TView = cssInterop(ThemedView, { className: 'style' });
@@ -50,7 +46,12 @@ const accountGroups: { key: string; label: string; chipLabel: string; types: Acc
   { key: 'credit_cards', label: 'Credit Cards', chipLabel: 'Cards', types: ['credit_card'] },
   { key: 'bank_accounts', label: 'Bank Accounts', chipLabel: 'Bank', types: ['bank'] },
   { key: 'debit_cards', label: 'Debit Cards', chipLabel: 'Debit', types: ['debit_card'] },
-  { key: 'wallets_upi', label: 'Wallets & UPI', chipLabel: 'Wallets & UPI', types: ['wallet', 'upi'] },
+  {
+    key: 'wallets_upi',
+    label: 'Wallets & UPI',
+    chipLabel: 'Wallets & UPI',
+    types: ['wallet', 'upi'],
+  },
   { key: 'cash', label: 'Cash', chipLabel: 'Cash', types: ['cash'] },
   { key: 'others', label: 'Others', chipLabel: 'Others', types: ['other'] },
 ];
@@ -251,7 +252,7 @@ export function AccountsPanel() {
 
   const renderAccountRow = (account: Account) => {
     const accountType = normalizeAccountType(account.type);
-    const visual = accountVisuals[accountType];
+    const visual = getAccountVisual(account);
     const isCreditCard = accountType === 'credit_card';
     const dueLabel = isCreditCard ? getCreditDueLabel(account.due_day) : null;
     const headline = getAccountHeadline(account);
@@ -418,192 +419,194 @@ export function AccountsPanel() {
       </View>
 
       <ScrollView
-          ref={scrollRef}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 22,
-            paddingTop: 16,
-            paddingBottom: 110,
-            gap: 22,
-          }}>
-          {error && <ErrorBanner message={error} onRetry={() => void loadAccounts()} />}
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: 22,
+          paddingTop: 16,
+          paddingBottom: 110,
+          gap: 22,
+        }}>
+        {error && <ErrorBanner message={error} onRetry={() => void loadAccounts()} />}
 
-          {isLoading && accounts.length === 0 ? (
-            <AccountListSkeleton />
-          ) : accounts.length === 0 ? (
-            <View className="gap-5">
-              <StateView
-                icon="wallet-outline"
-                title="No accounts yet"
-                message="Start with the payment source you use most. Finnri will use it to keep new transactions cleaner."
-                actionLabel="Add custom account"
-                onAction={() => handleAddAccount()}
-              />
+        {isLoading && accounts.length === 0 ? (
+          <AccountListSkeleton />
+        ) : accounts.length === 0 ? (
+          <View className="gap-5">
+            <StateView
+              icon="wallet-outline"
+              title="No accounts yet"
+              message="Start with the payment source you use most. Finnri will use it to keep new transactions cleaner."
+              actionLabel="Add custom account"
+              onAction={() => handleAddAccount()}
+            />
 
+            <View className="gap-3">
+              <TText
+                className="text-xs uppercase"
+                style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.8 }}>
+                Quick start
+              </TText>
               <View className="gap-3">
-                <TText
-                  className="text-xs uppercase"
-                  style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.8 }}>
-                  Quick start
-                </TText>
-                <View className="gap-3">
-                  {quickAccountOptions.map((option) => {
-                    const visual = accountVisuals[option.key];
-                    return (
-                      <Pressable
-                        key={option.key}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Add ${option.label}`}
-                        onPress={() => handleAddAccount(option.key)}
-                        className="min-h-[74px] flex-row items-center rounded-[24px] border px-4 py-4"
-                        style={{ backgroundColor: surfaceColor, borderColor }}>
-                        <View
-                          className="mr-4 h-11 w-11 items-center justify-center rounded-full"
-                          style={{ backgroundColor: visual.bg }}>
-                          <MaterialCommunityIcons
-                            name={option.icon}
-                            size={22}
-                            color={visual.color}
-                          />
-                        </View>
-                        <View className="min-w-0 flex-1">
-                          <TText
-                            className="text-sm"
-                            numberOfLines={1}
-                            style={{ fontFamily: Fonts.title, color: theme.text }}>
-                            {option.label}
-                          </TText>
-                          <TText
-                            className="mt-1 text-xs"
-                            numberOfLines={1}
-                            style={{ fontFamily: Fonts.body, color: '#64748B' }}>
-                            {option.description}
-                          </TText>
-                        </View>
-                        <MaterialCommunityIcons name="chevron-right" size={22} color="#94A3B8" />
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                {quickAccountOptions.map((option) => {
+                  const visual = accountVisuals[option.key];
+                  return (
+                    <Pressable
+                      key={option.key}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add ${option.label}`}
+                      onPress={() => handleAddAccount(option.key)}
+                      className="min-h-[74px] flex-row items-center rounded-[24px] border px-4 py-4"
+                      style={{ backgroundColor: surfaceColor, borderColor }}>
+                      <View
+                        className="mr-4 h-11 w-11 items-center justify-center rounded-full"
+                        style={{ backgroundColor: visual.bg }}>
+                        <MaterialCommunityIcons name={option.icon} size={22} color={visual.color} />
+                      </View>
+                      <View className="min-w-0 flex-1">
+                        <TText
+                          className="text-sm"
+                          numberOfLines={1}
+                          style={{ fontFamily: Fonts.title, color: theme.text }}>
+                          {option.label}
+                        </TText>
+                        <TText
+                          className="mt-1 text-xs"
+                          numberOfLines={1}
+                          style={{ fontFamily: Fonts.body, color: '#64748B' }}>
+                          {option.description}
+                        </TText>
+                      </View>
+                      <MaterialCommunityIcons name="chevron-right" size={22} color="#94A3B8" />
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
-          ) : (
-            <>
-              <View className="flex-row gap-3">
+          </View>
+        ) : (
+          <>
+            <View className="flex-row gap-3">
+              <View
+                className="min-h-[96px] flex-1 rounded-[24px] border px-4 py-4"
+                style={{ backgroundColor: surfaceColor, borderColor }}>
+                <MaterialCommunityIcons name="trending-down" size={20} color={theme.accent} />
+                <TText
+                  className="mt-3 text-[11px] uppercase"
+                  style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.6 }}>
+                  Spent this month
+                </TText>
+                <TText
+                  className="mt-1 text-lg"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={{ fontFamily: Fonts.title, color: theme.text }}>
+                  {formatMoney(accountSummary.spentThisMonth)}
+                </TText>
+              </View>
+              {accountSummary.creditCards > 0 && (
                 <View
                   className="min-h-[96px] flex-1 rounded-[24px] border px-4 py-4"
                   style={{ backgroundColor: surfaceColor, borderColor }}>
-                  <MaterialCommunityIcons name="trending-down" size={20} color={theme.accent} />
+                  <MaterialCommunityIcons
+                    name="credit-card-clock-outline"
+                    size={20}
+                    color="#A855F7"
+                  />
                   <TText
                     className="mt-3 text-[11px] uppercase"
                     style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.6 }}>
-                    Spent this month
+                    Card outstanding
                   </TText>
                   <TText
                     className="mt-1 text-lg"
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     style={{ fontFamily: Fonts.title, color: theme.text }}>
-                    {formatMoney(accountSummary.spentThisMonth)}
+                    {formatMoney(accountSummary.outstanding)}
                   </TText>
-                </View>
-                {accountSummary.creditCards > 0 && (
-                  <View
-                    className="min-h-[96px] flex-1 rounded-[24px] border px-4 py-4"
-                    style={{ backgroundColor: surfaceColor, borderColor }}>
-                    <MaterialCommunityIcons
-                      name="credit-card-clock-outline"
-                      size={20}
-                      color="#A855F7"
-                    />
+                  {accountSummary.creditLimit > 0 && (
                     <TText
-                      className="mt-3 text-[11px] uppercase"
-                      style={{ fontFamily: Fonts.title, color: '#64748B', letterSpacing: 0.6 }}>
-                      Card outstanding
-                    </TText>
-                    <TText
-                      className="mt-1 text-lg"
+                      className="mt-1 text-[11px]"
                       numberOfLines={1}
-                      adjustsFontSizeToFit
-                      style={{ fontFamily: Fonts.title, color: theme.text }}>
-                      {formatMoney(accountSummary.outstanding)}
+                      style={{ fontFamily: Fonts.body, color: '#64748B' }}>
+                      of {formatMoney(accountSummary.creditLimit)} limit
                     </TText>
-                    {accountSummary.creditLimit > 0 && (
-                      <TText
-                        className="mt-1 text-[11px]"
-                        numberOfLines={1}
-                        style={{ fontFamily: Fonts.body, color: '#64748B' }}>
-                        of {formatMoney(accountSummary.creditLimit)} limit
-                      </TText>
-                    )}
-                  </View>
-                )}
-              </View>
-
-              {accountSummary.cardsMissingDueDate > 0 && (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setActiveFilter('credit_cards')}
-                  className="flex-row items-center rounded-[22px] border px-4 py-3"
-                  style={{ backgroundColor: colorScheme === 'light' ? '#FFF7ED' : '#2A2118', borderColor: '#FDBA74' }}>
-                  <MaterialCommunityIcons name="calendar-alert-outline" size={20} color="#F97316" />
-                  <TText
-                    className="ml-3 flex-1 text-sm"
-                    style={{ fontFamily: Fonts.body, color: colorScheme === 'light' ? '#9A3412' : '#FDBA74' }}>
-                    Add due dates to {accountSummary.cardsMissingDueDate} credit card
-                    {accountSummary.cardsMissingDueDate > 1 ? 's' : ''} for better reminders.
-                  </TText>
-                  <MaterialCommunityIcons name="chevron-right" size={20} color="#F97316" />
-                </Pressable>
-              )}
-
-              {showFilterChips && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8, paddingRight: 22 }}
-                  style={{ marginHorizontal: -22, paddingHorizontal: 22 }}>
-                  <FilterChip
-                    label="All"
-                    count={accounts.length}
-                    active={activeFilter === 'all'}
-                    onPress={() => setActiveFilter('all')}
-                  />
-                  {populatedGroups.map((group) => {
-                    const visual = accountVisuals[group.types[0]];
-                    return (
-                      <FilterChip
-                        key={group.key}
-                        label={group.chipLabel}
-                        count={group.accounts.length}
-                        icon={visual.icon}
-                        iconColor={visual.color}
-                        active={activeFilter === group.key}
-                        onPress={() =>
-                          setActiveFilter(activeFilter === group.key ? 'all' : group.key)
-                        }
-                      />
-                    );
-                  })}
-                </ScrollView>
-              )}
-
-              {groupedAccounts.map((group) => (
-                <View key={group.key} className="gap-3">
-                  <TText
-                    className="text-xs uppercase"
-                    style={{
-                      fontFamily: Fonts.title,
-                      color: '#64748B',
-                      letterSpacing: 0.8,
-                    }}>
-                    {group.label}
-                  </TText>
-                  <View className="gap-3">{group.accounts.map(renderAccountRow)}</View>
+                  )}
                 </View>
-              ))}
-            </>
-          )}
+              )}
+            </View>
+
+            {accountSummary.cardsMissingDueDate > 0 && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setActiveFilter('credit_cards')}
+                className="flex-row items-center rounded-[22px] border px-4 py-3"
+                style={{
+                  backgroundColor: colorScheme === 'light' ? '#FFF7ED' : '#2A2118',
+                  borderColor: '#FDBA74',
+                }}>
+                <MaterialCommunityIcons name="calendar-alert-outline" size={20} color="#F97316" />
+                <TText
+                  className="ml-3 flex-1 text-sm"
+                  style={{
+                    fontFamily: Fonts.body,
+                    color: colorScheme === 'light' ? '#9A3412' : '#FDBA74',
+                  }}>
+                  Add due dates to {accountSummary.cardsMissingDueDate} credit card
+                  {accountSummary.cardsMissingDueDate > 1 ? 's' : ''} for better reminders.
+                </TText>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#F97316" />
+              </Pressable>
+            )}
+
+            {showFilterChips && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingRight: 22 }}
+                style={{ marginHorizontal: -22, paddingHorizontal: 22 }}>
+                <FilterChip
+                  label="All"
+                  count={accounts.length}
+                  active={activeFilter === 'all'}
+                  onPress={() => setActiveFilter('all')}
+                />
+                {populatedGroups.map((group) => {
+                  const visual = accountVisuals[group.types[0]];
+                  return (
+                    <FilterChip
+                      key={group.key}
+                      label={group.chipLabel}
+                      count={group.accounts.length}
+                      icon={visual.icon}
+                      iconColor={visual.color}
+                      active={activeFilter === group.key}
+                      onPress={() =>
+                        setActiveFilter(activeFilter === group.key ? 'all' : group.key)
+                      }
+                    />
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {groupedAccounts.map((group) => (
+              <View key={group.key} className="gap-3">
+                <TText
+                  className="text-xs uppercase"
+                  style={{
+                    fontFamily: Fonts.title,
+                    color: '#64748B',
+                    letterSpacing: 0.8,
+                  }}>
+                  {group.label}
+                </TText>
+                <View className="gap-3">{group.accounts.map(renderAccountRow)}</View>
+              </View>
+            ))}
+          </>
+        )}
       </ScrollView>
     </TView>
   );

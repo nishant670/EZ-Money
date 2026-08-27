@@ -89,6 +89,8 @@ type VoiceInputCardProps = {
    */
   recorder?: AudioRecorder | null;
   onMicPress: () => void;
+  onMicLongPress?: () => void;
+  onAskPress?: () => void;
   isRecording: boolean;
   hasRecording: boolean;
   inputText: string;
@@ -112,6 +114,8 @@ type VoiceInputCardProps = {
 export function VoiceInputCard({
   recorder,
   onMicPress,
+  onMicLongPress,
+  onAskPress,
   isRecording,
   hasRecording,
   inputText,
@@ -151,6 +155,7 @@ export function VoiceInputCard({
   // would otherwise close over whichever index was current when the effect last
   // ran and rotate 0 → 1 → 0 forever.
   const promptIndexRef = useRef(promptIndex);
+  const micLongPressHandled = useRef(false);
   promptIndexRef.current = promptIndex;
 
   // One clock, running on the UI thread, restarted only when the state it is
@@ -480,7 +485,22 @@ export function VoiceInputCard({
           accessibilityRole="button"
           accessibilityLabel={isRecording ? 'Stop recording' : 'Record an expense'}
           accessibilityState={{ busy: isRecording }}
-          onPress={onMicPress}
+          onPressIn={() => {
+            micLongPressHandled.current = false;
+          }}
+          onLongPress={() => {
+            if (!onMicLongPress || isRecording) return;
+            micLongPressHandled.current = true;
+            onMicLongPress();
+          }}
+          delayLongPress={450}
+          onPress={() => {
+            if (micLongPressHandled.current) {
+              micLongPressHandled.current = false;
+              return;
+            }
+            onMicPress();
+          }}
           style={{
             height: '100%',
             width: '100%',
@@ -622,7 +642,7 @@ export function VoiceInputCard({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Ask ${EXAMPLE_QUESTION}`}
-              onPress={() => onChangeText(EXAMPLE_QUESTION)}
+              onPress={() => (onAskPress ? onAskPress() : onChangeText(EXAMPLE_QUESTION))}
               disabled={isProcessing || isRecording}
               hitSlop={6}
               style={{ marginTop: 8, alignSelf: 'flex-start' }}>
