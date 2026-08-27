@@ -283,10 +283,16 @@ export const defaultSplitToComposerKeys = (
 /**
  * What to tell the user after adding people to a group.
  *
- * Adding somebody raises an invite they have to accept, and for a friend with
- * no email or phone it raises nothing at all. Staying silent would let the user
- * assume their wife knows about the group when nobody could be reached — so the
- * outcome is always said out loud, in the terms the user thinks in.
+ * There is exactly one delivery channel and it only reaches people who already
+ * use Finnri: an in-app notification. There is no mail server and no SMS
+ * provider behind any of this, so for everybody else the link sits with the
+ * owner until they send it themselves.
+ *
+ * Saying which of the two happened, by name, is the whole job. Staying vague
+ * lets somebody assume their wife knows about the group when nothing left the
+ * device — and that assumption is expensive: the person never turns up, the
+ * owner adds them again under a different address, and now there are two of
+ * them in the ledger.
  */
 export const describeMemberInvites = (invites: SplitGroupMemberInvite[]) => {
   if (invites.length === 0) return null;
@@ -302,12 +308,7 @@ export const describeMemberInvites = (invites: SplitGroupMemberInvite[]) => {
   const lines: string[] = [];
   if (notified.length > 0) {
     lines.push(
-      `${notified.join(', ')} ${notified.length === 1 ? 'has' : 'have'} been notified on Finnri and can accept from there.`
-    );
-  }
-  if (noContact.length > 0) {
-    lines.push(
-      `${noContact.join(', ')} ${noContact.length === 1 ? 'has' : 'have'} no email or phone saved, so nobody could be notified.`
+      `${notified.join(', ')} already ${notified.length === 1 ? 'uses' : 'use'} Finnri — the invite is waiting in their notifications.`
     );
   }
   const linkOnly = shareLink.filter((name) => !noContact.includes(name));
@@ -316,8 +317,15 @@ export const describeMemberInvites = (invites: SplitGroupMemberInvite[]) => {
       `${linkOnly.join(', ')} ${linkOnly.length === 1 ? 'is' : 'are'} not on Finnri yet.`
     );
   }
+  if (noContact.length > 0) {
+    lines.push(
+      `${noContact.join(', ')} ${noContact.length === 1 ? 'has' : 'have'} no email or phone saved, so Finnri will not recognise ${noContact.length === 1 ? 'them' : 'them'} automatically when they join.`
+    );
+  }
   if (shareLink.length > 0) {
-    lines.push('Share an invite link with them from group settings.');
+    lines.push(
+      'Finnri does not send emails or texts — share an invite link with them from group settings.'
+    );
   }
   lines.push('You can keep adding expenses for them either way — they only see the group once they accept.');
   return lines.join('\n\n');

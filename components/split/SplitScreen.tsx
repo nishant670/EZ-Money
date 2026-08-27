@@ -2746,32 +2746,61 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onClose={closeModal}>
           <FormInput label="Name" value={friendName} onChangeText={setFriendName} />
           <FormInput
-            label="Phone"
+            label="Phone (optional)"
             value={friendPhone}
             onChangeText={setFriendPhone}
             keyboardType="phone-pad"
           />
           <FormInput
-            label="Email"
+            label="Email (optional)"
             value={friendEmail}
             onChangeText={setFriendEmail}
             keyboardType="email-address"
             autoCapitalize="none"
           />
+          {/*
+            * Saying what these are *for* is the point. Typing a phone number
+            * into a friend row looks like the thing that reaches the person,
+            * and it is not — nothing is ever sent to it. It is a matching hint,
+            * and it only pays off if it happens to be the same address they
+            * sign up with.
+            */}
+          <TText className="text-xs" style={{ color: theme.muted }}>
+            Nothing is sent to these. They are how Finnri recognises this person
+            if they join, so the balance you keep for them follows them in.
+          </TText>
         </SplitModal>
 
+        {/*
+          * The button used to say "Send invite" and what happened next was the
+          * share sheet. Nothing is emailed or texted — there is no mail or SMS
+          * provider behind this — so the label promised a delivery the app has
+          * never made, and an invite that was recorded but never shared looked
+          * exactly like one that was sent and did not arrive.
+          *
+          * The address is still worth collecting, but for the other reason: it
+          * is what matches the person to the friend row when they open the
+          * link, so they land on the balance already kept for them rather than
+          * on a second row of their own.
+          */}
         <SplitModal
           visible={modal === 'group_invite'}
-          title="Invite friend"
+          title="Invite a specific person"
           errorMessage={modal === 'group_invite' ? error : null}
           footer={
             <PrimaryModalButton
-              label="Send invite"
+              label="Share invite link"
               loading={saving}
               onPress={() => void handleSendGroupInvite()}
             />
           }
           onClose={closeModal}>
+          <TText className="text-xs" style={{ color: theme.muted }}>
+            Finnri does not send emails or texts — the share sheet opens next and
+            you send the link yourself. The address here is how Finnri recognises
+            them when they open it, so they join on the balance you have already
+            been keeping for them.
+          </TText>
           <FormInput
             label="Email"
             value={groupInviteEmail}

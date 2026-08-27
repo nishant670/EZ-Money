@@ -114,13 +114,15 @@ export function GroupSettingsModal({
                   onPress={() => onAddPeople(summary)}
                 />
                 <SettingsActionRow
-                  icon="email-plus-outline"
-                  label="Invite by email or phone"
+                  icon="account-plus-outline"
+                  label="Invite a specific person"
+                  caption="Their email or phone connects them to the balance you keep for them"
                   onPress={() => onInvitePerson(summary)}
                 />
                 <SettingsActionRow
                   icon="link-variant"
-                  label="Invite via link"
+                  label="Share a group link"
+                  caption="Anyone with the link can join"
                   onPress={() => onInviteViaLink(summary)}
                 />
               </>
@@ -247,11 +249,15 @@ function SettingsSectionTitle({ label }: { label: string }) {
 function SettingsActionRow({
   icon,
   label,
+  caption,
   destructive,
   onPress,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   label: string;
+  /** One line under the label, for a row whose name cannot carry the whole of
+   *  what it does — the two invite rows differ in a way "invite" does not say. */
+  caption?: string;
   destructive?: boolean;
   onPress: () => void;
 }) {
@@ -261,13 +267,20 @@ function SettingsActionRow({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      className="min-h-[76px] flex-row items-center gap-8 px-8">
+      className="min-h-[76px] flex-row items-center gap-8 px-8 py-3">
       <View className="w-10 items-center">
         <MaterialCommunityIcons name={icon} size={27} color={color} />
       </View>
-      <TText className="flex-1 text-xl" style={{ color, fontFamily: Fonts.body }}>
-        {label}
-      </TText>
+      <View className="flex-1">
+        <TText className="text-xl" style={{ color, fontFamily: Fonts.body }}>
+          {label}
+        </TText>
+        {caption ? (
+          <TText className="mt-1 text-xs" style={{ color: theme.muted }}>
+            {caption}
+          </TText>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -284,7 +297,11 @@ function PendingInviteRow({
   const theme = useThemeTokens().colors;
   const label = invite.target_email || invite.target_phone || 'Invite';
   const subtitle = [
-    invite.matched_user ? 'Finnri user notified' : 'Share link sent manually',
+    // Nothing was sent. For somebody already on Finnri the invite really is
+    // waiting in their notifications; for everybody else the link is still
+    // sitting with the owner, and saying so is the only way they know to send
+    // it again.
+    invite.matched_user ? 'Waiting in their Finnri notifications' : 'Share the link with them',
     invite.status,
   ]
     .filter(Boolean)

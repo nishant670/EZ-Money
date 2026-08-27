@@ -178,19 +178,35 @@ describe('shared group frames', () => {
   });
 });
 
+/**
+ * There is one delivery channel and it only reaches people who already use
+ * Finnri: an in-app notification. No mail server, no SMS provider. So this
+ * message has exactly one job — say which of the two happened, by name — and
+ * the thing it must never do is let somebody believe a message went out when
+ * nothing left the device.
+ *
+ * That belief is what the reported mess was built on: the person never turned
+ * up, the owner added them again under a different address, and the ledger
+ * ended up holding two of them.
+ */
 describe('describeMemberInvites', () => {
   it('says nothing when nobody was added', () => {
     expect(describeMemberInvites([])).toBeNull();
   });
 
-  it('says who was notified and that they still have to accept', () => {
+  it('says who really was reached, and that they still have to accept', () => {
+    // The one true delivery: they are on Finnri, so the invite is genuinely
+    // sitting in their notifications.
     const message = describeMemberInvites([
       { friend_id: 4, name: 'Priya', status: 'notified' },
     ]);
 
-    expect(message).toContain('Priya has been notified on Finnri');
+    expect(message).toContain('Priya already uses Finnri');
+    expect(message).toContain('waiting in their notifications');
     expect(message).toContain('they only see the group once they accept');
-    expect(message).not.toContain('Share an invite link');
+    // Nothing to share: the invite reached them, so the owner is not sent off
+    // to do a job that is already done.
+    expect(message).not.toContain('share an invite link');
   });
 
   it('never implies somebody was reached when they could not be', () => {
@@ -198,9 +214,19 @@ describe('describeMemberInvites', () => {
       { friend_id: 7, name: 'Flatmate', status: 'no_contact' },
     ]);
 
-    expect(message).toContain('no email or phone saved, so nobody could be notified');
-    expect(message).toContain('Share an invite link');
-    expect(message).not.toContain('notified on Finnri');
+    expect(message).toContain('no email or phone saved');
+    expect(message).toContain('share an invite link with them');
+    expect(message).not.toContain('waiting in their notifications');
+  });
+
+  it('says outright that nothing is sent, whenever a link has to be shared', () => {
+    // The sentence the whole mess turned on. Without it the user reasonably
+    // assumes the address they typed is the address it went to.
+    for (const status of ['invite_created', 'no_contact'] as const) {
+      const message = describeMemberInvites([{ friend_id: 9, name: 'Arjun', status }]);
+
+      expect(message).toContain('Finnri does not send emails or texts');
+    }
   });
 
   it('separates people without an account from people without contact details', () => {
@@ -210,7 +236,7 @@ describe('describeMemberInvites', () => {
       { friend_id: 9, name: 'Arjun', status: 'invite_created' },
     ]);
 
-    expect(message).toContain('Priya has been notified');
+    expect(message).toContain('Priya already uses Finnri');
     expect(message).toContain('Flatmate has no email or phone');
     expect(message).toContain('Arjun is not on Finnri yet');
     // The unreachable friend must not be listed twice under two headings.
