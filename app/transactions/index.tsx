@@ -405,7 +405,7 @@ export default function TransactionsScreen() {
         </Pressable>
 
         <ThemedText className="text-base font-bold" style={{ color: theme.text }}>
-          &nbsp; {reviewMode ? 'Needs Review' : 'Your Money Story'}&nbsp;
+          &nbsp; {reviewMode ? 'Needs Review' : 'Transactions'}&nbsp;
         </ThemedText>
         <Pressable
           accessibilityRole="button"

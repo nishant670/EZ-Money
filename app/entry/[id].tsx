@@ -492,7 +492,7 @@ export default function TransactionDetailsScreen() {
         <ThemedText
           className="text-base font-bold ml-4 flex-1 text-center pr-10"
           style={{ color: theme.text }}>
-          A Peek at Your Spend
+          Transaction
         </ThemedText>
       </View>
 
@@ -577,9 +577,6 @@ export default function TransactionDetailsScreen() {
               </ThemedText>
               <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
                 {displayData.category || 'Food & Drink'}
-              </ThemedText>
-              <ThemedText className="text-xs font-bold text-gray-400">
-                Treat yourself category
               </ThemedText>
             </View>
           </View>
@@ -811,8 +808,8 @@ export default function TransactionDetailsScreen() {
           className="w-full py-5 rounded-full items-center justify-center shadow-xl mb-6 active:opacity-90"
           style={{ backgroundColor: theme.accent }}>
           <View className="flex-row items-center gap-3">
-            <MaterialCommunityIcons name="tune-variant" size={24} color="#FFF" />
-            <ThemedText className="text-white font-black text-lg">Tweak this</ThemedText>
+            <MaterialCommunityIcons name="pencil-outline" size={24} color="#FFF" />
+            <ThemedText className="text-white font-black text-lg">Edit</ThemedText>
           </View>
         </Pressable>
 
@@ -824,7 +821,7 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
             )}
             <ThemedText className="font-bold text-[#FF6B6B]">
-              {isDeleting ? 'Forgetting...' : 'Forget this transaction'}
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </ThemedText>
           </View>
         </Pressable>
@@ -872,10 +869,11 @@ export default function TransactionDetailsScreen() {
             </View>
 
             <ThemedText className="text-center text-xl font-black" style={{ color: theme.text }}>
-              Forget this transaction?
+              Delete this transaction?
             </ThemedText>
             <ThemedText className="mt-2 text-center text-sm font-semibold leading-5 text-gray-400">
-              This will permanently remove it from your activity, insights, and linked split details.
+              This can&apos;t be undone. It will be removed from your activity, your insights, and
+              any split linked to it.
             </ThemedText>
           </View>
 
@@ -918,7 +916,7 @@ export default function TransactionDetailsScreen() {
               ) : (
                 <View className="flex-row items-center gap-2">
                   <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
-                  <ThemedText className="text-base font-black text-white">Forget it</ThemedText>
+                  <ThemedText className="text-base font-black text-white">Delete</ThemedText>
                 </View>
               )}
             </Pressable>
@@ -932,7 +930,7 @@ export default function TransactionDetailsScreen() {
                 backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.06)' : '#F7F2F3',
               }}>
               <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
-                Keep transaction
+                Cancel
               </ThemedText>
             </Pressable>
           </View>

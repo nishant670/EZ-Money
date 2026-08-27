@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useFocusEffect, useRouter, useScrollToTop } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useRef, useState } from 'react';
@@ -27,6 +28,9 @@ const TText = cssInterop(ThemedText, { className: 'style' });
  * to the logout button. They live in the Money tab now; what is left is the
  * four things a profile is actually for.
  */
+/** What the build actually is, so the footer cannot drift from it again. */
+const appVersion = Constants.expoConfig?.version ?? '1.0.0';
+
 export default function ProfileScreen() {
   const theme = useThemeTokens();
   const colors = theme.colors;
@@ -334,16 +338,19 @@ export default function ProfileScreen() {
               <TText
                 className="text-base font-bold"
                 style={{ color: '#D32F2F', fontFamily: Fonts.title }}>
-                Time to Log Out?
+                Log out
               </TText>
             </Pressable>
           )}
 
-          {/* Footer */}
+          {/* Footer. The version is read rather than written: this line was a
+              typed literal and had drifted three major versions ahead of the
+              build, and it is the one string on the screen a user might quote
+              back in a bug report. */}
           <TText
             className="text-center text-[10px] tracking-widest opacity-30 mt-2 mb-4 uppercase"
             style={{ fontFamily: Fonts.body }}>
-            FINNRI PLAYBOOK V3.1.2 • HANDMADE WITH LOVE
+            FINNRI V{appVersion} • HANDMADE WITH LOVE
           </TText>
         </View>
       </ScrollView>
