@@ -80,10 +80,11 @@ describe('the vocabulary for destructive and structural actions', () => {
     const detail = readFileSync(join(process.cwd(), 'app', 'entry', '[id].tsx'), 'utf8');
 
     expect(detail).toContain('>Edit</ThemedText>');
-    expect(detail).toContain("{isDeleting ? 'Deleting...' : 'Delete'}");
+    expect(detail).toContain('>Delete</ThemedText>');
     expect(detail).toContain('Delete this transaction?');
-    // A destructive confirmation has to say that it is final.
-    expect(detail).toContain('This can&apos;t be undone.');
+    // Deletion is now delayed globally, so the confirmation must describe the
+    // real safety window instead of claiming it is immediately final.
+    expect(detail).toContain('with 5 seconds to Undo');
   });
 
   /**

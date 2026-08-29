@@ -10,6 +10,8 @@ export type SplitFriend = {
   name: string;
   email?: string;
   phone?: string;
+  phone_normalized?: string;
+  linked_user_id?: number;
   archived: boolean;
   created_at?: string;
   updated_at?: string;
@@ -355,6 +357,26 @@ export const archiveSplitFriend = async (token: string, friendId: number): Promi
   if (!response.ok) {
     throw await readSplitError(response, 'Unable to archive this friend right now.');
   }
+};
+
+export const mergeSplitFriend = async (
+  token: string,
+  friendId: number,
+  targetFriendId: number
+): Promise<SplitFriend> => {
+  const response = await fetch(
+    `${API_BASE_URL}/v1/split/friends/${friendId}/merge-into/${targetFriendId}`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+    }
+  );
+  if (!response.ok) {
+    throw await readSplitError(response, 'Unable to merge these friends right now.');
+  }
+  const payload = (await response.json()) as { friend?: SplitFriend };
+  if (!payload.friend) throw new Error('The merged friend response was invalid.');
+  return payload.friend;
 };
 
 export const fetchSplitGroups = async (token: string): Promise<SplitGroup[]> => {

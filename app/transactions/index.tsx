@@ -2,18 +2,17 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View, TouchableOpacity } from 'react-native';
-import Animated, {
-  interpolate,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TransactionItem, type RowOrigin } from '@/components/home/TransactionItem';
 import { ThemedText } from '@/components/themed-text';
 import { AdvancedFilter } from '@/components/transactions/AdvancedFilter';
 import { TransactionListSkeleton } from '@/components/transactions/TransactionListSkeleton';
+import {
+  TransactionUndoToast,
+  useTransactionDelete,
+} from '@/components/transactions/TransactionDeleteProvider';
 import { Colors } from '@/constants/theme';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { encodeFrame } from '@/hooks/use-shared-element';
@@ -22,15 +21,13 @@ import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import { useUndoableDelete } from '@/hooks/use-undoable-delete';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
-import { deleteEntry } from '@/lib/entries';
 import { shareTransactionExport, type ExportFormat } from '@/lib/export';
 import { haptics } from '@/lib/haptics';
 import { formatMoney, toAmountString } from '@/lib/money';
-import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
+import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import {
   groupTransactionsBySection,
   isAmountSort,
@@ -223,23 +220,7 @@ export default function TransactionsScreen() {
    * would not be one against a hard-deleting endpoint. This screen only supplies
    * what happens when the window closes.
    */
-  const { pending: pendingDelete, request: requestDelete, undo: undoDelete, commit: commitDelete } =
-    useUndoableDelete<Transaction>((target) => {
-      setOpenSwipeId(null);
-      if (!token) return;
-      void deleteEntry(token, target.id)
-        .then(() => {
-          setTransactions((prev) => prev.filter((entry) => entry.id !== target.id));
-          setMatchCount((prev) => Math.max(0, prev - 1));
-          notifyTransactionsChanged();
-        })
-        .catch((err) => {
-          // Nothing to put back on the server — the row was hidden, never
-          // deleted, which is the point of holding the call. The next load
-          // returns it; this only has to say the delete did not happen.
-          setError(getFriendlyErrorMessage(err, 'Unable to delete that transaction.'));
-        });
-    });
+  const { pending: pendingDelete, requestDelete } = useTransactionDelete();
 
   const isFilterActive = useMemo(() => hasFilterConstraints(filters), [filters]);
 
@@ -299,8 +280,6 @@ export default function TransactionsScreen() {
 
   // Navigating away commits too — the hook covers unmount and backgrounding,
   // but pushing the detail screen leaves this one mounted and merely blurred.
-  useFocusEffect(useCallback(() => () => commitDelete(), [commitDelete]));
-
   /**
    * Where each day's rows start in the list as a whole.
    *
@@ -598,8 +577,6 @@ export default function TransactionsScreen() {
         )}
       </ScrollView>
 
-      <UndoDeleteToast pending={pendingDelete} onUndo={undoDelete} />
-
       {/* Advanced Filters Bottom Sheet */}
       <AnimatedBottomSheet
         visible={isFilterOpen}
@@ -665,6 +642,11 @@ export default function TransactionsScreen() {
           )}
         </View>
       </AnimatedBottomSheet>
+      {/* Mounted here, not left to the provider: this screen is pushed over the
+          navigator, and the provider's own toast draws underneath it. Without
+          this the delete is silent and the five seconds the confirmation
+          promises cannot be reached — on the screen where most deletes happen. */}
+      <TransactionUndoToast />
     </SafeAreaView>
   );
 }
@@ -718,90 +700,5 @@ function ExportOption({
       </View>
       <MaterialCommunityIcons name="chevron-right" size={20} color={`${theme.text}66`} />
     </Pressable>
-  );
-}
-
-/**
- * The only way back from a delete, so it has to be reachable.
- *
- * Home's save toast is `pointerEvents="none"` because it is only ever telling
- * you something. This one is the undo — it has to take a tap, it has to clear
- * the tab bar rather than sit under it, and it names the transaction, because
- * "Transaction deleted" beside a list that has just closed over the gap is not
- * enough to know *which* one you are about to bring back.
- *
- * It carries no countdown. A bar draining towards a destructive commit turns a
- * five-second grace period into five seconds of pressure, and the row is
- * already gone from the list either way.
- */
-function UndoDeleteToast({
-  pending,
-  onUndo,
-}: {
-  pending: Transaction | null;
-  onUndo: () => void;
-}) {
-  const themeTokens = useThemeTokens();
-  const motion = useMotion();
-  const reveal = useSharedValue(0);
-  // Held so the toast can finish leaving with the name still on it — reading
-  // the prop directly would blank the label the moment Undo was pressed.
-  const [shown, setShown] = useState<Transaction | null>(null);
-
-  useEffect(() => {
-    if (pending) setShown(pending);
-  }, [pending]);
-
-  useEffect(() => {
-    if (pending) {
-      reveal.value = withTiming(1, motion.enter('base'));
-      return undefined;
-    }
-    reveal.value = withTiming(0, motion.exit('base'));
-    // Unmounted once it has finished leaving, rather than left at zero opacity:
-    // a hidden `accessibilityLiveRegion` is still a live region, and a screen
-    // reader would keep the name of a transaction that is no longer anywhere.
-    const clear = setTimeout(() => setShown(null), motion.exitDuration('base'));
-    return () => clearTimeout(clear);
-  }, [motion, pending, reveal]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: reveal.value,
-    transform: [{ translateY: interpolate(reveal.value, [0, 1], [10, 0]) }],
-  }));
-
-  if (!shown) return null;
-
-  return (
-    <Animated.View
-      accessibilityLiveRegion="polite"
-      pointerEvents={pending ? 'auto' : 'none'}
-      className="absolute left-5 right-5 flex-row items-center justify-between rounded-2xl px-4 py-3 shadow-md"
-      style={[{ bottom: 28, backgroundColor: themeTokens.colors.text }, style]}>
-      <View className="flex-1 flex-row items-center gap-2 pr-3">
-        <MaterialCommunityIcons
-          name="trash-can-outline"
-          size={16}
-          color={themeTokens.colors.background}
-        />
-        <ThemedText
-          numberOfLines={1}
-          className="flex-1 text-xs font-bold"
-          style={{ color: themeTokens.colors.background }}>
-          Deleted {shown.name}
-        </ThemedText>
-      </View>
-      <TouchableOpacity
-        accessibilityRole="button"
-        accessibilityLabel="Undo delete"
-        onPress={onUndo}
-        hitSlop={12}>
-        <ThemedText
-          className="text-xs font-black uppercase"
-          style={{ color: themeTokens.colors.accent }}>
-          Undo
-        </ThemedText>
-      </TouchableOpacity>
-    </Animated.View>
   );
 }

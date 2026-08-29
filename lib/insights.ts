@@ -6,6 +6,13 @@ export type DashboardSummary = {
     total_income: number;
     daily_average: number;
     transaction_count: number;
+    /**
+     * Expenses only, where `transaction_count` is every entry in the window.
+     * Anything pairing a count with a *spend* figure must read this one — a
+     * salary counted inside "spent X across N transactions" describes a
+     * different set of rows than the total does.
+     */
+    expense_count?: number;
     /** Expense total for the window named by `period.previous_start/_end`. */
     previous_total_spent?: number;
     /**

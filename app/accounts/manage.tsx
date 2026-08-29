@@ -22,6 +22,7 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
   Account,
   AccountApiError,
+  fetchAccountProviders,
   fetchAccounts,
   normalizeAccountType,
   saveAccount,
@@ -47,8 +48,20 @@ type ProviderOption = {
 
 const typeOptions: AccountTypeOption[] = [
   { key: 'cash', label: 'Cash', icon: 'cash', color: '#2ECC71', bgColor: '#EAF8F0' },
-  { key: 'credit_card', label: 'Credit', icon: 'credit-card', color: '#8257E5', bgColor: '#F4F1FE' },
-  { key: 'debit_card', label: 'Debit', icon: 'cash-multiple', color: '#00A8FF', bgColor: '#E6F6FF' },
+  {
+    key: 'credit_card',
+    label: 'Credit',
+    icon: 'credit-card',
+    color: '#8257E5',
+    bgColor: '#F4F1FE',
+  },
+  {
+    key: 'debit_card',
+    label: 'Debit',
+    icon: 'cash-multiple',
+    color: '#00A8FF',
+    bgColor: '#E6F6FF',
+  },
   { key: 'wallet', label: 'Wallet', icon: 'wallet', color: '#FF9F43', bgColor: '#FFF4EB' },
   { key: 'upi', label: 'UPI', icon: 'qrcode-scan', color: '#00D2B4', bgColor: '#E6FBFA' },
   { key: 'bank', label: 'Bank', icon: 'bank', color: '#3B5998', bgColor: '#EBF0FF' },
@@ -66,34 +79,17 @@ const COLORS = [
   '#FF79B0',
 ];
 
-const CARD_ISSUERS: ProviderOption[] = [
-  { id: '1', name: 'HDFC Bank', icon: 'bank' },
-  { id: '2', name: 'ICICI Bank', icon: 'bank' },
-  { id: '3', name: 'SBI (State Bank of India)', icon: 'bank' },
-  { id: '4', name: 'Axis Bank', icon: 'bank' },
-  { id: '5', name: 'American Express', icon: 'credit-card' },
-  { id: '6', name: 'HSBC', icon: 'bank' },
-  { id: '7', name: 'Standard Chartered', icon: 'bank' },
-  { id: '8', name: 'Kotak Mahindra Bank', icon: 'bank' },
-  { id: '9', name: 'Citibank', icon: 'bank' },
-];
-
-const ACCOUNT_PROVIDER_OPTIONS: Partial<Record<AccountType, ProviderOption[]>> = {
-  credit_card: CARD_ISSUERS,
-  debit_card: CARD_ISSUERS,
-  bank: CARD_ISSUERS,
-  wallet: [
-    { id: 'wallet_1', name: 'Paytm', icon: 'wallet' },
-    { id: 'wallet_2', name: 'PhonePe Wallet', icon: 'wallet' },
-    { id: 'wallet_3', name: 'Amazon Pay', icon: 'wallet' },
-    { id: 'wallet_4', name: 'MobiKwik', icon: 'wallet' },
-  ],
-  upi: [
-    { id: 'upi_1', name: 'Google Pay', icon: 'qrcode-scan' },
-    { id: 'upi_2', name: 'PhonePe', icon: 'qrcode-scan' },
-    { id: 'upi_3', name: 'Paytm UPI', icon: 'qrcode-scan' },
-    { id: 'upi_4', name: 'BHIM', icon: 'qrcode-scan' },
-  ],
+const providerIcon = (assetKey: string): keyof typeof MaterialCommunityIcons.glyphMap => {
+  const supported: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
+    bank: 'bank',
+    'credit-card': 'credit-card',
+    wallet: 'wallet',
+    'qrcode-scan': 'qrcode-scan',
+    google: 'google',
+    'alpha-p-circle': 'alpha-p-circle',
+    amazon: 'shopping-outline',
+  };
+  return supported[assetKey] ?? 'bank-outline';
 };
 
 const DAYS = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
@@ -213,7 +209,12 @@ const ACCOUNT_DETAIL_COPY: Record<
 const getMissingSetupCount = (account: Account) => {
   const accountType = normalizeAccountType(account.type);
   const hasProvider = Boolean(account.provider?.trim());
-  const hasIdentifier = Boolean(account.identifier?.trim());
+  const hasIdentifier = Boolean(
+    account.last4?.trim() ||
+      account.upi_handle?.trim() ||
+      account.wallet_nickname?.trim() ||
+      account.identifier?.trim()
+  );
   const hasBalance = typeof account.balance === 'number' && account.balance !== 0;
   const hasCreditLimit = Boolean(account.credit_limit && account.credit_limit > 0);
   const hasDueDay = Boolean(account.due_day && account.due_day >= 1 && account.due_day <= 31);
@@ -234,10 +235,22 @@ export default function ManageAccountScreen() {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
   const { token } = useAuthStore();
-  const { id, type, focus } = useLocalSearchParams<{
+  const {
+    id,
+    type,
+    focus,
+    name: suggestedName,
+    provider,
+    identifier,
+    color,
+  } = useLocalSearchParams<{
     id?: string;
     type?: string;
     focus?: string;
+    name?: string;
+    provider?: string;
+    identifier?: string;
+    color?: string;
   }>();
   const accountId = id ? Number(id) : null;
   const isEditing = Number.isInteger(accountId) && accountId !== null && accountId > 0;
@@ -259,12 +272,15 @@ export default function ManageAccountScreen() {
   // Step 2 States
   const [issuerQuery, setIssuerQuery] = useState('');
   const [selectedIssuer, setSelectedIssuer] = useState<ProviderOption | null>(null);
+  const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
   const [showIssuerResults, setShowIssuerResults] = useState(false);
 
   const [last4, setLast4] = useState('');
   const [balance, setBalance] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
   const [dueDay, setDueDay] = useState('');
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderDaysBefore, setReminderDaysBefore] = useState('3');
   const [feeMonth, setFeeMonth] = useState('');
 
   // Modal States
@@ -275,9 +291,12 @@ export default function ManageAccountScreen() {
     if (isEditing || !type) return;
     const presetType = normalizeAccountType(type);
     setSelectedType(presetType);
-    setSelectedColor(DEFAULT_ACCOUNT_COLORS[presetType]);
-    setName((currentName) => currentName || DEFAULT_ACCOUNT_NAMES[presetType]);
-  }, [isEditing, type]);
+    setSelectedColor(color || DEFAULT_ACCOUNT_COLORS[presetType]);
+    setName(suggestedName || DEFAULT_ACCOUNT_NAMES[presetType]);
+    setIssuerQuery(provider || '');
+    setSelectedIssuer(null);
+    setLast4(identifier || '');
+  }, [color, identifier, isEditing, provider, suggestedName, type]);
 
   useEffect(() => {
     if (!token || !isEditing || accountId === null) {
@@ -297,14 +316,22 @@ export default function ManageAccountScreen() {
         setName(account.name);
         setIssuerQuery(account.provider || '');
         setSelectedIssuer(
-          Object.values(ACCOUNT_PROVIDER_OPTIONS)
-            .flat()
-            .find((issuer) => issuer.name === account.provider) ?? null
+          account.provider_id
+            ? {
+                id: account.provider_id,
+                name: account.provider_details?.display_name || account.provider || account.name,
+                icon: providerIcon(account.provider_details?.asset_key || 'bank'),
+              }
+            : null
         );
-        setLast4(account.identifier || '');
+        setLast4(
+          account.last4 || account.upi_handle || account.wallet_nickname || account.identifier || ''
+        );
         setBalance(account.balance ? String(account.balance) : '');
         setCreditLimit(account.credit_limit ? String(account.credit_limit) : '');
         setDueDay(account.due_day ? String(account.due_day) : '');
+        setReminderEnabled(account.reminder_enabled !== false);
+        setReminderDaysBefore(String(account.reminder_days_before ?? 3));
         setFeeMonth(account.fee_month || '');
         setIsDefault(Boolean(account.is_default));
         if (focus === 'details') {
@@ -323,10 +350,46 @@ export default function ManageAccountScreen() {
     };
   }, [accountId, focus, isEditing, token]);
 
+  useEffect(() => {
+    if (!token) {
+      setProviderOptions([]);
+      return;
+    }
+    let active = true;
+    void fetchAccountProviders(token, selectedType)
+      .then((providers) => {
+        if (!active) return;
+        const options = providers.map((item) => ({
+          id: item.id,
+          name: item.display_name,
+          icon: providerIcon(item.asset_key),
+        }));
+        setProviderOptions(options);
+      })
+      .catch(() => {
+        if (active) setProviderOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedType, token]);
+
+  useEffect(() => {
+    if (selectedIssuer || !issuerQuery.trim()) return;
+    const normalized = issuerQuery.trim().toLowerCase();
+    const match = providerOptions.find((item) => item.name.toLowerCase() === normalized);
+    if (match) {
+      setSelectedIssuer(match);
+      setIssuerQuery(match.name);
+    }
+  }, [issuerQuery, providerOptions, selectedIssuer]);
+
   const updateSelectedType = (nextType: AccountType) => {
     setSelectedType(nextType);
     setSelectedColor((currentColor) =>
-      currentColor === DEFAULT_ACCOUNT_COLORS[selectedType] ? DEFAULT_ACCOUNT_COLORS[nextType] : currentColor
+      currentColor === DEFAULT_ACCOUNT_COLORS[selectedType]
+        ? DEFAULT_ACCOUNT_COLORS[nextType]
+        : currentColor
     );
     setName((currentName) => {
       if (!currentName || currentName === DEFAULT_ACCOUNT_NAMES[selectedType]) {
@@ -340,6 +403,8 @@ export default function ManageAccountScreen() {
     setLast4('');
     setCreditLimit('');
     setDueDay('');
+    setReminderEnabled(true);
+    setReminderDaysBefore('3');
     setFeeMonth('');
     setTypeError(null);
   };
@@ -357,6 +422,8 @@ export default function ManageAccountScreen() {
     setBalance('');
     setCreditLimit('');
     setDueDay('');
+    setReminderEnabled(true);
+    setReminderDaysBefore('3');
     setFeeMonth('');
     setIsDefault(false);
     setSaveError(null);
@@ -381,8 +448,17 @@ export default function ManageAccountScreen() {
         color: selectedColor,
         provider: selectedIssuer?.name || issuerQuery.trim(),
         identifier: last4,
+        provider_id: selectedIssuer?.id || '',
+        last4:
+          selectedType === 'bank' || selectedType === 'credit_card' || selectedType === 'debit_card'
+            ? last4
+            : '',
+        upi_handle: selectedType === 'upi' ? last4 : '',
+        wallet_nickname: selectedType === 'wallet' ? last4 : '',
         credit_limit: parseFloat(creditLimit) || 0,
         due_day: parseInt(dueDay) || 0,
+        reminder_enabled: reminderEnabled,
+        reminder_days_before: Math.min(30, Math.max(0, parseInt(reminderDaysBefore) || 0)),
         fee_month: feeMonth,
         balance: parseFloat(balance) || 0,
         is_default: isDefault,
@@ -420,6 +496,11 @@ export default function ManageAccountScreen() {
         color: createdAccount.color,
         provider: createdAccount.provider,
         identifier: createdAccount.identifier,
+        provider_id: createdAccount.provider_id,
+        last4: createdAccount.last4,
+        upi_handle: createdAccount.upi_handle,
+        wallet_nickname: createdAccount.wallet_nickname,
+        account_nickname: createdAccount.account_nickname,
         credit_limit: createdAccount.credit_limit,
         due_day: createdAccount.due_day,
         fee_month: createdAccount.fee_month,
@@ -435,7 +516,6 @@ export default function ManageAccountScreen() {
     }
   };
 
-  const providerOptions = useMemo(() => ACCOUNT_PROVIDER_OPTIONS[selectedType] ?? [], [selectedType]);
   const detailCopy = ACCOUNT_DETAIL_COPY[selectedType];
 
   const filteredIssuers = useMemo(() => {
@@ -450,7 +530,11 @@ export default function ManageAccountScreen() {
   };
 
   const updateIdentifier = (value: string) => {
-    if (selectedType === 'bank' || selectedType === 'credit_card' || selectedType === 'debit_card') {
+    if (
+      selectedType === 'bank' ||
+      selectedType === 'credit_card' ||
+      selectedType === 'debit_card'
+    ) {
       setLast4(value.replace(/[^0-9]/g, '').slice(0, 4));
       return;
     }
@@ -465,27 +549,27 @@ export default function ManageAccountScreen() {
     title: string
   ) => (
     <AnimatedBottomSheet visible={visible} onClose={onClose}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <ThemedText style={styles.modalTitle}>{title}</ThemedText>
-            <TouchableOpacity onPress={onClose}>
-              <MaterialCommunityIcons name="close" size={24} color={theme.text} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.modalList}>
-            {data.map((item) => (
-              <TouchableOpacity
-                key={item}
-                style={styles.modalItem}
-                onPress={() => {
-                  onSelect(item);
-                  onClose();
-                }}>
-                <ThemedText style={styles.modalItemText}>{item}</ThemedText>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+      <View style={styles.modalContent}>
+        <View style={styles.modalHeader}>
+          <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+          <TouchableOpacity onPress={onClose}>
+            <MaterialCommunityIcons name="close" size={24} color={theme.text} />
+          </TouchableOpacity>
         </View>
+        <ScrollView style={styles.modalList}>
+          {data.map((item) => (
+            <TouchableOpacity
+              key={item}
+              style={styles.modalItem}
+              onPress={() => {
+                onSelect(item);
+                onClose();
+              }}>
+              <ThemedText style={styles.modalItemText}>{item}</ThemedText>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
     </AnimatedBottomSheet>
   );
 
@@ -618,11 +702,12 @@ export default function ManageAccountScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setStep(2)}
-            style={[styles.saveButton, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+            style={[
+              styles.saveButton,
+              { backgroundColor: theme.accent, shadowColor: theme.accent },
+            ]}
             disabled={isSaving}>
-            <ThemedText style={styles.saveButtonText}>
-              Continue
-            </ThemedText>
+            <ThemedText style={styles.saveButtonText}>Continue</ThemedText>
             {isSaving ? (
               <ActivityIndicator size="small" color="white" />
             ) : (
@@ -659,7 +744,11 @@ export default function ManageAccountScreen() {
                     styles.mascotAvatar,
                     { backgroundColor: '#FFEEED', width: 56, height: 56, borderRadius: 28 },
                   ]}>
-                  <MaterialCommunityIcons name="face-woman-outline" size={32} color={theme.accent} />
+                  <MaterialCommunityIcons
+                    name="face-woman-outline"
+                    size={32}
+                    color={theme.accent}
+                  />
                 </View>
               </View>
             </View>
@@ -816,6 +905,54 @@ export default function ManageAccountScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            <TouchableOpacity
+              accessibilityRole="switch"
+              accessibilityState={{ checked: reminderEnabled }}
+              onPress={() => setReminderEnabled((current) => !current)}
+              style={[styles.inputContainerSmall, { marginTop: 20 }]}>
+              <MaterialCommunityIcons
+                name={reminderEnabled ? 'bell-ring-outline' : 'bell-off-outline'}
+                size={24}
+                color={reminderEnabled ? theme.accent : '#AAB7C6'}
+                style={styles.inputIcon}
+              />
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.dropdownTextSmall}>Due reminder</ThemedText>
+                <ThemedText style={[styles.labelSmall, { marginTop: 2, marginBottom: 0 }]}>
+                  {reminderEnabled ? 'Enabled for this card' : 'Off for this card'}
+                </ThemedText>
+              </View>
+              <MaterialCommunityIcons
+                name={reminderEnabled ? 'toggle-switch' : 'toggle-switch-off-outline'}
+                size={34}
+                color={reminderEnabled ? theme.accent : '#AAB7C6'}
+              />
+            </TouchableOpacity>
+
+            {reminderEnabled && (
+              <>
+                <ThemedText style={styles.labelSmall}>Remind me this many days before</ThemedText>
+                <View style={styles.inputContainerSmall}>
+                  <MaterialCommunityIcons
+                    name="calendar-clock-outline"
+                    size={24}
+                    color={theme.accent}
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    value={reminderDaysBefore}
+                    onChangeText={(value) =>
+                      setReminderDaysBefore(value.replace(/[^0-9]/g, '').slice(0, 2))
+                    }
+                    placeholder="3"
+                    placeholderTextColor="#AAB7C6"
+                    keyboardType="number-pad"
+                    style={styles.textInputSmall}
+                  />
+                </View>
+              </>
+            )}
           </ScrollView>
 
           {/* Footer Step 2 */}
@@ -832,7 +969,10 @@ export default function ManageAccountScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSave}
-                style={[styles.saveButton, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+                style={[
+                  styles.saveButton,
+                  { backgroundColor: theme.accent, shadowColor: theme.accent },
+                ]}
                 disabled={isSaving}>
                 <ThemedText style={styles.saveButtonText}>
                   {isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Done 🎉'}
@@ -914,7 +1054,13 @@ export default function ManageAccountScreen() {
               <View style={styles.searchWrapper}>
                 <View style={styles.dropdownContainer}>
                   <MaterialCommunityIcons
-                    name={selectedType === 'upi' ? 'qrcode-scan' : selectedType === 'wallet' ? 'wallet-outline' : 'bank-outline'}
+                    name={
+                      selectedType === 'upi'
+                        ? 'qrcode-scan'
+                        : selectedType === 'wallet'
+                          ? 'wallet-outline'
+                          : 'bank-outline'
+                    }
                     size={24}
                     color={theme.accent}
                     style={styles.inputIcon}
@@ -994,7 +1140,9 @@ export default function ManageAccountScreen() {
                   placeholder={detailCopy.identifierPlaceholder}
                   placeholderTextColor="#AAB7C6"
                   keyboardType={
-                    selectedType === 'bank' || selectedType === 'debit_card' ? 'number-pad' : 'default'
+                    selectedType === 'bank' || selectedType === 'debit_card'
+                      ? 'number-pad'
+                      : 'default'
                   }
                   autoCapitalize="none"
                   style={styles.textInput}
@@ -1017,7 +1165,10 @@ export default function ManageAccountScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSave}
-              style={[styles.saveButton, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+              style={[
+                styles.saveButton,
+                { backgroundColor: theme.accent, shadowColor: theme.accent },
+              ]}
               disabled={isSaving}>
               <ThemedText style={styles.saveButtonText}>
                 {isSaving ? 'Saving...' : isEditing ? 'Save Changes' : 'Finish Setup'}
@@ -1090,7 +1241,11 @@ export default function ManageAccountScreen() {
                 <ThemedText style={styles.secondaryFullWidthText}>
                   Complete {missingSetupCount} detail{missingSetupCount > 1 ? 's' : ''}
                 </ThemedText>
-                <MaterialCommunityIcons name="clipboard-check-outline" size={20} color={theme.accent} />
+                <MaterialCommunityIcons
+                  name="clipboard-check-outline"
+                  size={20}
+                  color={theme.accent}
+                />
               </TouchableOpacity>
             )}
             {createdAccount && !createdAccount.is_default && (
@@ -1130,7 +1285,9 @@ export default function ManageAccountScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.background }]}
+      edges={['top', 'bottom']}>
       <View style={styles.container}>
         {isLoadingAccount ? (
           <SkeletonFrame

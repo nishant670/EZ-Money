@@ -7,7 +7,7 @@ import {
   useAudioRecorder,
 } from 'expo-audio';
 import { File } from 'expo-file-system';
-import { useRouter, useFocusEffect, useScrollToTop } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams, useScrollToTop } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,10 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { AnswerCard } from '@/components/home/AnswerCard';
-import {
-  CAPTURE_COLLAPSED_HEIGHT,
-  CollapsibleCapture,
-} from '@/components/home/CollapsibleCapture';
+import { CAPTURE_COLLAPSED_HEIGHT, CollapsibleCapture } from '@/components/home/CollapsibleCapture';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { MonthStrip } from '@/components/home/MonthStrip';
 import { QuickPrompts } from '@/components/home/QuickPrompts';
@@ -55,7 +52,7 @@ import {
   formatApiDate,
   formatDateLabel,
   groupTransactionsBySection,
-  loadTransactions,
+  loadTransactionPage,
   mapEntryToTransaction,
   normalizeDateLabel,
   parseDateLabel,
@@ -74,10 +71,10 @@ import {
 import {
   fetchAccounts as loadAccounts,
   getAccountTypeForPaymentMode,
-  getAutoAccountPayloadForPaymentMode,
   getPreferredAccountForPaymentMode,
-  saveAccount,
+  suggestAccountFromTransaction,
   type Account,
+  type AccountSuggestion,
 } from '@/lib/accounts';
 import { createEntry } from '@/lib/entries';
 import { haptics } from '@/lib/haptics';
@@ -115,6 +112,7 @@ import { inferNextSubscriptionDate } from '@/lib/subscription-schedule';
 import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { updateAndroidMonthWidget } from '@/lib/android-widget';
 import {
   TransactionFormModal,
   type AiReviewMetadata,
@@ -223,6 +221,16 @@ export default function HomeScreen() {
   const theme = themeTokens.colors;
   const isDark = themeTokens.mode === 'dark';
   const router = useRouter();
+  const { captureFile } = useLocalSearchParams<{ captureFile?: string | string[] }>();
+  const consumedCaptureFile = useRef<string | null>(null);
+  /**
+   * A recording handed over by the quick-capture tile or the widget, waiting to
+   * be sent. It cannot be submitted in the same effect that receives it, because
+   * `submitPrompt` reads the recording out of state and would still see the
+   * previous value; the flag lets the send happen on the render after the URI
+   * has actually landed.
+   */
+  const captureAwaitingSubmit = useRef(false);
   const { token, user } = useAuthStore();
   const smartSorting = useAppSettingsStore((state) => state.smartSorting);
   const isStealthMode = !!user?.stealth_mode;
@@ -266,6 +274,7 @@ export default function HomeScreen() {
   );
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountSuggestion, setAccountSuggestion] = useState<AccountSuggestion | null>(null);
   const [splitFriends, setSplitFriends] = useState<SplitFriend[]>([]);
   const [splitGroups, setSplitGroups] = useState<SplitGroup[]>([]);
   const createBlankForm = useCallback(
@@ -297,6 +306,13 @@ export default function HomeScreen() {
   const [parseFailure, setParseFailure] = useState<ParseFailure | null>(null);
   const [isTextInputVisible, setIsTextInputVisible] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  /**
+   * How many entries the account actually holds, which is not the same as how
+   * many this screen drew. The feed is one page — 50 by the backend's default —
+   * so the guest prompt was offering to save "50 transactions" to anyone with
+   * more than that, and the count is the whole point of that sentence.
+   */
+  const [entryTotal, setEntryTotal] = useState(0);
   const [isEntriesLoading, setIsEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
   const [monthDashboard, setMonthDashboard] = useState<DashboardResponse | null>(null);
@@ -501,8 +517,10 @@ export default function HomeScreen() {
       if (!silent) setIsEntriesLoading(true);
       setEntriesError(null);
       try {
-        const mapped = await loadTransactions(token);
+        const { transactions: page, total } = await loadTransactionPage(token);
+        const mapped = [...page].sort((a, b) => (b.occurredAt ?? 0) - (a.occurredAt ?? 0));
         setTransactions(mapped);
+        setEntryTotal(total);
       } catch (error) {
         setEntriesError(getFriendlyErrorMessage(error, 'Unable to load entries right now.'));
       } finally {
@@ -530,7 +548,9 @@ export default function HomeScreen() {
       }
       if (!silent) setIsMonthLoading(true);
       try {
-        setMonthDashboard(await fetchDashboard(token));
+        const dashboard = await fetchDashboard(token);
+        setMonthDashboard(dashboard);
+        updateAndroidMonthWidget(dashboard.summary.total_spent, dashboard.period.start);
       } catch {
         setMonthDashboard(null);
       } finally {
@@ -605,7 +625,7 @@ export default function HomeScreen() {
         if (!notification) return;
         Alert.alert(notification.title, notification.body, [
           { text: 'Later', style: 'cancel' },
-          { text: 'View Budget Watch', onPress: () => router.push('/budgets') },
+          { text: 'View Budgets', onPress: () => router.push('/budgets') },
         ]);
         await fetchNotificationCount();
       } catch {
@@ -667,7 +687,7 @@ export default function HomeScreen() {
    */
   const showGuestUpgradePrompt = shouldShowGuestUpgradePrompt({
     isGuest: !!user?.is_guest,
-    entryCount: transactions.length,
+    entryCount: Math.max(entryTotal, transactions.length),
     isSnoozed: isGuestUpgradeSnoozed,
   });
 
@@ -729,6 +749,19 @@ export default function HomeScreen() {
       await startRecording();
     }
   }, [isRecording, startRecording, stopRecording]);
+
+  useEffect(() => {
+    const uri = Array.isArray(captureFile) ? captureFile[0] : captureFile;
+    if (!uri || consumedCaptureFile.current === uri) return;
+    consumedCaptureFile.current = uri;
+    setErrorMessage(null);
+    setParseFailure(null);
+    setRecordedUri(uri);
+    captureAwaitingSubmit.current = true;
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    router.setParams({ captureFile: '' });
+  }, [captureFile, router, scrollRef]);
+
 
   /**
    * Tapping the collapsed pill puts the card back and the cursor in it.
@@ -823,6 +856,7 @@ export default function HomeScreen() {
     setAiReview(null);
     setAiSourceText('');
     setAiInputSource('text');
+    setAccountSuggestion(null);
     createIdempotencyKey.current = null;
     setForm(createBlankForm());
     setModalMode('manual');
@@ -848,22 +882,9 @@ export default function HomeScreen() {
         return preferredAccount;
       }
 
-      const autoAccountPayload = getAutoAccountPayloadForPaymentMode(formData.mode);
-      if (!autoAccountPayload) {
-        throw new Error('Please select an account.');
-      }
-      if (!token) {
-        throw new Error('Please sign in again before saving this transaction.');
-      }
-
-      const createdAccount = await saveAccount(token, autoAccountPayload);
-      setAccounts((current) => [
-        createdAccount,
-        ...current.filter((account) => account.id !== createdAccount.id),
-      ]);
-      return createdAccount;
+      throw new Error('Please select an account before saving this transaction.');
     },
-    [accounts, token]
+    [accounts]
   );
 
   const handleConfirmEntry = useCallback(
@@ -941,7 +962,8 @@ export default function HomeScreen() {
             autopay: formData.subscriptionAutopay,
             payment_mode: formData.mode,
             transaction_tag: formData.tag || 'Subscription',
-            purpose_type: formData.tag.toLowerCase() === 'investment' ? 'investment' : 'normal_spend',
+            purpose_type:
+              formData.tag.toLowerCase() === 'investment' ? 'investment' : 'normal_spend',
             notes: formData.subscriptionNotes.trim(),
             account_id: resolvedAccount.id,
           });
@@ -957,6 +979,7 @@ export default function HomeScreen() {
         createIdempotencyKey.current = null;
         setForm(createBlankForm());
         setAiSourceText('');
+        setAccountSuggestion(null);
         setIsEditOpen(false);
         notifyTransactionsChanged();
         if (formData.type === 'Expense') {
@@ -983,224 +1006,258 @@ export default function HomeScreen() {
     ]
   );
 
-  const submitPrompt = useCallback(async (overrideText?: string) => {
-    if (isSubmitting) return;
-    const trimmed = (overrideText ?? inputText).trim();
-    // A re-asked suggestion is text, so any pending recording is not part of it.
-    const audioUri = overrideText ? null : recordedUri;
-    if (!trimmed && !audioUri) {
-      setErrorMessage('Please type or record your expense first.');
-      return;
-    }
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setParseFailure(null);
-    setCreditAction(null);
-    setAnswer(null);
-    lastPromptText.current = overrideText ? trimmed : null;
-    // Typed text that reads as a question waits behind an inline indicator
-    // instead of the draft sheet. The server still decides what it was — this
-    // only decides where the wait is shown.
-    const deferSheet = Boolean(trimmed) && !audioUri && looksLikeQuestion(trimmed);
-    setPendingQuestion(deferSheet ? trimmed : null);
-    // The phrase is known before the request goes out, so the sheet can show it
-    // from the first frame — during the wait it is the only thing on screen
-    // saying *which* capture is being read. The rest of the review metadata
-    // arrives with the parse.
-    setAiSourceText(trimmed);
-    setAiInputSource(audioUri ? 'voice' : 'text');
-    setAiReview({
-      sourceText: trimmed,
-      inputSource: audioUri ? 'voice' : 'text',
-    });
-    setIsParsing(true);
-    setModalMode('audio');
-    if (!deferSheet) {
-      setIsEditOpen(true);
-    }
-    try {
-      let audio:
-        | {
-            file: File;
-            name: string;
-          }
-        | undefined;
-      if (trimmed) {
-        audio = undefined;
-      } else if (audioUri) {
-        const extension = audioUri.split('.').pop();
-        const fileName = `recording.${extension ?? 'm4a'}`;
-        audio = {
-          file: new File(audioUri),
-          name: fileName,
-        };
-      }
-      const result = await parseEntryDraft({ token, hintText: trimmed, audio });
-      void fetchCredits(true);
-      createIdempotencyKey.current = null;
-
-      // The question direction. An answer is not a transaction and must never
-      // reach the form — the sheet goes back down and the card takes the feed's
-      // first slot instead.
-      if (isParseAnswer(result)) {
-        setIsEditOpen(false);
-        setAiReview(null);
-        setPendingQuestion(null);
-        setAnswerSourceText(result.source_text ?? trimmed);
-        setAnswer(result.answer);
-        setInputText('');
-        setRecordedUri(null);
-        haptics.saved();
+  const submitPrompt = useCallback(
+    async (overrideText?: string) => {
+      if (isSubmitting) return;
+      const trimmed = (overrideText ?? inputText).trim();
+      // A re-asked suggestion is text, so any pending recording is not part of it.
+      const audioUri = overrideText ? null : recordedUri;
+      if (!trimmed && !audioUri) {
+        setErrorMessage('Please type or record your expense first.');
         return;
       }
-
-      const data: ParseResponse = result;
-      // A capture that was mistaken for a question needs the sheet it did not
-      // get; opening it here costs one frame rather than a wrong destination.
-      setPendingQuestion(null);
-      if (deferSheet) {
-        setIsEditOpen(true);
-      }
-      setAiSourceText(data.source_text ?? trimmed);
+      setIsSubmitting(true);
+      setErrorMessage(null);
+      setParseFailure(null);
+      setCreditAction(null);
+      setAnswer(null);
+      lastPromptText.current = overrideText ? trimmed : null;
+      // Typed text that reads as a question waits behind an inline indicator
+      // instead of the draft sheet. The server still decides what it was — this
+      // only decides where the wait is shown.
+      const deferSheet = Boolean(trimmed) && !audioUri && looksLikeQuestion(trimmed);
+      setPendingQuestion(deferSheet ? trimmed : null);
+      // The phrase is known before the request goes out, so the sheet can show it
+      // from the first frame — during the wait it is the only thing on screen
+      // saying *which* capture is being read. The rest of the review metadata
+      // arrives with the parse.
+      setAiSourceText(trimmed);
       setAiInputSource(audioUri ? 'voice' : 'text');
       setAiReview({
-        confidence: data.confidence,
-        needsConfirmation: data.needs_confirmation,
-        missingFields: smartSorting
-          ? data.missing_fields
-          : Array.from(
-              new Set([...(data.missing_fields ?? []), 'title', 'mode', 'category', 'tag'])
-            ),
-        clarifications: data.clarifications,
-        smartSortingDisabled: !smartSorting,
-        // What the AI worked from, so the review sheet can show it back. A
-        // wrong field is usually a misheard word, and the phrase is the only
-        // place that is visible.
-        sourceText: data.source_text ?? trimmed,
+        sourceText: trimmed,
         inputSource: audioUri ? 'voice' : 'text',
       });
-      setForm((prev) => {
-        const missing = new Set(data.missing_fields ?? []);
-        const formattedDate =
-          missing.has('date') || !data.date
-            ? formatDateLabel(new Date())
-            : normalizeDateLabel(data.date, formatDateLabel(new Date()));
-        const tagValue = data.tag ?? data.tags?.[0] ?? '';
-        const newType = missing.has('type') ? '' : (toTitleCase(data.type) ?? '');
-        const splitDraft = resolveSplitDraft(data, splitFriends, splitGroups);
-        const subscriptionCandidate = data.subscription_candidate;
-        const subscriptionInterval = isBillingInterval(subscriptionCandidate?.billing_interval)
-          ? subscriptionCandidate.billing_interval
-          : '';
-        const subscriptionPaidDate =
-          subscriptionCandidate?.last_charged_date ?? data.date ?? formatApiDate(new Date());
-        const inferredNextDueDate =
-          subscriptionCandidate?.next_due_date ??
-          inferNextSubscriptionDate(subscriptionPaidDate, subscriptionInterval);
-        return {
-          ...prev,
-          title: smartSorting && !missing.has('title') ? (data.title ?? '') : '',
-          amount:
-            missing.has('amount') || data.amount == null ? '' : toAmountInputValue(data.amount),
-          currency: data.currency ?? prev.currency,
-          // The parser emits `HH:MM`; the form shows and stores a display string.
-          time: formatTime(data.time) ?? prev.time,
-          type: newType,
-          mode: smartSorting && !missing.has('mode') ? (data.mode ?? '') : '',
-          category: smartSorting && !missing.has('category') ? (data.category ?? 'Misc') : 'Misc',
-          merchant: data.merchant ?? '',
-          notes: data.note ?? '',
-          date: formattedDate,
-          tag: smartSorting && tagValue ? (toTitleCase(tagValue) ?? '') : '',
-          splitEnabled: splitDraft.splitEnabled,
-          splitGroupId: splitDraft.splitGroupId,
-          splitGroupName: splitDraft.splitGroupName,
-          splitParticipants: splitDraft.splitParticipants,
-          subscriptionEnabled: Boolean(subscriptionCandidate),
-          subscriptionName: subscriptionCandidate?.name ?? data.merchant ?? data.title ?? '',
-          subscriptionMerchant: subscriptionCandidate?.merchant ?? data.merchant ?? '',
-          subscriptionCategory: subscriptionCandidate?.category ?? data.category ?? 'Misc',
-          subscriptionAmount:
-            subscriptionCandidate?.amount != null
-              ? toAmountInputValue(subscriptionCandidate.amount)
-              : data.amount != null
-                ? toAmountInputValue(data.amount)
-                : '',
-          subscriptionBillingInterval: subscriptionInterval,
-          subscriptionNextDueDate: inferredNextDueDate,
-          subscriptionReminderDays:
-            subscriptionCandidate?.reminder_days != null
-              ? String(subscriptionCandidate.reminder_days)
-              : '3',
-          subscriptionCancelBeforeDue: Boolean(subscriptionCandidate?.cancel_before_due),
-          subscriptionCancelOnDate: subscriptionCandidate?.cancel_on_date ?? '',
-          subscriptionAutopay: Boolean(subscriptionCandidate?.autopay),
-          subscriptionNotes: subscriptionCandidate?.notes ?? '',
-        };
-      });
-      setInputText('');
-      setRecordedUri(null);
-    } catch (error) {
-      // The sheet came up before the request went out, so a failure has to take
-      // it back down — the credit card and the error banner both live on Home,
-      // behind it.
-      setIsEditOpen(false);
-      setPendingQuestion(null);
-      if (error instanceof ParseApiError) {
-        /*
-         * A guest running out of credits is the one moment they have a reason
-         * to make an account, so the prompt says what signing in buys rather
-         * than just reporting the balance — and it points at sign-in, not at a
-         * plans screen a guest cannot buy from anyway.
-         */
-        const isGuestUser = !!user?.is_guest;
-        if (error.code === 'insufficient_ai_credits') {
-          setCreditAction({
-            title: isGuestUser ? 'You have used up your guest AI credits' : 'AI credits are low',
-            message: isGuestUser
-              ? `Dear guest, this capture needs ${error.requiredCredits ?? 5} credits and you have ${error.availableCredits ?? 0} left. Sign in to keep going with more AI credits — everything you have added so far comes with you.`
-              : `This capture needs ${error.requiredCredits ?? 5} credits. You have ${error.availableCredits ?? 0} available.`,
-            actionLabel: isGuestUser ? 'Sign in for more credits' : 'View plans',
-            action: isGuestUser ? 'login' : 'upgrade',
-          });
-          void fetchCredits(true);
-          return;
-        }
-        if (error.code === 'daily_ai_limit_reached') {
-          const usedToday = error.usedToday ?? billingStatus?.credits.daily_credits_used ?? 0;
-          const dailyLimit = error.dailyLimit ?? billingStatus?.credits.daily_limit ?? 0;
-          setCreditAction({
-            title: isGuestUser
-              ? 'You have reached your guest AI limit'
-              : 'Daily AI limit reached',
-            message: isGuestUser
-              ? `Dear guest, you have used all ${dailyLimit} AI credits for today. Sign in to continue enjoying more AI credits — everything you have added so far comes with you.`
-              : `You used ${usedToday} of ${dailyLimit} credits today.`,
-            actionLabel: isGuestUser ? 'Sign in for more credits' : 'View plans',
-            action: isGuestUser ? 'login' : 'upgrade',
-          });
-          void fetchCredits(true);
-          return;
-        }
+      setIsParsing(true);
+      setModalMode('audio');
+      if (!deferSheet) {
+        setIsEditOpen(true);
       }
-      setParseFailure(describeParseFailure(error));
-    } finally {
-      setIsParsing(false);
-      setIsSubmitting(false);
-    }
-  }, [
-    billingStatus?.credits.daily_credits_used,
-    billingStatus?.credits.daily_limit,
-    fetchCredits,
-    inputText,
-    isSubmitting,
-    recordedUri,
-    smartSorting,
-    splitFriends,
-    splitGroups,
-    token,
-    user?.is_guest,
-  ]);
+      try {
+        let audio:
+          | {
+              file: File;
+              name: string;
+            }
+          | undefined;
+        if (trimmed) {
+          audio = undefined;
+        } else if (audioUri) {
+          const extension = audioUri.split('.').pop();
+          const fileName = `recording.${extension ?? 'm4a'}`;
+          audio = {
+            file: new File(audioUri),
+            name: fileName,
+          };
+        }
+        const result = await parseEntryDraft({ token, hintText: trimmed, audio });
+        void fetchCredits(true);
+        createIdempotencyKey.current = null;
+
+        // The question direction. An answer is not a transaction and must never
+        // reach the form — the sheet goes back down and the card takes the feed's
+        // first slot instead.
+        if (isParseAnswer(result)) {
+          setIsEditOpen(false);
+          setAiReview(null);
+          setAccountSuggestion(null);
+          setPendingQuestion(null);
+          setAnswerSourceText(result.source_text ?? trimmed);
+          setAnswer(result.answer);
+          setInputText('');
+          setRecordedUri(null);
+          haptics.saved();
+          return;
+        }
+
+        const data: ParseResponse = result;
+        // A capture that was mistaken for a question needs the sheet it did not
+        // get; opening it here costs one frame rather than a wrong destination.
+        setPendingQuestion(null);
+        if (deferSheet) {
+          setIsEditOpen(true);
+        }
+        setAiSourceText(data.source_text ?? trimmed);
+        setAiInputSource(audioUri ? 'voice' : 'text');
+        setAccountSuggestion(
+          suggestAccountFromTransaction(
+            {
+              mode: data.mode,
+              accountHint: data.account_hint,
+              cardNetwork: data.card_network,
+            },
+            accounts
+          )
+        );
+        setAiReview({
+          confidence: data.confidence,
+          needsConfirmation: data.needs_confirmation,
+          missingFields: smartSorting
+            ? data.missing_fields
+            : Array.from(
+                new Set([...(data.missing_fields ?? []), 'title', 'mode', 'category', 'tag'])
+              ),
+          clarifications: data.clarifications,
+          smartSortingDisabled: !smartSorting,
+          // What the AI worked from, so the review sheet can show it back. A
+          // wrong field is usually a misheard word, and the phrase is the only
+          // place that is visible.
+          sourceText: data.source_text ?? trimmed,
+          inputSource: audioUri ? 'voice' : 'text',
+        });
+        setForm((prev) => {
+          const missing = new Set(data.missing_fields ?? []);
+          const formattedDate =
+            missing.has('date') || !data.date
+              ? formatDateLabel(new Date())
+              : normalizeDateLabel(data.date, formatDateLabel(new Date()));
+          const tagValue = data.tag ?? data.tags?.[0] ?? '';
+          const newType = missing.has('type') ? '' : (toTitleCase(data.type) ?? '');
+          const splitDraft = resolveSplitDraft(data, splitFriends, splitGroups);
+          const subscriptionCandidate = data.subscription_candidate;
+          const subscriptionInterval = isBillingInterval(subscriptionCandidate?.billing_interval)
+            ? subscriptionCandidate.billing_interval
+            : '';
+          const subscriptionPaidDate =
+            subscriptionCandidate?.last_charged_date ?? data.date ?? formatApiDate(new Date());
+          const inferredNextDueDate =
+            subscriptionCandidate?.next_due_date ??
+            inferNextSubscriptionDate(subscriptionPaidDate, subscriptionInterval);
+          return {
+            ...prev,
+            title: smartSorting && !missing.has('title') ? (data.title ?? '') : '',
+            amount:
+              missing.has('amount') || data.amount == null ? '' : toAmountInputValue(data.amount),
+            currency: data.currency ?? prev.currency,
+            // The parser emits `HH:MM`; the form shows and stores a display string.
+            time: formatTime(data.time) ?? prev.time,
+            type: newType,
+            mode: smartSorting && !missing.has('mode') ? (data.mode ?? '') : '',
+            category: smartSorting && !missing.has('category') ? (data.category ?? 'Misc') : 'Misc',
+            merchant: data.merchant ?? '',
+            notes: data.note ?? '',
+            date: formattedDate,
+            tag: smartSorting && tagValue ? (toTitleCase(tagValue) ?? '') : '',
+            splitEnabled: splitDraft.splitEnabled,
+            splitGroupId: splitDraft.splitGroupId,
+            splitGroupName: splitDraft.splitGroupName,
+            splitParticipants: splitDraft.splitParticipants,
+            subscriptionEnabled: Boolean(subscriptionCandidate),
+            subscriptionName: subscriptionCandidate?.name ?? data.merchant ?? data.title ?? '',
+            subscriptionMerchant: subscriptionCandidate?.merchant ?? data.merchant ?? '',
+            subscriptionCategory: subscriptionCandidate?.category ?? data.category ?? 'Misc',
+            subscriptionAmount:
+              subscriptionCandidate?.amount != null
+                ? toAmountInputValue(subscriptionCandidate.amount)
+                : data.amount != null
+                  ? toAmountInputValue(data.amount)
+                  : '',
+            subscriptionBillingInterval: subscriptionInterval,
+            subscriptionNextDueDate: inferredNextDueDate,
+            subscriptionReminderDays:
+              subscriptionCandidate?.reminder_days != null
+                ? String(subscriptionCandidate.reminder_days)
+                : '3',
+            subscriptionCancelBeforeDue: Boolean(subscriptionCandidate?.cancel_before_due),
+            subscriptionCancelOnDate: subscriptionCandidate?.cancel_on_date ?? '',
+            subscriptionAutopay: Boolean(subscriptionCandidate?.autopay),
+            subscriptionNotes: subscriptionCandidate?.notes ?? '',
+          };
+        });
+        setInputText('');
+        setRecordedUri(null);
+      } catch (error) {
+        // The sheet came up before the request went out, so a failure has to take
+        // it back down — the credit card and the error banner both live on Home,
+        // behind it.
+        setIsEditOpen(false);
+        setPendingQuestion(null);
+        if (error instanceof ParseApiError) {
+          /*
+           * A guest running out of credits is the one moment they have a reason
+           * to make an account, so the prompt says what signing in buys rather
+           * than just reporting the balance — and it points at sign-in, not at a
+           * plans screen a guest cannot buy from anyway.
+           */
+          const isGuestUser = !!user?.is_guest;
+          if (error.code === 'insufficient_ai_credits') {
+            setCreditAction({
+              title: isGuestUser ? 'You have used up your guest AI credits' : 'AI credits are low',
+              message: isGuestUser
+                ? `Dear guest, this capture needs ${error.requiredCredits ?? 5} credits and you have ${error.availableCredits ?? 0} left. Sign in to keep going with more AI credits — everything you have added so far comes with you.`
+                : `This capture needs ${error.requiredCredits ?? 5} credits. You have ${error.availableCredits ?? 0} available.`,
+              actionLabel: isGuestUser ? 'Sign in for more credits' : 'View plans',
+              action: isGuestUser ? 'login' : 'upgrade',
+            });
+            void fetchCredits(true);
+            return;
+          }
+          if (error.code === 'daily_ai_limit_reached') {
+            const usedToday = error.usedToday ?? billingStatus?.credits.daily_credits_used ?? 0;
+            const dailyLimit = error.dailyLimit ?? billingStatus?.credits.daily_limit ?? 0;
+            setCreditAction({
+              title: isGuestUser
+                ? 'You have reached your guest AI limit'
+                : 'Daily AI limit reached',
+              message: isGuestUser
+                ? `Dear guest, you have used all ${dailyLimit} AI credits for today. Sign in to continue enjoying more AI credits — everything you have added so far comes with you.`
+                : `You used ${usedToday} of ${dailyLimit} credits today.`,
+              actionLabel: isGuestUser ? 'Sign in for more credits' : 'View plans',
+              action: isGuestUser ? 'login' : 'upgrade',
+            });
+            void fetchCredits(true);
+            return;
+          }
+        }
+        setParseFailure(describeParseFailure(error));
+      } finally {
+        setIsParsing(false);
+        setIsSubmitting(false);
+      }
+    },
+    [
+      accounts,
+      billingStatus?.credits.daily_credits_used,
+      billingStatus?.credits.daily_limit,
+      fetchCredits,
+      inputText,
+      isSubmitting,
+      recordedUri,
+      smartSorting,
+      splitFriends,
+      splitGroups,
+      token,
+      user?.is_guest,
+    ]
+  );
+
+  /**
+   * Send a handed-over recording without waiting to be asked.
+   *
+   * The button that produces it says **Stop and review**, and until this existed
+   * it stopped and showed nothing: the audio arrived, attached itself to the
+   * capture card, and sat there. Someone who spoke a transaction into the widget
+   * got dropped on Home with no sign anything had happened, which reads as the
+   * feature being broken rather than waiting.
+   *
+   * In-app recording is deliberately left alone — there the user is already
+   * looking at the card and holding the send control, so submitting for them
+   * would take the decision away at the one moment they can see it.
+   */
+  useEffect(() => {
+    if (!captureAwaitingSubmit.current || !recordedUri) return;
+    captureAwaitingSubmit.current = false;
+    void submitPrompt();
+  }, [recordedUri, submitPrompt]);
 
   const handleSubmitPrompt = useCallback(() => submitPrompt(), [submitPrompt]);
 
@@ -1290,79 +1347,83 @@ export default function HomeScreen() {
             rowsAbove += group.data.length;
 
             return (
-            // Changing the month rewrites the feed under whatever survives it.
-            <Animated.View key={group.title} layout={motion.reflow()}>
-            <Card
-              compact
-              style={{
-                overflow: 'hidden',
-                padding: 0,
-                marginBottom:
-                  groupIndex === groupedRecentTransactions.length - 1 ? 0 : themeTokens.spacing.md,
-              }}>
-              <View
-                style={{
-                  paddingHorizontal: themeTokens.spacing.lg,
-                  paddingTop: themeTokens.spacing.md,
-                  paddingBottom: themeTokens.spacing.xs,
-                }}>
-                <ThemedText
-                  variant="micro"
+              // Changing the month rewrites the feed under whatever survives it.
+              <Animated.View key={group.title} layout={motion.reflow()}>
+                <Card
+                  compact
                   style={{
-                    color: isDark ? 'rgba(255,255,255,0.5)' : '#9A9697',
-                    textTransform: 'uppercase',
-                    letterSpacing: 1,
+                    overflow: 'hidden',
+                    padding: 0,
+                    marginBottom:
+                      groupIndex === groupedRecentTransactions.length - 1
+                        ? 0
+                        : themeTokens.spacing.md,
                   }}>
-                  {group.title}
-                </ThemedText>
-              </View>
-              {group.data.map((item, index) => {
-                const isLastInSection = index === group.data.length - 1;
-                return (
-                  <TransactionItem
-                    key={item.id}
-                    title={item.name}
-                    icon={item.icon}
-                    category={item.category}
-                    subtitle={item.accountName ?? item.mode ?? ''}
-                    amount={Math.abs(item.amount)}
-                    maskAmount={isStealthMode}
-                    date={item.timeLabel ?? item.dateLabel ?? ''}
-                    color={item.color}
-                    bgColor={item.bgColor}
-                    isIncome={item.entryType === 'income'}
-                    variant="list"
-                    isNew={item.id === newTransactionId}
-                    entranceIndex={groupOffset + index}
-                    showDivider={!isLastInSection}
-                    onPress={(origin) => {
-                      router.push({
-                        pathname: '/entry/[id]',
-                        params: {
-                          id: item.id,
-                          name: item.name,
-                          category: item.category,
-                          amount: toAmountString(Math.abs(item.amount)),
-                          entryType: item.entryType ?? 'expense',
-                          section: item.section,
-                          mode: item.mode ?? '',
-                          notes: item.notes ?? '',
-                          merchant: item.merchant ?? '',
-                          dateLabel: item.dateLabel ?? '',
-                          rawDate: item.rawDate ?? '',
-                          tag: item.tag ?? '',
-                          // C9 — the feed's rows travel into detail the same
-                          // way the transaction list's do.
-                          ...(origin?.icon ? { originIcon: encodeFrame(origin.icon) } : {}),
-                          ...(origin?.amount ? { originAmount: encodeFrame(origin.amount) } : {}),
-                        },
-                      });
-                    }}
-                  />
-                );
-              })}
-            </Card>
-            </Animated.View>
+                  <View
+                    style={{
+                      paddingHorizontal: themeTokens.spacing.lg,
+                      paddingTop: themeTokens.spacing.md,
+                      paddingBottom: themeTokens.spacing.xs,
+                    }}>
+                    <ThemedText
+                      variant="micro"
+                      style={{
+                        color: isDark ? 'rgba(255,255,255,0.5)' : '#9A9697',
+                        textTransform: 'uppercase',
+                        letterSpacing: 1,
+                      }}>
+                      {group.title}
+                    </ThemedText>
+                  </View>
+                  {group.data.map((item, index) => {
+                    const isLastInSection = index === group.data.length - 1;
+                    return (
+                      <TransactionItem
+                        key={item.id}
+                        title={item.name}
+                        icon={item.icon}
+                        category={item.category}
+                        subtitle={item.accountName ?? item.mode ?? ''}
+                        amount={Math.abs(item.amount)}
+                        maskAmount={isStealthMode}
+                        date={item.timeLabel ?? item.dateLabel ?? ''}
+                        color={item.color}
+                        bgColor={item.bgColor}
+                        isIncome={item.entryType === 'income'}
+                        variant="list"
+                        isNew={item.id === newTransactionId}
+                        entranceIndex={groupOffset + index}
+                        showDivider={!isLastInSection}
+                        onPress={(origin) => {
+                          router.push({
+                            pathname: '/entry/[id]',
+                            params: {
+                              id: item.id,
+                              name: item.name,
+                              category: item.category,
+                              amount: toAmountString(Math.abs(item.amount)),
+                              entryType: item.entryType ?? 'expense',
+                              section: item.section,
+                              mode: item.mode ?? '',
+                              notes: item.notes ?? '',
+                              merchant: item.merchant ?? '',
+                              dateLabel: item.dateLabel ?? '',
+                              rawDate: item.rawDate ?? '',
+                              tag: item.tag ?? '',
+                              // C9 — the feed's rows travel into detail the same
+                              // way the transaction list's do.
+                              ...(origin?.icon ? { originIcon: encodeFrame(origin.icon) } : {}),
+                              ...(origin?.amount
+                                ? { originAmount: encodeFrame(origin.amount) }
+                                : {}),
+                            },
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </Card>
+              </Animated.View>
             );
           })}
         </View>
@@ -1399,38 +1460,71 @@ export default function HomeScreen() {
             // which already exceeds it.
             ...(isCaptureCollapsible && viewportHeight > 0
               ? {
-                  minHeight:
-                    viewportHeight + captureExpandedHeight - CAPTURE_COLLAPSED_HEIGHT,
+                  minHeight: viewportHeight + captureExpandedHeight - CAPTURE_COLLAPSED_HEIGHT,
                 }
               : null),
           }}>
           {autopayReviews[0] ? (
-          <View className="mx-6 mb-4 rounded-3xl border p-4" style={{ backgroundColor: themeTokens.colors.card, borderColor: themeTokens.colors.accent }}>
-            <View className="flex-row items-start gap-3">
-              <MaterialCommunityIcons name="bank-check" size={24} color={themeTokens.colors.accent} />
-              <View className="flex-1">
-                <ThemedText className="font-black">Autopay transaction added</ThemedText>
-                <ThemedText className="mt-1 text-xs opacity-60">Review the recurring payment. It is already in your transaction list.</ThemedText>
-                <View className="mt-3 flex-row gap-2">
-                  <Pressable className="rounded-xl px-4 py-2" style={{ backgroundColor: themeTokens.colors.accent }} onPress={() => {
-                    const item = autopayReviews[0];
-                    if (!token) return;
-                    void confirmSubscriptionOccurrence(token, item.id).then(() => setAutopayReviews((items) => items.filter((entry) => entry.id !== item.id)));
-                  }}><ThemedText className="text-xs font-black text-white">Confirm</ThemedText></Pressable>
-                  <Pressable className="rounded-xl border px-4 py-2" style={{ borderColor: themeTokens.colors.accent }} onPress={() => {
-                    const item = autopayReviews[0];
-                    if (!token) return;
-                    void revertSubscriptionOccurrence(token, item.id).then((result) => router.push({ pathname: '/entry/[id]', params: { id: String(result.entry_id), edit: '1' } }));
-                  }}><ThemedText className="text-xs font-black" style={{ color: themeTokens.colors.accent }}>Correct / revert</ThemedText></Pressable>
+            <View
+              className="mx-6 mb-4 rounded-3xl border p-4"
+              style={{
+                backgroundColor: themeTokens.colors.card,
+                borderColor: themeTokens.colors.accent,
+              }}>
+              <View className="flex-row items-start gap-3">
+                <MaterialCommunityIcons
+                  name="bank-check"
+                  size={24}
+                  color={themeTokens.colors.accent}
+                />
+                <View className="flex-1">
+                  <ThemedText className="font-black">Autopay transaction added</ThemedText>
+                  <ThemedText className="mt-1 text-xs opacity-60">
+                    Review the recurring payment. It is already in your transaction list.
+                  </ThemedText>
+                  <View className="mt-3 flex-row gap-2">
+                    <Pressable
+                      className="rounded-xl px-4 py-2"
+                      style={{ backgroundColor: themeTokens.colors.accent }}
+                      onPress={() => {
+                        const item = autopayReviews[0];
+                        if (!token) return;
+                        void confirmSubscriptionOccurrence(token, item.id).then(() =>
+                          setAutopayReviews((items) =>
+                            items.filter((entry) => entry.id !== item.id)
+                          )
+                        );
+                      }}>
+                      <ThemedText className="text-xs font-black text-white">Confirm</ThemedText>
+                    </Pressable>
+                    <Pressable
+                      className="rounded-xl border px-4 py-2"
+                      style={{ borderColor: themeTokens.colors.accent }}
+                      onPress={() => {
+                        const item = autopayReviews[0];
+                        if (!token) return;
+                        void revertSubscriptionOccurrence(token, item.id).then((result) =>
+                          router.push({
+                            pathname: '/entry/[id]',
+                            params: { id: String(result.entry_id), edit: '1' },
+                          })
+                        );
+                      }}>
+                      <ThemedText
+                        className="text-xs font-black"
+                        style={{ color: themeTokens.colors.accent }}>
+                        Correct / revert
+                      </ThemedText>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             </View>
-          </View>
-        ) : null}
+          ) : null}
 
           {showGuestUpgradePrompt ? (
             <GuestUpgradePrompt
-              entryCount={transactions.length}
+              entryCount={Math.max(entryTotal, transactions.length)}
               onUpgrade={() => router.push('/auth?mode=link')}
               onDismiss={() => {
                 setIsGuestUpgradeSnoozed(true);
@@ -1590,6 +1684,8 @@ export default function HomeScreen() {
             <VoiceInputCard
               recorder={audioRecorder}
               onMicPress={handleToggleRecording}
+              onMicLongPress={() => router.push('/ask' as never)}
+              onAskPress={() => router.push('/ask' as never)}
               isRecording={isRecording}
               hasRecording={!!recordedUri}
               inputText={inputText}
@@ -1650,7 +1746,10 @@ export default function HomeScreen() {
 
       <TransactionFormModal
         visible={isEditOpen}
-        onClose={() => setIsEditOpen(false)}
+        onClose={() => {
+          setIsEditOpen(false);
+          setAccountSuggestion(null);
+        }}
         initialData={form}
         onSave={handleConfirmEntry}
         mode={modalMode}
@@ -1660,6 +1759,21 @@ export default function HomeScreen() {
         splitFriends={splitFriends}
         splitGroups={splitGroups}
         recentEntries={transactions}
+        accountSuggestion={accountSuggestion}
+        onCreateSuggestedAccount={(suggestion) => {
+          resumeDraftAfterAccounts.current = true;
+          setIsEditOpen(false);
+          router.push({
+            pathname: '/accounts/manage',
+            params: {
+              type: suggestion.type,
+              name: suggestion.name,
+              provider: suggestion.provider ?? '',
+              identifier: suggestion.identifier ?? '',
+              color: suggestion.color,
+            },
+          });
+        }}
         onDraftChange={setForm}
         onManageAccounts={() => {
           resumeDraftAfterAccounts.current = true;

@@ -114,9 +114,12 @@ export const monthlyReviewShareText = (review: MonthlyReview) => {
   const lines = [`${review.label} on Finnri`, ''];
 
   const comparison = describeMonthlyChange(review);
+  // The count has to be the rows the total is made of, so it reads the expense
+  // count and not every entry in the month. Older responses may not carry it.
+  const spentAcross = review.summary.expense_count ?? review.summary.transaction_count;
   lines.push(
-    `Spent ${formatMoney(review.summary.total_spent)} across ${review.summary.transaction_count} transaction${
-      review.summary.transaction_count === 1 ? '' : 's'
+    `Spent ${formatMoney(review.summary.total_spent)} across ${spentAcross} transaction${
+      spentAcross === 1 ? '' : 's'
     }${comparison ? ` — ${comparison}` : ''}.`
   );
 

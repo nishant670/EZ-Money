@@ -14,6 +14,7 @@ import 'react-native-reanimated';
 import '../global.css';
 
 import { FinnriSplashScreen } from '@/components/SplashScreen';
+import { TransactionDeleteProvider } from '@/components/transactions/TransactionDeleteProvider';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMotion } from '@/hooks/use-motion';
@@ -205,6 +206,7 @@ export default function RootLayout() {
           see `OnboardingScreenWrapper` for the reflow that cost. */}
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <ThemeProvider value={navigationTheme}>
+      <TransactionDeleteProvider>
       {showCustomSplash && <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />}
       <Stack
         screenOptions={{
@@ -258,6 +260,7 @@ export default function RootLayout() {
         <Stack.Screen name="subscriptions" />
         <Stack.Screen name="billing" />
         <Stack.Screen name="ai-usage" />
+        <Stack.Screen name="ask" />
         <Stack.Screen name="tools" />
         <Stack.Screen name="about-finnri" />
         <Stack.Screen name="help-support" />
@@ -279,6 +282,7 @@ export default function RootLayout() {
         />
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      </TransactionDeleteProvider>
       </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

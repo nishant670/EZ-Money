@@ -10,7 +10,6 @@ import {
   View,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,10 +25,11 @@ import {
 } from '@/components/transactions/TransactionFormModal';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { EntryDetailSkeleton } from '@/components/transactions/TransactionListSkeleton';
+import { useTransactionDelete } from '@/components/transactions/TransactionDeleteProvider';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { decodeFrame, useSharedElementTarget } from '@/hooks/use-shared-element';
 import { Account, fetchAccounts } from '@/lib/accounts';
-import { deleteEntry, fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
+import { fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
 import { isPdfAttachment, resolveAttachmentForSave } from '@/lib/uploads';
 import {
   fetchNewUnreadBudgetNotification,
@@ -82,8 +82,7 @@ export default function TransactionDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
+  const { requestDelete } = useTransactionDelete();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [splitBill, setSplitBill] = useState<SplitBill | null>(null);
   const [splitFriends, setSplitFriends] = useState<SplitFriend[]>([]);
@@ -288,32 +287,20 @@ export default function TransactionDetailsScreen() {
   };
 
   const handleDelete = () => {
-    setDeleteError('');
     setIsDeleteConfirmVisible(true);
   };
 
   const closeDeleteConfirm = () => {
-    if (isDeleting) return;
     setIsDeleteConfirmVisible(false);
-    setDeleteError('');
   };
 
-  const confirmDelete = async () => {
-    setIsDeleting(true);
-    setDeleteError('');
-    try {
-      if (!token) throw new Error('Missing session.');
-      await deleteEntry(token, params.id);
-      notifyTransactionsChanged();
-      setIsDeleteConfirmVisible(false);
-      router.back();
-    } catch {
-      setDeleteError(
-        'Unable to forget this transaction right now. Check your connection and try again.'
-      );
-    } finally {
-      setIsDeleting(false);
-    }
+  const confirmDelete = () => {
+    requestDelete({
+      id: params.id,
+      name: displayData.title || displayData.merchant || 'Untitled transaction',
+    });
+    setIsDeleteConfirmVisible(false);
+    router.back();
   };
 
   const handleSaveUpdate = async (formData: EntryForm) => {
@@ -390,7 +377,7 @@ export default function TransactionDetailsScreen() {
         if (notification) {
           Alert.alert(notification.title, notification.body, [
             { text: 'Later', style: 'cancel' },
-            { text: 'View Budget Watch', onPress: () => router.push('/budgets') },
+            { text: 'View Budgets', onPress: () => router.push('/budgets') },
           ]);
         }
       }
@@ -826,14 +813,8 @@ export default function TransactionDetailsScreen() {
 
         <Pressable onPress={handleDelete} className="items-center py-2 mb-10 active:opacity-50">
           <View className="flex-row items-center gap-2">
-            {isDeleting ? (
-              <ActivityIndicator color="#FF6B6B" />
-            ) : (
-              <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
-            )}
-            <ThemedText className="font-bold text-[#FF6B6B]">
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </ThemedText>
+            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FF6B6B" />
+            <ThemedText className="font-bold text-[#FF6B6B]">Delete</ThemedText>
           </View>
         </Pressable>
       </ScrollView>
@@ -883,8 +864,8 @@ export default function TransactionDetailsScreen() {
               Delete this transaction?
             </ThemedText>
             <ThemedText className="mt-2 text-center text-sm font-semibold leading-5 text-gray-400">
-              This can&apos;t be undone. It will be removed from your activity, your insights, and
-              any split linked to it.
+              It will leave this screen now, with 5 seconds to Undo. After that it is removed
+              from your activity, insights, and any split linked to it.
             </ThemedText>
           </View>
 
@@ -909,32 +890,20 @@ export default function TransactionDetailsScreen() {
             </View>
           </View>
 
-          {deleteError ? (
-            <ThemedText className="mb-4 text-center text-sm font-bold text-[#FF6B6B]">
-              {deleteError}
-            </ThemedText>
-          ) : null}
-
           <View className="gap-3">
             <Pressable
               accessibilityRole="button"
-              disabled={isDeleting}
               onPress={confirmDelete}
               className="h-14 items-center justify-center rounded-full"
-              style={{ backgroundColor: '#FF6B6B', opacity: isDeleting ? 0.72 : 1 }}>
-              {isDeleting ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <View className="flex-row items-center gap-2">
-                  <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
-                  <ThemedText className="text-base font-black text-white">Delete</ThemedText>
-                </View>
-              )}
+              style={{ backgroundColor: '#FF6B6B' }}>
+              <View className="flex-row items-center gap-2">
+                <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
+                <ThemedText className="text-base font-black text-white">Delete</ThemedText>
+              </View>
             </Pressable>
 
             <Pressable
               accessibilityRole="button"
-              disabled={isDeleting}
               onPress={closeDeleteConfirm}
               className="h-12 items-center justify-center rounded-full"
               style={{

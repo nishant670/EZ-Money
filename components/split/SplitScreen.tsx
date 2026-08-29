@@ -127,6 +127,7 @@ import {
   fetchSplitGroups,
   fetchSplitGroupDirectInvites,
   leaveSplitGroup,
+  mergeSplitFriend,
   revokeSplitGroupDirectInvite,
   splitScreenState,
   updateSplitBill,
@@ -154,6 +155,23 @@ type ParticipantDraft = {
   friend_id: number;
   share_amount: number;
   direction: SplitDirection;
+};
+
+type DuplicateFriendPair = { survivor: SplitFriend; duplicate: SplitFriend };
+
+const comparablePhone = (friend: SplitFriend) => {
+  if (friend.phone_normalized) return friend.phone_normalized;
+  const digits = friend.phone?.replace(/\D/g, '') ?? '';
+  return digits.length >= 10 ? digits.slice(-10) : '';
+};
+
+const friendsLookIdentical = (left: SplitFriend, right: SplitFriend) => {
+  if (left.linked_user_id && left.linked_user_id === right.linked_user_id) return true;
+  const leftEmail = left.email?.trim().toLowerCase();
+  const rightEmail = right.email?.trim().toLowerCase();
+  if (leftEmail && leftEmail === rightEmail) return true;
+  const leftPhone = comparablePhone(left);
+  return Boolean(leftPhone && leftPhone === comparablePhone(right));
 };
 const toDeviceContactOption = (contact: Contacts.ExistingContact): DeviceContactOption | null => {
   const fallbackName = [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim();
@@ -472,6 +490,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [selectedFriendDetailId, setSelectedFriendDetailId] = useState<number | null>(null);
   const [selectedFriendActions, setSelectedFriendActions] = useState<SplitFriend | null>(null);
   const [pendingFriendDelete, setPendingFriendDelete] = useState<SplitFriend | null>(null);
+  const [dismissedDuplicateKey, setDismissedDuplicateKey] = useState<string | null>(null);
   const [editingFriendId, setEditingFriendId] = useState<number | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
   const [memberPickerGroupId, setMemberPickerGroupId] = useState<number | null>(null);
@@ -501,6 +520,25 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [friendName, setFriendName] = useState('');
   const [friendPhone, setFriendPhone] = useState('');
   const [friendEmail, setFriendEmail] = useState('');
+
+  const duplicateFriendPair = useMemo<DuplicateFriendPair | null>(() => {
+    for (const group of groups) {
+      const memberIds = [...new Set((group.members ?? []).map((member) => member.friend_id))];
+      for (let leftIndex = 0; leftIndex < memberIds.length; leftIndex += 1) {
+        const left = friends.find((friend) => friend.id === memberIds[leftIndex]);
+        if (!left) continue;
+        for (let rightIndex = leftIndex + 1; rightIndex < memberIds.length; rightIndex += 1) {
+          const right = friends.find((friend) => friend.id === memberIds[rightIndex]);
+          if (!right || !friendsLookIdentical(left, right)) continue;
+          const survivor = left.id < right.id ? left : right;
+          const duplicate = survivor.id === left.id ? right : left;
+          const key = `${duplicate.id}:${survivor.id}`;
+          if (key !== dismissedDuplicateKey) return { survivor, duplicate };
+        }
+      }
+    }
+    return null;
+  }, [dismissedDuplicateKey, friends, groups]);
 
   const [groupName, setGroupName] = useState('');
   const [groupKind, setGroupKind] = useState<GroupKind>('trip');
@@ -1267,6 +1305,29 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const handleArchiveFriend = (friend: SplitFriend) => {
     removeFriendFromActiveList(friend, 'archive');
+  };
+
+  const handleMergeDuplicateFriends = async () => {
+    if (!token || !duplicateFriendPair || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await mergeSplitFriend(
+        token,
+        duplicateFriendPair.duplicate.id,
+        duplicateFriendPair.survivor.id
+      );
+      haptics.saved();
+      setDismissedDuplicateKey(null);
+      await loadSplitData();
+    } catch (mergeError) {
+      reportSplitError(mergeError, 'Unable to merge these friends.');
+      setDismissedDuplicateKey(
+        `${duplicateFriendPair.duplicate.id}:${duplicateFriendPair.survivor.id}`
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   /**
@@ -2322,7 +2383,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           }}>
           {!embedded && (
             <AppHeader
-              title="Split"
+              title="Splits"
               style={{ marginBottom: 20, paddingHorizontal: 0, paddingVertical: 0 }}
               rightNode={
                 <View className="ml-4 flex-row items-center gap-2">
@@ -2651,6 +2712,26 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           onSave={() => void saveDefaultSplit()}
           onReset={() => void resetDefaultSplit()}
           onClose={closeDefaultSplitEditor}
+        />
+
+        <ThemedConfirmDialog
+          visible={Boolean(duplicateFriendPair)}
+          title="These look like the same person"
+          message={`${duplicateFriendPair?.survivor.name ?? 'This friend'} and ${
+            duplicateFriendPair?.duplicate.name ?? 'this friend'
+          } share contact details in one group. Merge their expenses, balances, and memberships?`}
+          iconName="account-convert-outline"
+          confirmLabel="Merge friends"
+          cancelLabel="Keep separate"
+          loading={saving}
+          onCancel={() => {
+            if (!saving && duplicateFriendPair) {
+              setDismissedDuplicateKey(
+                `${duplicateFriendPair.duplicate.id}:${duplicateFriendPair.survivor.id}`
+              );
+            }
+          }}
+          onConfirm={() => void handleMergeDuplicateFriends()}
         />
 
         <ThemedConfirmDialog

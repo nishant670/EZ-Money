@@ -19,6 +19,7 @@ import {
   statementLineKindLabels,
   statementUploadErrorMessage,
   uploadStatementPDF,
+  uploadStatementScreenshots,
 } from '@/lib/statements';
 import { formatMoney } from '@/lib/money';
 
@@ -60,20 +61,29 @@ export default function StatementReviewScreen() {
   const [pickedFile, setPickedFile] = useState<{ uri: string; name: string } | null>(null);
   const [importedCount, setImportedCount] = useState<number | null>(null);
 
+  const applyDiff = useCallback((result: StatementDiff) => {
+    setDiff(result);
+    setSelected(
+      Object.fromEntries(result.missing.map((line, index) => [lineKey(line, index), true]))
+    );
+  }, []);
+
   const runUpload = useCallback(
     async (file: { uri: string; name: string }, filePassword: string) => {
       if (!token || !Number.isFinite(statementId)) return;
       setIsBusy(true);
       setError(null);
       try {
-        const result = await uploadStatementPDF(token, statementId, file, filePassword || undefined);
-        setDiff(result);
+        const result = await uploadStatementPDF(
+          token,
+          statementId,
+          file,
+          filePassword || undefined
+        );
+        applyDiff(result);
         setNeedsPassword(false);
         // The password is not kept a moment longer than the request needs it.
         setPassword('');
-        setSelected(
-          Object.fromEntries(result.missing.map((line, index) => [lineKey(line, index), true]))
-        );
       } catch (uploadError) {
         const code = uploadError instanceof StatementApiError ? uploadError.code : undefined;
         if (code === 'statement_password_required' || code === 'statement_password_incorrect') {
@@ -84,7 +94,7 @@ export default function StatementReviewScreen() {
         setIsBusy(false);
       }
     },
-    [statementId, token]
+    [applyDiff, statementId, token]
   );
 
   const pickStatement = async () => {
@@ -99,6 +109,42 @@ export default function StatementReviewScreen() {
     setPickedFile(file);
     setImportedCount(null);
     await runUpload(file, '');
+  };
+
+  const pickScreenshots = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'image/*',
+      multiple: true,
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.length || !token || !Number.isFinite(statementId))
+      return;
+
+    if (result.assets.length > 8) {
+      setError('Choose up to 8 statement screenshots at a time.');
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    setImportedCount(null);
+    setNeedsPassword(false);
+    try {
+      const parsed = await uploadStatementScreenshots(
+        token,
+        statementId,
+        result.assets.map((asset, index) => ({
+          uri: asset.uri,
+          name: asset.name ?? `statement-page-${index + 1}.jpg`,
+          mimeType: asset.mimeType,
+        }))
+      );
+      applyDiff(parsed);
+    } catch (uploadError) {
+      const code = uploadError instanceof StatementApiError ? uploadError.code : undefined;
+      setError(statementUploadErrorMessage(code));
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const selectedLines = useMemo(() => {
@@ -172,13 +218,11 @@ export default function StatementReviewScreen() {
               className="rounded-[26px] border px-5 py-6"
               style={{ backgroundColor: theme.card, borderColor: theme.border }}>
               <TText className="text-base" style={{ fontFamily: Fonts.title, color: theme.text }}>
-                Upload your statement PDF
+                Read your card statement
               </TText>
-              <TText
-                className="mt-2 text-sm"
-                style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
-                Finnri reads the transactions, shows you which ones it already has, and lets you add
-                the rest.
+              <TText className="mt-2 text-sm" style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
+                Use the bank&apos;s PDF, or choose cropped screenshots. Either route shows what
+                Finnri already has before you add anything.
               </TText>
 
               {/* Users are right to hesitate here, and the honest answer is
@@ -204,8 +248,46 @@ export default function StatementReviewScreen() {
                 ) : (
                   <>
                     <MaterialCommunityIcons name="file-upload-outline" size={18} color="#FFFFFF" />
-                    <TText className="text-sm" style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
+                    <TText
+                      className="text-sm"
+                      style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
                       Choose PDF
+                    </TText>
+                  </>
+                )}
+              </Pressable>
+
+              <View className="my-5 h-px" style={{ backgroundColor: theme.border }} />
+
+              <TText className="text-sm" style={{ fontFamily: Fonts.title, color: theme.text }}>
+                Prefer screenshots?
+              </TText>
+              <TText
+                className="mt-2 text-[11px]"
+                style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
+                An OpenAI service reads the selected images. Before choosing them, crop away the
+                header block containing your card number and address. Finnri does not store the
+                images, but the AI service must receive them to extract the rows.
+              </TText>
+              <Pressable
+                accessibilityRole="button"
+                disabled={isBusy}
+                onPress={() => void pickScreenshots()}
+                className="mt-4 h-13 flex-row items-center justify-center gap-2 rounded-full border py-3.5"
+                style={{ borderColor: theme.accent, backgroundColor: theme.background }}>
+                {isBusy ? (
+                  <ActivityIndicator color={theme.accent} />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons
+                      name="image-multiple-outline"
+                      size={18}
+                      color={theme.accent}
+                    />
+                    <TText
+                      className="text-sm"
+                      style={{ fontFamily: Fonts.title, color: theme.accent }}>
+                      Choose screenshots
                     </TText>
                   </>
                 )}
@@ -273,6 +355,28 @@ export default function StatementReviewScreen() {
             <>
               <SummaryStrip diff={diff} />
 
+              {diff.checksum && !diff.checksum.matches && (
+                <View
+                  className="mb-5 flex-row items-start gap-3 rounded-[22px] px-4 py-4"
+                  style={{ backgroundColor: light ? '#FFF7ED' : '#321C0E' }}>
+                  <MaterialCommunityIcons name="alert-outline" size={20} color="#F97316" />
+                  <View className="min-w-0 flex-1">
+                    <TText
+                      className="text-sm"
+                      style={{ fontFamily: Fonts.title, color: light ? '#9A3412' : '#FDBA74' }}>
+                      Totals need a quick check
+                    </TText>
+                    <TText
+                      className="mt-1 text-[11px]"
+                      style={{ fontFamily: Fonts.body, color: light ? '#9A3412' : '#FDBA74' }}>
+                      {diff.checksum.message} The difference is{' '}
+                      {formatMoney(Math.abs(diff.checksum.difference))}. You can still review and
+                      import individual rows below.
+                    </TText>
+                  </View>
+                </View>
+              )}
+
               {diff.missing.length > 0 && (
                 <Section
                   title="Not in Finnri"
@@ -285,9 +389,7 @@ export default function StatementReviewScreen() {
                         key={key}
                         line={line}
                         selected={Boolean(selected[key])}
-                        onToggle={() =>
-                          setSelected((prev) => ({ ...prev, [key]: !prev[key] }))
-                        }
+                        onToggle={() => setSelected((prev) => ({ ...prev, [key]: !prev[key] }))}
                       />
                     );
                   })}
