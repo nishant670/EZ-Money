@@ -223,6 +223,14 @@ export default function HomeScreen() {
   const router = useRouter();
   const { captureFile } = useLocalSearchParams<{ captureFile?: string | string[] }>();
   const consumedCaptureFile = useRef<string | null>(null);
+  /**
+   * A recording handed over by the quick-capture tile or the widget, waiting to
+   * be sent. It cannot be submitted in the same effect that receives it, because
+   * `submitPrompt` reads the recording out of state and would still see the
+   * previous value; the flag lets the send happen on the render after the URI
+   * has actually landed.
+   */
+  const captureAwaitingSubmit = useRef(false);
   const { token, user } = useAuthStore();
   const smartSorting = useAppSettingsStore((state) => state.smartSorting);
   const isStealthMode = !!user?.stealth_mode;
@@ -749,9 +757,11 @@ export default function HomeScreen() {
     setErrorMessage(null);
     setParseFailure(null);
     setRecordedUri(uri);
+    captureAwaitingSubmit.current = true;
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     router.setParams({ captureFile: '' });
   }, [captureFile, router, scrollRef]);
+
 
   /**
    * Tapping the collapsed pill puts the card back and the cursor in it.
@@ -1229,6 +1239,25 @@ export default function HomeScreen() {
       user?.is_guest,
     ]
   );
+
+  /**
+   * Send a handed-over recording without waiting to be asked.
+   *
+   * The button that produces it says **Stop and review**, and until this existed
+   * it stopped and showed nothing: the audio arrived, attached itself to the
+   * capture card, and sat there. Someone who spoke a transaction into the widget
+   * got dropped on Home with no sign anything had happened, which reads as the
+   * feature being broken rather than waiting.
+   *
+   * In-app recording is deliberately left alone — there the user is already
+   * looking at the card and holding the send control, so submitting for them
+   * would take the decision away at the one moment they can see it.
+   */
+  useEffect(() => {
+    if (!captureAwaitingSubmit.current || !recordedUri) return;
+    captureAwaitingSubmit.current = false;
+    void submitPrompt();
+  }, [recordedUri, submitPrompt]);
 
   const handleSubmitPrompt = useCallback(() => submitPrompt(), [submitPrompt]);
 
