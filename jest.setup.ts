@@ -193,6 +193,135 @@ jest.mock('expo-haptics', () => ({
   },
 }));
 
+// `File` from expo-file-system is a native SharedObject — constructing one
+// under Jest reaches for a module that is not there. This fake is the surface
+// the upload paths actually touch: the uri, the `name`/`type` that become the
+// multipart part header, the `size` that decides whether an image is worth
+// re-encoding, and `bytes()`, which is what Expo's fetch reads a part from.
+//
+// Sizes are dictated per-uri by the test through `__setFileSize`, because
+// "is this 3.5 MB or 40 KB" is the entire input to the compression decision.
+jest.mock('expo-file-system', () => {
+  const sizes = new Map<string, number>();
+  const deleted: string[] = [];
+  const mimeByExtension: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    pdf: 'application/pdf',
+  };
+
+  class File {
+    uri: string;
+
+    constructor(...parts: (string | { uri: string })[]) {
+      this.uri = parts.map((part) => (typeof part === 'string' ? part : part.uri)).join('/');
+    }
+
+    get name(): string {
+      return this.uri.split('?')[0].split('/').pop() ?? '';
+    }
+
+    get type(): string {
+      const extension = this.name.split('.').pop()?.toLowerCase() ?? '';
+      return mimeByExtension[extension] ?? '';
+    }
+
+    get size(): number {
+      return sizes.get(this.uri) ?? 0;
+    }
+
+    get exists(): boolean {
+      return !deleted.includes(this.uri);
+    }
+
+    async bytes(): Promise<Uint8Array> {
+      return new Uint8Array(this.size);
+    }
+
+    delete(): void {
+      deleted.push(this.uri);
+    }
+  }
+
+  return {
+    File,
+    __setFileSize: (uri: string, size: number) => sizes.set(uri, size),
+    __deletedFiles: deleted,
+    __resetFiles: () => {
+      sizes.clear();
+      deleted.length = 0;
+    },
+  };
+});
+
+// The image manipulator is native too. Deliberately plain functions rather than
+// `jest.fn()`s: suites that call `jest.resetAllMocks()` in `afterEach` would
+// otherwise strip the implementations out from under the next test. What a test
+// needs to assert on is recorded in `__manipulatorState` instead.
+jest.mock('expo-image-manipulator', () => {
+  const state = {
+    /** Dimensions the source image decodes to. */
+    source: { width: 4000, height: 3000 },
+    /** What `saveAsync` writes to the cache directory. */
+    output: { uri: 'file:///cache/manipulated.jpg', width: 1600, height: 1200 },
+    /** Every `resize` scheduled, in order. */
+    resizes: [] as { width?: number | null; height?: number | null }[],
+    /** Options the render was saved with. */
+    saveOptions: null as { compress?: number; format?: string } | null,
+    /** Set to make the next `manipulate` throw, as an unreadable image does. */
+    failNext: false,
+  };
+
+  const makeImage = (dimensions: { width: number; height: number }) => ({
+    ...dimensions,
+    saveAsync: async (options: { compress?: number; format?: string }) => {
+      state.saveOptions = options;
+      return { ...state.output };
+    },
+  });
+
+  const makeContext = (dimensions: { width: number; height: number }) => {
+    const context = {
+      resize(size: { width?: number | null; height?: number | null }) {
+        state.resizes.push(size);
+        return context;
+      },
+      async renderAsync() {
+        return makeImage(dimensions);
+      },
+    };
+    return context;
+  };
+
+  return {
+    SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
+    ImageManipulator: {
+      manipulate(source: string | { width: number; height: number }) {
+        if (state.failNext) {
+          state.failNext = false;
+          throw new Error('cannot decode image');
+        }
+        return makeContext(
+          typeof source === 'string'
+            ? state.source
+            : { width: source.width, height: source.height }
+        );
+      },
+    },
+    __manipulatorState: state,
+    __resetManipulator: () => {
+      state.source = { width: 4000, height: 3000 };
+      state.output = { uri: 'file:///cache/manipulated.jpg', width: 1600, height: 1200 };
+      state.resizes = [];
+      state.saveOptions = null;
+      state.failNext = false;
+    },
+  };
+});
+
 jest.mock('@react-native-community/datetimepicker', () => {
   return {
     __esModule: true,
