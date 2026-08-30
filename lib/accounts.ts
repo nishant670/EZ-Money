@@ -224,13 +224,19 @@ export const getAutoAccountPayloadForPaymentMode = (
 const comparableAccountText = (value?: string | null) =>
   (value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+export type AccountSuggestionHint = {
+  mode?: string | null;
+  accountHint?: string | null;
+  cardNetwork?: string | null;
+};
+
 /**
  * Turn a parser hint such as "my HDFC card ending 1234" into a secondary
  * setup suggestion. It never creates anything and disappears when an existing
  * provider, name, or identifier already represents the hinted account.
  */
 export const suggestAccountFromTransaction = (
-  input: { mode?: string | null; accountHint?: string | null; cardNetwork?: string | null },
+  input: AccountSuggestionHint,
   accounts: Account[]
 ): AccountSuggestion | null => {
   const type = getAccountTypeForPaymentMode(input.mode);

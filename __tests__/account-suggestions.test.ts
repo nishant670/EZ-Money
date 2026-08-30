@@ -32,6 +32,20 @@ describe('transaction account suggestions', () => {
     ).toBeNull();
   });
 
+  it('stops asking once the hinted account is added to the list', () => {
+    const hint = { mode: 'UPI', accountHint: 'SBI upi' };
+    const before: Account[] = [];
+    expect(suggestAccountFromTransaction(hint, before)).toMatchObject({
+      type: 'upi',
+      provider: 'SBI',
+    });
+
+    // The prompt is re-derived from the live accounts, so the account created
+    // from the prompt itself settles it.
+    const after = [account({ id: 2, type: 'upi', name: 'SBI Account', provider: 'SBI' })];
+    expect(suggestAccountFromTransaction(hint, after)).toBeNull();
+  });
+
   it('does not invent a suggestion without a specific account hint', () => {
     expect(
       suggestAccountFromTransaction({ mode: 'Credit Card', accountHint: 'my credit card' }, [])

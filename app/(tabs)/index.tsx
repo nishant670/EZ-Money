@@ -72,9 +72,11 @@ import {
   fetchAccounts as loadAccounts,
   getAccountTypeForPaymentMode,
   getPreferredAccountForPaymentMode,
+  normalizeAccountType,
   suggestAccountFromTransaction,
   type Account,
-  type AccountSuggestion,
+  type AccountSuggestionHint,
+  type AccountType,
 } from '@/lib/accounts';
 import { createEntry } from '@/lib/entries';
 import { haptics } from '@/lib/haptics';
@@ -274,7 +276,36 @@ export default function HomeScreen() {
   );
 
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [accountSuggestion, setAccountSuggestion] = useState<AccountSuggestion | null>(null);
+  // The parser's hints are kept instead of the suggestion they produce, so the
+  // prompt is re-derived against the current accounts. Once the hinted account
+  // exists — including one just created from the prompt itself — it stops asking.
+  const [accountSuggestionHint, setAccountSuggestionHint] =
+    useState<AccountSuggestionHint | null>(null);
+  /**
+   * The suggestion the user carried to the setup screen, with how many accounts
+   * of that type existed when they left. It is the fallback for a setup saved
+   * under a name the hint cannot recognise — "Salary" for an SBI hint — where
+   * matching alone would keep asking for the account they just made.
+   */
+  const pendingSuggestionSetup = useRef<{ type: AccountType; count: number } | null>(null);
+  const accountSuggestion = useMemo(
+    () =>
+      accountSuggestionHint ? suggestAccountFromTransaction(accountSuggestionHint, accounts) : null,
+    [accountSuggestionHint, accounts]
+  );
+  useEffect(() => {
+    const pending = pendingSuggestionSetup.current;
+    if (!pending) return;
+    const matching = accounts.filter(
+      (account) => normalizeAccountType(account.type) === pending.type
+    ).length;
+    // Only a setup that actually added an account answers the prompt; backing
+    // out of the screen leaves it standing.
+    if (matching > pending.count) {
+      pendingSuggestionSetup.current = null;
+      setAccountSuggestionHint(null);
+    }
+  }, [accounts]);
   const [splitFriends, setSplitFriends] = useState<SplitFriend[]>([]);
   const [splitGroups, setSplitGroups] = useState<SplitGroup[]>([]);
   const createBlankForm = useCallback(
@@ -856,7 +887,8 @@ export default function HomeScreen() {
     setAiReview(null);
     setAiSourceText('');
     setAiInputSource('text');
-    setAccountSuggestion(null);
+    pendingSuggestionSetup.current = null;
+    setAccountSuggestionHint(null);
     createIdempotencyKey.current = null;
     setForm(createBlankForm());
     setModalMode('manual');
@@ -979,7 +1011,8 @@ export default function HomeScreen() {
         createIdempotencyKey.current = null;
         setForm(createBlankForm());
         setAiSourceText('');
-        setAccountSuggestion(null);
+        pendingSuggestionSetup.current = null;
+        setAccountSuggestionHint(null);
         setIsEditOpen(false);
         notifyTransactionsChanged();
         if (formData.type === 'Expense') {
@@ -1069,7 +1102,8 @@ export default function HomeScreen() {
         if (isParseAnswer(result)) {
           setIsEditOpen(false);
           setAiReview(null);
-          setAccountSuggestion(null);
+          pendingSuggestionSetup.current = null;
+          setAccountSuggestionHint(null);
           setPendingQuestion(null);
           setAnswerSourceText(result.source_text ?? trimmed);
           setAnswer(result.answer);
@@ -1088,16 +1122,12 @@ export default function HomeScreen() {
         }
         setAiSourceText(data.source_text ?? trimmed);
         setAiInputSource(audioUri ? 'voice' : 'text');
-        setAccountSuggestion(
-          suggestAccountFromTransaction(
-            {
-              mode: data.mode,
-              accountHint: data.account_hint,
-              cardNetwork: data.card_network,
-            },
-            accounts
-          )
-        );
+        pendingSuggestionSetup.current = null;
+        setAccountSuggestionHint({
+          mode: data.mode,
+          accountHint: data.account_hint,
+          cardNetwork: data.card_network,
+        });
         setAiReview({
           confidence: data.confidence,
           needsConfirmation: data.needs_confirmation,
@@ -1225,7 +1255,6 @@ export default function HomeScreen() {
       }
     },
     [
-      accounts,
       billingStatus?.credits.daily_credits_used,
       billingStatus?.credits.daily_limit,
       fetchCredits,
@@ -1748,7 +1777,8 @@ export default function HomeScreen() {
         visible={isEditOpen}
         onClose={() => {
           setIsEditOpen(false);
-          setAccountSuggestion(null);
+          pendingSuggestionSetup.current = null;
+          setAccountSuggestionHint(null);
         }}
         initialData={form}
         onSave={handleConfirmEntry}
@@ -1761,6 +1791,12 @@ export default function HomeScreen() {
         recentEntries={transactions}
         accountSuggestion={accountSuggestion}
         onCreateSuggestedAccount={(suggestion) => {
+          pendingSuggestionSetup.current = {
+            type: suggestion.type,
+            count: accounts.filter(
+              (account) => normalizeAccountType(account.type) === suggestion.type
+            ).length,
+          };
           resumeDraftAfterAccounts.current = true;
           setIsEditOpen(false);
           router.push({
