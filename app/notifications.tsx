@@ -254,7 +254,7 @@ export default function NotificationsScreen() {
                     {occurrenceID(notification.action_url) && (
                       <View className="mt-3 flex-row gap-2">
                         <Pressable onPress={(event) => { event.stopPropagation(); void handleOccurrence(notification, 'confirm'); }} className="rounded-xl px-4 py-2" style={{ backgroundColor: colors.accent }}>
-                          <ThemedText onAccent className="text-xs font-black">Confirm</ThemedText>
+                          <ThemedText tone="onAccent" className="text-xs font-black">Confirm</ThemedText>
                         </Pressable>
                         <Pressable onPress={(event) => { event.stopPropagation(); void handleOccurrence(notification, 'revert'); }} className="rounded-xl border px-4 py-2" style={{ borderColor: colors.accent }}>
                           <ThemedText className="text-xs font-black" style={{ color: colors.accent }}>Correct / revert</ThemedText>

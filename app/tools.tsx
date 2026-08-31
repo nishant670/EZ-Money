@@ -336,7 +336,7 @@ export default function ToolsScreen() {
                   onPress={handleCalculateSIP}
                   className="mt-5 h-12 flex-row items-center justify-center rounded-full"
                   style={{ backgroundColor: theme.accent }}>
-                  <ThemedText onAccent className="text-sm font-black">Calculate SIP</ThemedText>
+                  <ThemedText tone="onAccent" className="text-sm font-black">Calculate SIP</ThemedText>
                 </Pressable>
               </View>
 
@@ -511,7 +511,7 @@ export default function ToolsScreen() {
               className="mt-5 h-12 flex-row items-center justify-center gap-2 rounded-full"
               style={{ backgroundColor: calculating ? `${theme.accent}88` : theme.accent }}>
               {calculating ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
-              <ThemedText onAccent className="text-sm font-black">
+              <ThemedText tone="onAccent" className="text-sm font-black">
                 {calculating ? 'Calculating' : 'Calculate EMI'}
               </ThemedText>
             </Pressable>

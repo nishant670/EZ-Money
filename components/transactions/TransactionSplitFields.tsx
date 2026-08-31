@@ -78,7 +78,7 @@ export function TransactionSplitFields({
               <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
                 Split this expense
               </ThemedText>
-              <ThemedText className="text-xs text-gray-500">
+              <ThemedText tone="muted" className="text-xs">
                 Track friends who owe you back.
               </ThemedText>
             </View>
@@ -119,7 +119,7 @@ export function TransactionSplitFields({
           <View className="mt-5 gap-4">
             {groups.length > 0 ? (
               <View>
-                <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
                   Group
                 </ThemedText>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -169,7 +169,7 @@ export function TransactionSplitFields({
 
             {form.splitGroupId === null ? (
               <View className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
-                <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
                   New group name
                 </ThemedText>
                 <TextInput
@@ -216,7 +216,7 @@ export function TransactionSplitFields({
               {form.splitParticipants.map((participant, index) => (
                 <View key={index} className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
                   <View className="flex-row items-center justify-between">
-                    <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                    <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
                       Share {index + 1}
                     </ThemedText>
                     <Pressable onPress={() => onRemoveParticipant(index)}>

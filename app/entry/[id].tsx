@@ -521,7 +521,7 @@ export default function TransactionDetailsScreen() {
 
           {hasMerchant && (
             <View className="flex-row items-center bg-white dark:bg-gray-800 rounded-full px-4 py-1.5 shadow-sm border border-gray-100">
-              <ThemedText className="text-sm font-bold text-gray-600 mr-2">
+              <ThemedText tone="mutedStrong" className="text-sm font-bold mr-2">
                 {displayData.merchant}
               </ThemedText>
               <MaterialCommunityIcons name="check-circle" size={16} color="#10B981" />
@@ -539,14 +539,14 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name="calendar-blank" size={24} color={theme.accent} />
             </View>
             <View>
-              <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
+              <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest mb-1">
                 DATE &amp; TIME
               </ThemedText>
-              <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
+              <ThemedText className="text-base font-black">
                 {displayData.date || 'No date'}
               </ThemedText>
               {displayData.time ? (
-                <ThemedText className="text-xs font-bold text-gray-400">
+                <ThemedText tone="muted" className="text-xs font-bold">
                   At {displayData.time}
                 </ThemedText>
               ) : null}
@@ -561,10 +561,10 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name={icon as any} size={24} color={iconColor} />
             </View>
             <View>
-              <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
+              <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest mb-1">
                 CATEGORY
               </ThemedText>
-              <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
+              <ThemedText className="text-base font-black">
                 {displayData.category || 'Uncategorised'}
               </ThemedText>
             </View>
@@ -599,10 +599,10 @@ export default function TransactionDetailsScreen() {
                     <MaterialCommunityIcons name="wallet-outline" size={20} color="#64748B" />
                   </View>
                   <View>
-                    <ThemedText className="text-[9px] uppercase font-black text-gray-300">
+                    <ThemedText tone="muted" className="text-[9px] uppercase font-black">
                       PAID VIA
                     </ThemedText>
-                    <ThemedText className="text-sm font-black text-slate-700">
+                    <ThemedText className="text-sm font-black">
                       {displayData.mode || 'Not set'}
                     </ThemedText>
                   </View>
@@ -614,10 +614,10 @@ export default function TransactionDetailsScreen() {
                     <MaterialCommunityIcons name="bank-outline" size={20} color="#64748B" />
                   </View>
                   <View>
-                    <ThemedText className="text-[9px] uppercase font-black text-gray-300">
+                    <ThemedText tone="muted" className="text-[9px] uppercase font-black">
                       ACCOUNT
                     </ThemedText>
-                    <ThemedText className="text-sm font-black text-slate-700">
+                    <ThemedText className="text-sm font-black">
                       {displayData.account?.name || 'Not linked'}
                     </ThemedText>
                   </View>
@@ -630,7 +630,7 @@ export default function TransactionDetailsScreen() {
                   <MaterialCommunityIcons name="tag-outline" size={20} color="#64748B" />
                 </View>
                 <View className="flex-1">
-                  <ThemedText className="text-[9px] uppercase font-black text-gray-300 mb-2">
+                  <ThemedText tone="muted" className="text-[9px] uppercase font-black mb-2">
                     TAG
                   </ThemedText>
                   {/* An untagged entry showed a "Personal" chip that looked like a
@@ -668,18 +668,18 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name="comment-text-outline" size={24} color={theme.accent} />
             </View>
             <View className="flex-1">
-              <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest mb-1">
+              <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest mb-1">
                 NOTES
               </ThemedText>
               {/* The quotation marks belong to the user's own words. Wrapping
                   the empty state in them too put "No notes added." on the
                   screen as though somebody had written it. */}
               {displayData.notes ? (
-                <ThemedText className="text-sm font-bold italic text-slate-500 leading-relaxed">
+                <ThemedText tone="muted" className="text-sm font-bold italic leading-relaxed">
                   {`"${displayData.notes}"`}
                 </ThemedText>
               ) : (
-                <ThemedText className="text-sm font-bold text-gray-400 leading-relaxed">
+                <ThemedText tone="muted" className="text-sm font-bold leading-relaxed">
                   No notes
                 </ThemedText>
               )}
@@ -701,10 +701,10 @@ export default function TransactionDetailsScreen() {
                   />
                 </View>
                 <View>
-                  <ThemedText className="text-[10px] uppercase font-black text-gray-300 tracking-widest">
+                  <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest">
                     SPLIT WITH
                   </ThemedText>
-                  <ThemedText className="text-base font-black text-slate-800 dark:text-gray-100">
+                  <ThemedText className="text-base font-black">
                     {splitBill.group?.name || 'Friends'}
                   </ThemedText>
                 </View>
@@ -720,14 +720,14 @@ export default function TransactionDetailsScreen() {
                   key={`${participant.friend_id}-${participant.direction}`}
                   className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-900">
                   <View className="flex-1 pr-3">
-                    <ThemedText className="text-sm font-black text-slate-700 dark:text-gray-100">
+                    <ThemedText className="text-sm font-black">
                       {participant.friend?.name || 'Friend'}
                     </ThemedText>
-                    <ThemedText className="text-xs font-bold text-gray-400">
+                    <ThemedText tone="muted" className="text-xs font-bold">
                       {participant.direction === 'friend_owes_user' ? 'Owes you' : 'You owe'}
                     </ThemedText>
                   </View>
-                  <ThemedText className="text-sm font-black text-slate-700 dark:text-gray-100">
+                  <ThemedText className="text-sm font-black">
                     {formatMoney(participant.share_amount, { sign: 'never' })}
                   </ThemedText>
                 </View>
@@ -736,18 +736,18 @@ export default function TransactionDetailsScreen() {
 
             <View className="mt-5 flex-row gap-3">
               <View className="flex-1 rounded-2xl bg-emerald-50 p-4">
-                <ThemedText className="text-[10px] uppercase font-black text-emerald-500">
+                <ThemedText tone="positive" className="text-[10px] uppercase font-black">
                   OWED TO YOU
                 </ThemedText>
-                <ThemedText className="mt-1 text-base font-black text-emerald-700">
+                <ThemedText tone="positive" className="mt-1 text-base font-black">
                   {formatMoney(splitExpectedBack, { sign: 'never' })}
                 </ThemedText>
               </View>
               <View className="flex-1 rounded-2xl bg-rose-50 p-4">
-                <ThemedText className="text-[10px] uppercase font-black text-rose-500">
+                <ThemedText tone="negative" className="text-[10px] uppercase font-black">
                   YOU OWE
                 </ThemedText>
-                <ThemedText className="mt-1 text-base font-black text-rose-700">
+                <ThemedText tone="negative" className="mt-1 text-base font-black">
                   {formatMoney(splitYouOwe, { sign: 'never' })}
                 </ThemedText>
               </View>
@@ -757,7 +757,7 @@ export default function TransactionDetailsScreen() {
         {/* PAPER TRAIL */}
         {receiptUrl ? (
           <View className="mb-8">
-            <ThemedText className="text-[10px] font-black uppercase tracking-[2px] text-gray-300 mb-4 ml-6">
+            <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-[2px] mb-4 ml-6">
               THE PAPER TRAIL
             </ThemedText>
             {isPdfAttachment(receiptUrl) ? (
@@ -776,7 +776,7 @@ export default function TransactionDetailsScreen() {
                     <ThemedText className="text-base font-black" style={{ color: theme.text }}>
                       Receipt PDF
                     </ThemedText>
-                    <ThemedText className="text-xs font-bold text-gray-400">Tap to open</ThemedText>
+                    <ThemedText tone="muted" className="text-xs font-bold">Tap to open</ThemedText>
                   </View>
                 </View>
                 <MaterialCommunityIcons name="open-in-new" size={22} color={theme.accent} />
@@ -807,7 +807,7 @@ export default function TransactionDetailsScreen() {
           style={{ backgroundColor: theme.accent }}>
           <View className="flex-row items-center gap-3">
             <MaterialCommunityIcons name="pencil-outline" size={24} color="#FFF" />
-            <ThemedText onAccent className="font-black text-lg">Edit</ThemedText>
+            <ThemedText tone="onAccent" className="font-black text-lg">Edit</ThemedText>
           </View>
         </Pressable>
 
@@ -863,7 +863,7 @@ export default function TransactionDetailsScreen() {
             <ThemedText className="text-center text-xl font-black" style={{ color: theme.text }}>
               Delete this transaction?
             </ThemedText>
-            <ThemedText className="mt-2 text-center text-sm font-semibold leading-5 text-gray-400">
+            <ThemedText tone="muted" className="mt-2 text-center text-sm font-semibold leading-5">
               It will leave this screen now, with 5 seconds to Undo. After that it is removed
               from your activity, insights, and any split linked to it.
             </ThemedText>
@@ -874,7 +874,7 @@ export default function TransactionDetailsScreen() {
             style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
             <View className="flex-row items-center justify-between gap-4">
               <View className="flex-1">
-                <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
                   Transaction
                 </ThemedText>
                 <ThemedText
@@ -898,7 +898,7 @@ export default function TransactionDetailsScreen() {
               style={{ backgroundColor: '#FF6B6B' }}>
               <View className="flex-row items-center gap-2">
                 <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
-                <ThemedText onAccent className="text-base font-black">Delete</ThemedText>
+                <ThemedText tone="onAccent" className="text-base font-black">Delete</ThemedText>
               </View>
             </Pressable>
 

@@ -98,7 +98,7 @@ export function QuickPrompts({
             onPress={() => void fetchPrompts()}
             className="flex-row items-center rounded-full border border-red-100 bg-red-50 px-4 py-2 dark:border-red-900/30 dark:bg-red-900/20">
             <MaterialCommunityIcons name="refresh" size={14} color={theme.colors.accent} />
-            <ThemedText variant="captionStrong" className="ml-2 text-red-500">
+            <ThemedText tone="negative" variant="captionStrong" className="ml-2">
               Retry prompts
             </ThemedText>
           </Pressable>
@@ -127,7 +127,7 @@ export function QuickPrompts({
           <Pressable
             onPress={onAdd}
             className="flex-row items-center bg-gray-50 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-full px-4 py-2 gap-2 active:opacity-70">
-            <ThemedText variant="captionStrong" className="text-gray-500">
+            <ThemedText tone="muted" variant="captionStrong" >
               Add +
             </ThemedText>
           </Pressable>

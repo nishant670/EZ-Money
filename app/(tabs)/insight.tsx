@@ -636,11 +636,11 @@ function TopTakeawayCard({
           />
         </View>
         <View className="flex-1">
-          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
             {takeaway.eyebrow}
           </ThemedText>
           <ThemedText className="mt-1 text-xl font-black">{takeaway.title}</ThemedText>
-          <ThemedText className="mt-2 text-xs leading-5 text-gray-500">{takeaway.body}</ThemedText>
+          <ThemedText tone="muted" className="mt-2 text-xs leading-5">{takeaway.body}</ThemedText>
         </View>
       </View>
       <TouchableOpacity
@@ -676,11 +676,11 @@ function PeriodPulseCard({
       style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
       <View className="flex-row items-start justify-between">
         <View className="flex-1 pr-4">
-          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
             Period Pulse
           </ThemedText>
           <ThemedText className="mt-1 text-2xl font-black">{pulse.label}</ThemedText>
-          <ThemedText className="mt-2 text-xs leading-5 text-gray-500">{pulse.reason}</ThemedText>
+          <ThemedText tone="muted" className="mt-2 text-xs leading-5">{pulse.reason}</ThemedText>
         </View>
         <View
           className="h-[58px] w-[58px] items-center justify-center rounded-2xl"
@@ -728,7 +728,7 @@ function PeriodPulseCard({
       </View>
 
       <View className="mt-4 flex-row items-start gap-3">
-        <ThemedText className="flex-1 text-[11px] font-bold text-gray-500">
+        <ThemedText tone="muted" className="flex-1 text-[11px] font-bold">
           Insight depth grows as Finnri sees more transactions, merchants, and accounts.
         </ThemedText>
         <View
@@ -786,11 +786,11 @@ function MonthlyReviewTeaser() {
           <MaterialCommunityIcons name="calendar-month" size={23} color={theme.colors.accent} />
         </View>
         <View className="flex-1">
-          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
             Monthly Review
           </ThemedText>
           <ThemedText className="mt-1 text-base font-black">{label} in review</ThemedText>
-          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+          <ThemedText tone="muted" className="mt-1 text-xs leading-5">
             The finished month, with what changed and a summary you can share.
           </ThemedText>
         </View>
@@ -834,11 +834,11 @@ function WeeklyReviewTeaser({
           <MaterialCommunityIcons name="file-chart-outline" size={23} color={theme.colors.accent} />
         </View>
         <View className="flex-1">
-          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
             Weekly Review
           </ThemedText>
           <ThemedText className="mt-1 text-base font-black">Review the money story</ThemedText>
-          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+          <ThemedText tone="muted" className="mt-1 text-xs leading-5">
             {budgetRisks} budget risk{budgetRisks === 1 ? '' : 's'} · {recurringCount} recurring · {warningCount} alert{warningCount === 1 ? '' : 's'}
           </ThemedText>
         </View>
@@ -864,11 +864,11 @@ function AllClearCard({ dashboard }: { dashboard: DashboardResponse }) {
           <MaterialCommunityIcons name="check-decagram" size={24} color="#16A34A" />
         </View>
         <View className="flex-1">
-          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
             All clear
           </ThemedText>
           <ThemedText className="mt-1 text-lg font-black">No urgent actions right now</ThemedText>
-          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+          <ThemedText tone="muted" className="mt-1 text-xs leading-5">
             Categories and accounts look clean, budgets are safe, and there are no warning alerts for this period.
           </ThemedText>
         </View>
@@ -913,7 +913,7 @@ function PulseMetric({
     <View
       className="flex-1 rounded-2xl border px-4 py-3"
       style={{ backgroundColor: theme.colors.background, borderColor: theme.colors.border }}>
-      <ThemedText className="text-[10px] font-black uppercase text-gray-500">{label}</ThemedText>
+      <ThemedText tone="muted" className="text-[10px] font-black uppercase">{label}</ThemedText>
       {amount == null ? (
         <ThemedText className={PULSE_VALUE_CLASS} numberOfLines={1}>
           {value}
@@ -952,7 +952,7 @@ function ProgressiveHint({
       <View className="flex-row items-center justify-between">
         <View className="flex-1 pr-3">
           <ThemedText className="text-xs font-black">Insights Level {insightLevel}</ThemedText>
-          <ThemedText className="mt-1 text-[11px] leading-4 text-gray-500">{next}</ThemedText>
+          <ThemedText tone="muted" className="mt-1 text-[11px] leading-4">{next}</ThemedText>
         </View>
         <ThemedText className="text-[11px] font-black" style={{ color: theme.colors.accent }}>
           {dashboard.summary.transaction_count} txns
@@ -1024,7 +1024,7 @@ function SpendingAnalysisCard({
           <View
             className="rounded-[24px] border p-5 shadow-sm"
             style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
-            <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
+            <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
               Top Merchants
             </ThemedText>
             {merchants.map((merchant) => (
@@ -1057,7 +1057,7 @@ function MerchantRow({ merchant }: { merchant: DashboardResponse['top_merchants'
         </View>
         <View>
           <ThemedText className="text-xs font-bold">{merchant.merchant}</ThemedText>
-          <ThemedText className="text-[10px] text-gray-500">
+          <ThemedText tone="muted" className="text-[10px]">
             {merchant.transaction_count} transactions
           </ThemedText>
         </View>
@@ -1218,13 +1218,13 @@ function RecurringReviewTeaser({
             <MaterialCommunityIcons name="repeat-variant" size={23} color={theme.colors.accent} />
           </View>
           <View className="flex-1">
-            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+            <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
               {dueCount > 0 ? `${dueCount} due now` : `${dashboard.recurring_candidates.length} detected`}
             </ThemedText>
             <ThemedText className="mt-1 text-base font-black">
               {topCandidate?.label ?? 'Recurring patterns'}
             </ThemedText>
-            <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+            <ThemedText tone="muted" className="mt-1 text-xs leading-5">
               Confirm repeated spends before Finnri tracks them as subscriptions.
             </ThemedText>
           </View>
@@ -1295,12 +1295,12 @@ function BudgetWatchCard({
                 {exceeded ? 'Exceeded' : 'Watch'}
               </ThemedText>
             </View>
-            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+            <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
               {budget.days_left} day{budget.days_left === 1 ? '' : 's'} left
             </ThemedText>
           </View>
           <ThemedText className="mt-3 text-base font-black">{label}</ThemedText>
-          <ThemedText className="mt-1 text-xs leading-5 text-gray-500">
+          <ThemedText tone="muted" className="mt-1 text-xs leading-5">
             {formatMoney(budget.spent_amount)} of {formatMoney(budget.limit_amount)} used
           </ThemedText>
         </View>
@@ -1393,7 +1393,7 @@ function AlertCard({ card, params }: { card: InsightCard; params: Record<string,
         </View>
         <View className="flex-1">
           <ThemedText className="text-sm font-black">{card.title}</ThemedText>
-          <ThemedText className="mt-1 text-xs leading-4 text-gray-500">{card.body}</ThemedText>
+          <ThemedText tone="muted" className="mt-1 text-xs leading-4">{card.body}</ThemedText>
           {isWarning && (
             <View className="mt-3 flex-row gap-2">
               <PillButton
@@ -1462,7 +1462,7 @@ function AccountIntelligence({ dashboard }: { dashboard: DashboardResponse }) {
           <View key={account.account_id ?? account.account_name} className="mb-4">
             <View className="mb-2 flex-row items-center justify-between">
               <ThemedText className="text-sm">{account.account_name}</ThemedText>
-              <ThemedText className="text-xs text-gray-500">
+              <ThemedText tone="muted" className="text-xs">
                 {formatMoney(account.amount)} spent
               </ThemedText>
             </View>
@@ -1507,7 +1507,7 @@ function MiniMetric({
       className="flex-1 rounded-2xl border p-4"
       style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
       <MaterialCommunityIcons name={icon} size={20} color={theme.colors.accent} />
-      <ThemedText className="mt-3 text-[11px] text-gray-500">{label}</ThemedText>
+      <ThemedText tone="muted" className="mt-3 text-[11px]">{label}</ThemedText>
       <ThemedText className="mt-1 text-sm font-black" numberOfLines={1}>
         {value}
       </ThemedText>
@@ -1562,7 +1562,7 @@ function NeedsReview({
                   <ThemedText className="text-sm font-bold" numberOfLines={1}>
                     {entry.title || entry.merchant || entry.category || 'Transaction'}
                   </ThemedText>
-                  <ThemedText className="mt-0.5 text-[11px] text-gray-500">
+                  <ThemedText tone="muted" className="mt-0.5 text-[11px]">
                     {entry.date || 'No date recorded'}
                   </ThemedText>
                 </View>
@@ -1622,7 +1622,7 @@ function UnlockCard({
       <ThemedText className="text-sm font-black" style={{ color: theme.colors.accent }}>
         More insights are waiting
       </ThemedText>
-      <ThemedText className="mt-1 text-xs leading-5 text-gray-500">{copy}</ThemedText>
+      <ThemedText tone="muted" className="mt-1 text-xs leading-5">{copy}</ThemedText>
     </View>
   );
 }

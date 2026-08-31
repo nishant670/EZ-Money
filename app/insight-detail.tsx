@@ -227,11 +227,11 @@ export default function InsightDetailScreen() {
               />
             </View>
             <View className="flex-1">
-              <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
                 {label}
               </ThemedText>
               <ThemedText className="mt-2 text-2xl font-black">{title}</ThemedText>
-              <ThemedText className="mt-2 text-sm leading-6 text-gray-500">{body}</ThemedText>
+              <ThemedText tone="muted" className="mt-2 text-sm leading-6">{body}</ThemedText>
             </View>
           </View>
 
@@ -248,7 +248,7 @@ export default function InsightDetailScreen() {
 
         <View className="rounded-[24px] border p-4" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
           <ThemedText className="text-sm font-black">Why this appeared</ThemedText>
-          <ThemedText className="mt-2 text-xs leading-5 text-gray-500">
+          <ThemedText tone="muted" className="mt-2 text-xs leading-5">
             {explanation ?? insightExplainer[kind] ?? 'This is calculated from confirmed transactions inside the selected date range.'}
           </ThemedText>
           {nextExpectedDate && (
@@ -264,7 +264,7 @@ export default function InsightDetailScreen() {
             className="h-12 flex-row items-center justify-center rounded-2xl"
             style={{ backgroundColor: colors.accent }}>
             <MaterialCommunityIcons name="arrow-right-circle-outline" size={20} color="white" />
-            <ThemedText onAccent className="ml-2 text-sm font-black">
+            <ThemedText tone="onAccent" className="ml-2 text-sm font-black">
               {actionLabel ?? insightActionLabel[kind] ?? 'Review transactions'}
             </ThemedText>
           </TouchableOpacity>
@@ -324,7 +324,7 @@ export default function InsightDetailScreen() {
                     <ThemedText className="text-sm font-bold" numberOfLines={1}>
                       {transaction.name}
                     </ThemedText>
-                    <ThemedText className="mt-1 text-[11px] text-gray-500" numberOfLines={1}>
+                    <ThemedText tone="muted" className="mt-1 text-[11px]" numberOfLines={1}>
                       {transaction.category} · {transaction.dateLabel ?? transaction.section}
                     </ThemedText>
                   </View>
@@ -346,7 +346,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
   return (
     <View className="flex-1 rounded-2xl border px-3 py-3" style={{ backgroundColor: theme.colors.secondary, borderColor: theme.colors.border }}>
-      <ThemedText className="text-[10px] font-black uppercase text-gray-500">{label}</ThemedText>
+      <ThemedText tone="muted" className="text-[10px] font-black uppercase">{label}</ThemedText>
       <ThemedText className="mt-1 text-sm font-black" numberOfLines={1}>
         {value}
       </ThemedText>

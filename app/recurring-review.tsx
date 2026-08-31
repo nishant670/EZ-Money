@@ -221,7 +221,7 @@ function RecurringCandidateCard({
           <View className="flex-row items-center gap-2">
             {candidate.review_due && (
               <View className="rounded-full px-2 py-1" style={{ backgroundColor: '#FFF3D6' }}>
-                <ThemedText className="text-[10px] font-black uppercase text-amber-700">Review</ThemedText>
+                <ThemedText tone="warning" className="text-[10px] font-black uppercase">Review</ThemedText>
               </View>
             )}
             <ThemedText className="text-[10px] font-black uppercase tracking-widest" style={{ color: muted }}>
@@ -262,7 +262,7 @@ function RecurringCandidateCard({
           ) : (
             <>
               <MaterialCommunityIcons name="bell-check-outline" size={20} color="white" />
-              <ThemedText onAccent className="ml-2 text-sm font-black">Track as subscription</ThemedText>
+              <ThemedText tone="onAccent" className="ml-2 text-sm font-black">Track as subscription</ThemedText>
             </>
           )}
         </Pressable>
@@ -290,7 +290,7 @@ function MiniMetric({
 }) {
   return (
     <View className="flex-1 rounded-2xl border px-3 py-3" style={{ backgroundColor: colors.background, borderColor: colors.border }}>
-      <ThemedText className="text-[10px] font-black uppercase text-gray-500">{label}</ThemedText>
+      <ThemedText tone="muted" className="text-[10px] font-black uppercase">{label}</ThemedText>
       <ThemedText className="mt-1 text-xs font-black" numberOfLines={1}>
         {value}
       </ThemedText>

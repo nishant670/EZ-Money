@@ -2,7 +2,11 @@ import { cleanup, render } from '@testing-library/react-native';
 import React from 'react';
 import { StyleSheet, type TextStyle } from 'react-native';
 
-import { ThemedText, type ThemedTextProps } from '@/components/themed-text';
+import {
+  ThemedText,
+  type ThemedTextProps,
+  type ThemedTextTone,
+} from '@/components/themed-text';
 import { getMoodColors, ThemeMoods, type ThemeMoodId } from '@/constants/theme';
 import { useAppMoodStore } from '@/hooks/use-app-mood-store';
 
@@ -43,18 +47,18 @@ afterEach(() => {
   useAppMoodStore.setState({ nightMode: false, themeColor: 'finnri' });
 });
 
-describe('ThemedText onAccent', () => {
+describe('ThemedText tone', () => {
   it('is the on-accent ink in light mode, not the theme text colour', async () => {
-    expect(await colorUnder({ nightMode: false }, { onAccent: true })).toBe('#FFFFFF');
+    expect(await colorUnder({ nightMode: false }, { tone: 'onAccent' })).toBe('#FFFFFF');
   });
 
   it('is the same ink in dark mode — the accent under it did not invert', async () => {
-    expect(await colorUnder({ nightMode: true }, { onAccent: true })).toBe('#FFFFFF');
+    expect(await colorUnder({ nightMode: true }, { tone: 'onAccent' })).toBe('#FFFFFF');
   });
 
   it('does not change colour between the two modes', async () => {
-    expect(await colorUnder({ nightMode: false }, { onAccent: true })).toBe(
-      await colorUnder({ nightMode: true }, { onAccent: true })
+    expect(await colorUnder({ nightMode: false }, { tone: 'onAccent' })).toBe(
+      await colorUnder({ nightMode: true }, { tone: 'onAccent' })
     );
   });
 
@@ -64,7 +68,7 @@ describe('ThemedText onAccent', () => {
         expect({
           themeColor,
           nightMode,
-          color: await colorUnder({ nightMode, themeColor }, { onAccent: true }),
+          color: await colorUnder({ nightMode, themeColor }, { tone: 'onAccent' }),
         }).toEqual({
           themeColor,
           nightMode,
@@ -81,7 +85,47 @@ describe('ThemedText onAccent', () => {
 
   it('still yields to an explicit colour from the caller', async () => {
     expect(
-      await colorUnder({ nightMode: false }, { onAccent: true, style: { color: '#123456' } })
+      await colorUnder({ nightMode: false }, { tone: 'onAccent', style: { color: '#123456' } })
     ).toBe('#123456');
+  });
+
+  it('resolves every tone to its own token, in both modes and every mood', async () => {
+    // The tones are the only way colour reaches this component, so each one
+    // has to land on the token it names rather than on the default ink.
+    const tones: Record<Exclude<ThemedTextTone, 'default'>, string> = {
+      muted: 'muted',
+      mutedStrong: 'mutedStrong',
+      onAccent: 'onAccent',
+      positive: 'positive',
+      negative: 'negative',
+      warning: 'warning',
+    };
+
+    for (const themeColor of Object.keys(ThemeMoods) as ThemeMoodId[]) {
+      for (const nightMode of [false, true]) {
+        const palette = getMoodColors(themeColor)[nightMode ? 'dark' : 'light'];
+        for (const [tone, token] of Object.entries(tones)) {
+          expect({ themeColor, nightMode, tone, color: await colorUnder(
+            { nightMode, themeColor },
+            { tone: tone as ThemedTextTone }
+          ) }).toEqual({
+            themeColor,
+            nightMode,
+            tone,
+            color: palette[token as keyof typeof palette],
+          });
+        }
+      }
+    }
+  });
+
+  it('keeps caution readable against the card it sits on, both ways round', async () => {
+    // The warning surface is amber in both modes, so the ink has to invert
+    // while the surface does not — a deep amber on the pale card, a pale one
+    // on the dark card.
+    const light = await colorUnder({ nightMode: false }, { tone: 'warning' });
+    const dark = await colorUnder({ nightMode: true }, { tone: 'warning' });
+
+    expect(light).not.toBe(dark);
   });
 });

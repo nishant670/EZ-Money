@@ -25,7 +25,7 @@ export function HomeHeader({ unreadCount = 0, onNotificationsPress }: HomeHeader
         <FinnriLogoMark size={48} style={{ shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 }} />
 
         <View>
-          <ThemedText className="text-xs text-black/60 dark:text-white/60">Hey there,</ThemedText>
+          <ThemedText tone="muted" className="text-xs">Hey there,</ThemedText>
           <ThemedText variant="sectionTitle" style={{ color: theme.colors.text }}>
             {displayName}
           </ThemedText>
@@ -45,7 +45,7 @@ export function HomeHeader({ unreadCount = 0, onNotificationsPress }: HomeHeader
               borderWidth: 2,
               borderColor: theme.mode === 'dark' ? theme.colors.background : '#FFFFFF',
             }}>
-            <ThemedText onAccent
+            <ThemedText tone="onAccent"
               className="text-[10px] font-black"
               style={{
                 width: '100%',

@@ -221,7 +221,7 @@ export default function MerchantHistoryScreen() {
         }>
         <View className="items-center px-5 py-8">
           <View className="h-24 w-24 items-center justify-center rounded-full bg-gray-100 shadow-sm">
-            <ThemedText className="text-3xl font-black text-gray-400">
+            <ThemedText tone="muted" className="text-3xl font-black">
               {merchantInitials(merchant)}
             </ThemedText>
           </View>
@@ -294,7 +294,7 @@ export default function MerchantHistoryScreen() {
                     </View>
                     <View className="flex-1">
                       <ThemedText className="text-sm font-black">{category.category}</ThemedText>
-                      <ThemedText className="mt-1 text-[11px] text-gray-500">
+                      <ThemedText tone="muted" className="mt-1 text-[11px]">
                         {category.count} transactions
                       </ThemedText>
                     </View>
@@ -359,7 +359,7 @@ export default function MerchantHistoryScreen() {
         ) : (
           sections.map((section) => (
             <View key={section.title} className="mb-7 px-5">
-              <ThemedText className="mb-4 text-[13px] font-black uppercase tracking-[3px] text-gray-500">
+              <ThemedText tone="muted" className="mb-4 text-[13px] font-black uppercase tracking-[3px]">
                 {section.title}
               </ThemedText>
               <View className="overflow-hidden rounded-[26px] border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -381,7 +381,7 @@ export default function MerchantHistoryScreen() {
           className="flex-1 flex-row items-center justify-center rounded-[24px] py-5 shadow-lg"
           style={{ backgroundColor: theme.accent }}>
           <MaterialCommunityIcons name="chart-timeline-variant-shimmer" size={22} color="white" />
-          <ThemedText onAccent className="ml-3 text-lg font-black">Merchant Insights</ThemedText>
+          <ThemedText tone="onAccent" className="ml-3 text-lg font-black">Merchant Insights</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity className="h-[64px] w-[64px] items-center justify-center rounded-[24px] bg-white shadow-sm">
           <MaterialCommunityIcons name="download-outline" size={26} color={theme.text} />
@@ -394,7 +394,7 @@ export default function MerchantHistoryScreen() {
 function MerchantMetricCard({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-1 rounded-[22px] border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-      <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+      <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
         {label}
       </ThemedText>
       <ThemedText className="mt-2 text-lg font-black">{value}</ThemedText>
@@ -450,7 +450,7 @@ function MerchantTransactionRow({
             style={{ color: transaction.color, backgroundColor: transaction.bgColor }}>
             {transaction.category}
           </ThemedText>
-          <ThemedText className="text-xs text-gray-500">
+          <ThemedText tone="muted" className="text-xs">
             {transaction.accountName ?? transaction.mode ?? 'Account not set'}
           </ThemedText>
         </View>
@@ -460,7 +460,7 @@ function MerchantTransactionRow({
           {isIncome ? '+' : ''}
           {formatMoney(amount)}
         </ThemedText>
-        <ThemedText className="mt-1 text-xs text-gray-500">
+        <ThemedText tone="muted" className="mt-1 text-xs">
           {transaction.dateLabel?.split(' ').slice(0, 2).join(' ') ?? ''}
         </ThemedText>
       </View>

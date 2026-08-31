@@ -14,16 +14,44 @@ export type ThemedTextProps = TextProps & {
   type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
   variant?: TypographyVariant;
   /**
-   * Text drawn *on* the accent fill — a filled button's label, a badge's count.
-   * Resolves to `onAccent`, which is white in both modes, because the surface
-   * under it is the accent colour in both modes and does not invert with the
-   * theme the way a background does.
+   * Which rank of ink this text is, named rather than coloured.
    *
-   * This prop exists because `className="text-white"` cannot do it. See the
-   * note on {@link ThemedText}.
+   * This is how colour reaches a `ThemedText` at all — a colour `className`
+   * cannot, for the reason in the note on {@link ThemedText} — and it is the
+   * whole vocabulary:
+   *
+   * - `default` — primary ink.
+   * - `muted` — the caption band: eyebrows, hints, the line under a title.
+   * - `mutedStrong` — secondary, but still read as prose.
+   * - `onAccent` — a label *on* the accent fill, white in both modes because
+   *   the surface under it is the accent in both.
+   * - `positive` / `negative` / `warning` — outcome, error, caution.
+   *
+   * Each is a token, so it follows the mood and the mode; a literal colour
+   * still goes through `style` or `lightColor`/`darkColor`.
    */
-  onAccent?: boolean;
+  tone?: ThemedTextTone;
 };
+
+export type ThemedTextTone =
+  | 'default'
+  | 'muted'
+  | 'mutedStrong'
+  | 'onAccent'
+  | 'positive'
+  | 'negative'
+  | 'warning';
+
+/** `default` is the theme's plain ink; every other tone names its own token. */
+const toneColorNames = {
+  default: 'text',
+  muted: 'muted',
+  mutedStrong: 'mutedStrong',
+  onAccent: 'onAccent',
+  positive: 'positive',
+  negative: 'negative',
+  warning: 'warning',
+} as const;
 
 /**
  * The line height an override needs, or `undefined` if the preset's will do.
@@ -74,10 +102,10 @@ export function resolveLineHeight(
  * white on the dark one while the icon beside it — a plain `color` prop —
  * stayed white in both.
  *
- * Colour is set through props, not classes: {@link ThemedTextProps.onAccent}
- * for a label on the accent fill, `lightColor`/`darkColor` for a one-off, or
- * `style={{ color }}` from a theme token. `className` is still the right place
- * for everything that is not colour.
+ * Colour is set through props, not classes: {@link ThemedTextProps.tone} names
+ * the rank of ink, `lightColor`/`darkColor` override a one-off, and
+ * `style={{ color }}` takes a literal. `className` is still the right place for
+ * everything that is not colour.
  */
 export function ThemedText({
   style,
@@ -85,13 +113,10 @@ export function ThemedText({
   darkColor,
   type = 'default',
   variant,
-  onAccent = false,
+  tone = 'default',
   ...rest
 }: ThemedTextProps) {
-  const color = useThemeColor(
-    { light: lightColor, dark: darkColor },
-    onAccent ? 'onAccent' : 'text'
-  );
+  const color = useThemeColor({ light: lightColor, dark: darkColor }, toneColorNames[tone]);
   const accent = useThemeColor({}, 'tint');
   const preset: TextStyle = variant ? Typography[variant] : styles[type];
   const lineHeight = resolveLineHeight(preset, style);

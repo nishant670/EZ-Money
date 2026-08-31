@@ -189,7 +189,7 @@ export default function FeedbackScreen() {
           ) : (
             <>
               <MaterialCommunityIcons name="send" size={18} color="white" />
-              <ThemedText onAccent className="ml-2 text-sm font-black" style={{ fontFamily: Fonts.title }}>
+              <ThemedText tone="onAccent" className="ml-2 text-sm font-black" style={{ fontFamily: Fonts.title }}>
                 Send Feedback
               </ThemedText>
             </>

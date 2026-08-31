@@ -1524,7 +1524,7 @@ export default function HomeScreen() {
                           )
                         );
                       }}>
-                      <ThemedText onAccent className="text-xs font-black">Confirm</ThemedText>
+                      <ThemedText tone="onAccent" className="text-xs font-black">Confirm</ThemedText>
                     </Pressable>
                     <Pressable
                       className="rounded-xl border px-4 py-2"
@@ -1663,7 +1663,7 @@ export default function HomeScreen() {
                     }
                     className="mt-3 self-start rounded-full px-4 py-2"
                     style={{ backgroundColor: themeTokens.colors.accent }}>
-                    <ThemedText onAccent className="text-xs font-bold">
+                    <ThemedText tone="onAccent" className="text-xs font-bold">
                       {creditAction.actionLabel}
                     </ThemedText>
                   </Pressable>
@@ -1705,7 +1705,7 @@ export default function HomeScreen() {
             locked={isCaptureLocked || !isCaptureCollapsible}
             onExpandedHeightChange={setCaptureExpandedHeight}>
             <View className="px-6 pb-4">
-              <ThemedText className="text-xs text-gray-500 font-medium text-center">
+              <ThemedText tone="muted" className="text-xs font-medium text-center">
                 Speak naturally. Finnri will organize it.
               </ThemedText>
             </View>
@@ -1769,7 +1769,7 @@ export default function HomeScreen() {
           }}
           pointerEvents="none">
           <MaterialCommunityIcons name="check" size={15} color="white" />
-          <ThemedText onAccent className="text-xs font-bold">{saveConfirmation}</ThemedText>
+          <ThemedText tone="onAccent" className="text-xs font-bold">{saveConfirmation}</ThemedText>
         </RNAnimated.View>
       )}
 

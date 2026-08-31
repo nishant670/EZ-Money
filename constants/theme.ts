@@ -193,6 +193,24 @@ export const DefaultAppMood: AppMoodSettings = {
 const MUTED_ALPHA = '99';
 const MUTED_STRONG_ALPHA = 'BF';
 
+/**
+ * Caution text, as a colour rather than an alpha.
+ *
+ * The third rank beside `positive` and `negative`, and the one they were
+ * missing: the warning cards draw their surface with `bg-amber-50` /
+ * `dark:bg-amber-900/20` on a `View`, which works, and then wrote the text with
+ * `text-amber-700 dark:text-amber-300`, which did not — see the note on
+ * `ThemedText`. These are the two values those classes were asking for.
+ *
+ * Flat rather than per-mood, like `onAccent`: the surface under it is amber in
+ * every mood, so tinting the ink per mood would only pull it off that surface.
+ * It inverts between modes for the ordinary reason — the light value is a deep
+ * amber to be read on a pale card, the dark value a pale one to be read on a
+ * dark card.
+ */
+const WARNING_LIGHT = '#B45309';
+const WARNING_DARK = '#FCD34D';
+
 function createColors(mood: MoodPalette) {
   return {
     light: {
@@ -209,6 +227,7 @@ function createColors(mood: MoodPalette) {
       positive: mood.light.positive,
       negative: mood.light.negative,
       neutral: mood.light.neutral,
+      warning: WARNING_LIGHT,
       onAccent: '#FFFFFF',
       onNegative: '#FFFFFF',
       shadow: '#000000',
@@ -229,6 +248,7 @@ function createColors(mood: MoodPalette) {
       positive: mood.dark.positive,
       negative: mood.dark.negative,
       neutral: mood.dark.neutral,
+      warning: WARNING_DARK,
       onAccent: '#FFFFFF',
       /**
        * Not white, because `negative` is not the same kind of colour in the
