@@ -262,7 +262,7 @@ function RecurringCandidateCard({
           ) : (
             <>
               <MaterialCommunityIcons name="bell-check-outline" size={20} color="white" />
-              <ThemedText className="ml-2 text-sm font-black text-white">Track as subscription</ThemedText>
+              <ThemedText onAccent className="ml-2 text-sm font-black">Track as subscription</ThemedText>
             </>
           )}
         </Pressable>

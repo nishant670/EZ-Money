@@ -807,7 +807,7 @@ export default function TransactionDetailsScreen() {
           style={{ backgroundColor: theme.accent }}>
           <View className="flex-row items-center gap-3">
             <MaterialCommunityIcons name="pencil-outline" size={24} color="#FFF" />
-            <ThemedText className="text-white font-black text-lg">Edit</ThemedText>
+            <ThemedText onAccent className="font-black text-lg">Edit</ThemedText>
           </View>
         </Pressable>
 
@@ -898,7 +898,7 @@ export default function TransactionDetailsScreen() {
               style={{ backgroundColor: '#FF6B6B' }}>
               <View className="flex-row items-center gap-2">
                 <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
-                <ThemedText className="text-base font-black text-white">Delete</ThemedText>
+                <ThemedText onAccent className="text-base font-black">Delete</ThemedText>
               </View>
             </Pressable>
 

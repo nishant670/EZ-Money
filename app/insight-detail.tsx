@@ -264,7 +264,7 @@ export default function InsightDetailScreen() {
             className="h-12 flex-row items-center justify-center rounded-2xl"
             style={{ backgroundColor: colors.accent }}>
             <MaterialCommunityIcons name="arrow-right-circle-outline" size={20} color="white" />
-            <ThemedText className="ml-2 text-sm font-black text-white">
+            <ThemedText onAccent className="ml-2 text-sm font-black">
               {actionLabel ?? insightActionLabel[kind] ?? 'Review transactions'}
             </ThemedText>
           </TouchableOpacity>

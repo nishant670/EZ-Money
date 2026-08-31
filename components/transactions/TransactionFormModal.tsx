@@ -1550,7 +1550,7 @@ export function TransactionFormModal({
           <ActivityIndicator color="white" />
         ) : (
           <>
-            <ThemedText className="text-base font-black text-white">
+            <ThemedText onAccent className="text-base font-black">
               {isEdit
                 ? mode === 'quick-prompt'
                   ? 'Save Prompt'
@@ -1830,7 +1830,7 @@ export function TransactionFormModal({
                               onPress={() => onCreateSuggestedAccount(visibleAccountSuggestion)}
                               className="rounded-full px-4 py-2"
                               style={{ backgroundColor: accent }}>
-                              <ThemedText className="text-xs font-black text-white">
+                              <ThemedText onAccent className="text-xs font-black">
                                 Set up account
                               </ThemedText>
                             </Pressable>
@@ -2249,7 +2249,7 @@ export function TransactionFormModal({
                                   onPress={() => onCreateSuggestedAccount(visibleAccountSuggestion)}
                                   className="rounded-full px-4 py-2"
                                   style={{ backgroundColor: accent }}>
-                                  <ThemedText className="text-xs font-black text-white">
+                                  <ThemedText onAccent className="text-xs font-black">
                                     Set up account
                                   </ThemedText>
                                 </Pressable>
@@ -2911,7 +2911,7 @@ export function TransactionFormModal({
                   className="flex-1 items-center rounded-2xl py-3"
                   style={{ backgroundColor: accent }}
                   onPress={handleConfirmDatePicker}>
-                  <ThemedText className="text-white font-bold">Set Date</ThemedText>
+                  <ThemedText onAccent className="font-bold">Set Date</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -2948,7 +2948,7 @@ export function TransactionFormModal({
                   }));
                   setIsCancellationDatePickerVisible(false);
                 }}>
-                <ThemedText className="font-bold text-white">Set reminder date</ThemedText>
+                <ThemedText onAccent className="font-bold">Set reminder date</ThemedText>
               </Pressable>
             </View>
           </AnimatedBottomSheet>
@@ -2989,7 +2989,7 @@ export function TransactionFormModal({
                     }));
                     setIsSubscriptionDatePickerVisible(false);
                   }}>
-                  <ThemedText className="font-bold text-white">Set date</ThemedText>
+                  <ThemedText onAccent className="font-bold">Set date</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -3180,7 +3180,7 @@ export function TransactionFormModal({
                       }}
                       className="rounded-2xl px-5 py-3"
                       style={{ backgroundColor: accent }}>
-                      <ThemedText className="font-bold text-white">Manage accounts</ThemedText>
+                      <ThemedText onAccent className="font-bold">Manage accounts</ThemedText>
                     </Pressable>
                   )}
                 </View>

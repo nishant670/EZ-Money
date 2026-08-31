@@ -45,8 +45,8 @@ export function HomeHeader({ unreadCount = 0, onNotificationsPress }: HomeHeader
               borderWidth: 2,
               borderColor: theme.mode === 'dark' ? theme.colors.background : '#FFFFFF',
             }}>
-            <ThemedText
-              className="text-[10px] font-black text-white"
+            <ThemedText onAccent
+              className="text-[10px] font-black"
               style={{
                 width: '100%',
                 textAlign: 'center',

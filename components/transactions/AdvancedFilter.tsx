@@ -500,9 +500,9 @@ export const AdvancedFilter = ({
           onPress={() => onApply(draft)}
           className="h-14 flex-1 flex-row items-center justify-center gap-2 rounded-3xl"
           style={{ backgroundColor: accent }}>
-          <ThemedText className="text-base font-black text-white">Show results</ThemedText>
+          <ThemedText onAccent className="text-base font-black">Show results</ThemedText>
           <View className="rounded-full bg-white/25 px-2 py-0.5">
-            <ThemedText className="text-xs font-bold text-white">{count}</ThemedText>
+            <ThemedText onAccent className="text-xs font-bold">{count}</ThemedText>
           </View>
         </Pressable>
       </View>

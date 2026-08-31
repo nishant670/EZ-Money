@@ -75,7 +75,7 @@ export default function UpcomingScreen() {
           className="mt-8 h-14 flex-row items-center justify-center rounded-[22px]"
           style={{ backgroundColor: colors.accent }}>
           <MaterialCommunityIcons name="message-draw" size={18} color="white" />
-          <ThemedText className="ml-2 text-sm font-black text-white" style={{ fontFamily: Fonts.title }}>
+          <ThemedText onAccent className="ml-2 text-sm font-black" style={{ fontFamily: Fonts.title }}>
             Suggest What Comes Next
           </ThemedText>
         </Pressable>

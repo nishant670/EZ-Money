@@ -13,6 +13,16 @@ export type ThemedTextProps = TextProps & {
   darkColor?: string;
   type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
   variant?: TypographyVariant;
+  /**
+   * Text drawn *on* the accent fill — a filled button's label, a badge's count.
+   * Resolves to `onAccent`, which is white in both modes, because the surface
+   * under it is the accent colour in both modes and does not invert with the
+   * theme the way a background does.
+   *
+   * This prop exists because `className="text-white"` cannot do it. See the
+   * note on {@link ThemedText}.
+   */
+  onAccent?: boolean;
 };
 
 /**
@@ -52,15 +62,36 @@ export function resolveLineHeight(
   return derived > presetLineHeight ? derived : undefined;
 }
 
+/**
+ * ## A colour className on this component does nothing
+ *
+ * `ThemedText` always passes a `color` in its `style` array, and NativeWind
+ * ranks the `style` prop *above* `className` — inline rules sort after class
+ * rules in `specificityCompare`, so the last colour applied is always this
+ * one. A `text-white` class on this component therefore renders the theme's
+ * ink, not white: near-black in light mode and near-white in dark, which is
+ * how a badge on the orange accent came to be black on the light theme and
+ * white on the dark one while the icon beside it — a plain `color` prop —
+ * stayed white in both.
+ *
+ * Colour is set through props, not classes: {@link ThemedTextProps.onAccent}
+ * for a label on the accent fill, `lightColor`/`darkColor` for a one-off, or
+ * `style={{ color }}` from a theme token. `className` is still the right place
+ * for everything that is not colour.
+ */
 export function ThemedText({
   style,
   lightColor,
   darkColor,
   type = 'default',
   variant,
+  onAccent = false,
   ...rest
 }: ThemedTextProps) {
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
+  const color = useThemeColor(
+    { light: lightColor, dark: darkColor },
+    onAccent ? 'onAccent' : 'text'
+  );
   const accent = useThemeColor({}, 'tint');
   const preset: TextStyle = variant ? Typography[variant] : styles[type];
   const lineHeight = resolveLineHeight(preset, style);

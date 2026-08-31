@@ -1524,7 +1524,7 @@ export default function HomeScreen() {
                           )
                         );
                       }}>
-                      <ThemedText className="text-xs font-black text-white">Confirm</ThemedText>
+                      <ThemedText onAccent className="text-xs font-black">Confirm</ThemedText>
                     </Pressable>
                     <Pressable
                       className="rounded-xl border px-4 py-2"
@@ -1663,7 +1663,7 @@ export default function HomeScreen() {
                     }
                     className="mt-3 self-start rounded-full px-4 py-2"
                     style={{ backgroundColor: themeTokens.colors.accent }}>
-                    <ThemedText className="text-xs font-bold text-white">
+                    <ThemedText onAccent className="text-xs font-bold">
                       {creditAction.actionLabel}
                     </ThemedText>
                   </Pressable>
@@ -1769,7 +1769,7 @@ export default function HomeScreen() {
           }}
           pointerEvents="none">
           <MaterialCommunityIcons name="check" size={15} color="white" />
-          <ThemedText className="text-xs font-bold text-white">{saveConfirmation}</ThemedText>
+          <ThemedText onAccent className="text-xs font-bold">{saveConfirmation}</ThemedText>
         </RNAnimated.View>
       )}
 
