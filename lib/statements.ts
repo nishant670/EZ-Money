@@ -1,3 +1,5 @@
+import { File } from 'expo-file-system';
+
 import { API_BASE_URL } from './transactions';
 import { ApiFieldErrors, readApiError } from './api-error';
 
@@ -398,8 +400,10 @@ export const diffStatementLines = async (
  * a saved statement password is a saved credential, and the whole month's
  * spending sits behind it.
  *
- * No explicit Content-Type: React Native fills in the multipart boundary, and
- * setting the header by hand drops it and makes the request unparseable.
+ * No explicit Content-Type: the multipart boundary is filled in for us, and
+ * setting the header by hand drops it and makes the request unparseable. The
+ * part is a `File` for the reason spelled out in `lib/uploads.ts` — the
+ * `{ uri, name, type }` shape is not a part Expo's fetch knows how to send.
  */
 export const uploadStatementPDF = async (
   token: string,
@@ -408,11 +412,7 @@ export const uploadStatementPDF = async (
   password?: string
 ): Promise<StatementDiff> => {
   const body = new FormData();
-  body.append('file', {
-    uri: file.uri,
-    name: file.name || 'statement.pdf',
-    type: 'application/pdf',
-  } as unknown as Blob);
+  body.append('file', new File(file.uri) as unknown as Blob);
   if (password) {
     body.append('password', password);
   }
@@ -434,20 +434,6 @@ export type StatementScreenshotFile = {
   mimeType?: string | null;
 };
 
-const screenshotMIME = (file: StatementScreenshotFile): string => {
-  if (
-    file.mimeType === 'image/jpeg' ||
-    file.mimeType === 'image/png' ||
-    file.mimeType === 'image/webp'
-  ) {
-    return file.mimeType;
-  }
-  const name = file.name.toLowerCase();
-  if (name.endsWith('.png')) return 'image/png';
-  if (name.endsWith('.webp')) return 'image/webp';
-  return 'image/jpeg';
-};
-
 /**
  * Read a batch of cropped statement screenshots and return the same diff used
  * by PDF intake. The images go directly to the request body and are not added
@@ -459,12 +445,8 @@ export const uploadStatementScreenshots = async (
   files: StatementScreenshotFile[]
 ): Promise<StatementDiff> => {
   const body = new FormData();
-  files.forEach((file, index) => {
-    body.append('images', {
-      uri: file.uri,
-      name: file.name || `statement-page-${index + 1}.jpg`,
-      type: screenshotMIME(file),
-    } as unknown as Blob);
+  files.forEach((file) => {
+    body.append('images', new File(file.uri) as unknown as Blob);
   });
 
   const response = await fetch(`${API_BASE_URL}/v1/statements/${statementId}/screenshots`, {
