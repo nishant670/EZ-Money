@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Fonts } from '@/constants/theme';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { Shimmer } from '@/components/ui/Shimmer';
@@ -385,6 +386,10 @@ export default function ManageAccountScreen() {
   }, [issuerQuery, providerOptions, selectedIssuer]);
 
   const updateSelectedType = (nextType: AccountType) => {
+    if (nextType === selectedType) {
+      setTypeError(null);
+      return;
+    }
     setSelectedType(nextType);
     setSelectedColor((currentColor) =>
       currentColor === DEFAULT_ACCOUNT_COLORS[selectedType]
@@ -581,7 +586,9 @@ export default function ManageAccountScreen() {
         rightIcon="help-circle-outline"
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingScreen
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}>
         <View style={styles.stepIntro}>
           <ThemedText style={styles.stepEyebrow}>Account basics</ThemedText>
           <ThemedText style={styles.stepTitle}>
@@ -686,7 +693,7 @@ export default function ManageAccountScreen() {
             );
           })}
         </ScrollView>
-      </ScrollView>
+      </KeyboardAvoidingScreen>
 
       {/* Footer Step 1 */}
       <View style={styles.footer}>
@@ -729,7 +736,7 @@ export default function ManageAccountScreen() {
             rightText={isSaving ? 'Saving' : 'Save basic'}
             onRightPress={handleSave}
           />
-          <ScrollView
+          <KeyboardAvoidingScreen
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}>
             {/* Mascot & Message Step 2 */}
@@ -953,7 +960,7 @@ export default function ManageAccountScreen() {
                 </View>
               </>
             )}
-          </ScrollView>
+          </KeyboardAvoidingScreen>
 
           {/* Footer Step 2 */}
           <View style={styles.footer}>
@@ -1009,7 +1016,7 @@ export default function ManageAccountScreen() {
           rightText={isSaving ? 'Saving' : 'Save basic'}
           onRightPress={handleSave}
         />
-        <ScrollView
+        <KeyboardAvoidingScreen
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}>
           <View style={styles.mascotSection}>
@@ -1150,7 +1157,7 @@ export default function ManageAccountScreen() {
               </View>
             </>
           )}
-        </ScrollView>
+        </KeyboardAvoidingScreen>
 
         <View style={styles.footer}>
           {saveError ? (

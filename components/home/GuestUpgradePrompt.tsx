@@ -46,7 +46,7 @@ export function GuestUpgradePrompt({
               onPress={onUpgrade}
               className="rounded-full px-4 py-2"
               style={{ backgroundColor: theme.colors.accent }}>
-              <ThemedText className="text-xs font-black text-white">Save my data</ThemedText>
+              <ThemedText tone="onAccent" className="text-xs font-black">Save my data</ThemedText>
             </Pressable>
             <Pressable
               accessibilityRole="button"

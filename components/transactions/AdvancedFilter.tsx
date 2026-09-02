@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Platform, Pressable, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { ThemedText } from '@/components/themed-text';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { Account } from '@/lib/accounts';
 import { CATEGORIES, categoryVisual } from '@/lib/categories';
@@ -196,7 +197,7 @@ export const AdvancedFilter = ({
         </Pressable>
       </View>
 
-      <ScrollView
+      <KeyboardAvoidingScreen
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         className="flex-1"
@@ -465,7 +466,7 @@ export const AdvancedFilter = ({
             })}
           </View>
         )}
-      </ScrollView>
+      </KeyboardAvoidingScreen>
 
       {showPicker && (
         <DateTimePicker
@@ -500,9 +501,9 @@ export const AdvancedFilter = ({
           onPress={() => onApply(draft)}
           className="h-14 flex-1 flex-row items-center justify-center gap-2 rounded-3xl"
           style={{ backgroundColor: accent }}>
-          <ThemedText className="text-base font-black text-white">Show results</ThemedText>
+          <ThemedText tone="onAccent" className="text-base font-black">Show results</ThemedText>
           <View className="rounded-full bg-white/25 px-2 py-0.5">
-            <ThemedText className="text-xs font-bold text-white">{count}</ThemedText>
+            <ThemedText tone="onAccent" className="text-xs font-bold">{count}</ThemedText>
           </View>
         </Pressable>
       </View>

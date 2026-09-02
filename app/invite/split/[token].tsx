@@ -122,7 +122,7 @@ export default function SplitInviteScreen() {
                 style={{ color: theme.text, fontFamily: Fonts.title }}>
                 {invite ? `Join ${invite.group.name}` : 'Split group invite'}
               </ThemedText>
-              <ThemedText className="mt-3 text-center text-base leading-6 text-black/55 dark:text-white/55">
+              <ThemedText tone="muted" className="mt-3 text-center text-base leading-6">
                 {invite
                   ? `${invite.owner_name} invited you to track shared expenses with ${invite.member_count} people on Finnri.`
                   : 'Open this invite while signed in to Finnri.'}
@@ -141,7 +141,7 @@ export default function SplitInviteScreen() {
             {accepting ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <ThemedText className="text-base text-white" style={{ fontFamily: Fonts.title }}>
+              <ThemedText tone="onAccent" className="text-base" style={{ fontFamily: Fonts.title }}>
                 {user ? 'Join group' : 'Sign in to join'}
               </ThemedText>
             )}

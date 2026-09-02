@@ -3,11 +3,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -194,7 +195,7 @@ export default function StatementReviewScreen() {
           <View className="h-11 w-11" />
         </View>
 
-        <ScrollView
+        <KeyboardAvoidingScreen
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 120 }}>
           {error && <ErrorBanner message={error} style={{ marginBottom: 16 }} />}
@@ -486,7 +487,7 @@ export default function StatementReviewScreen() {
               )}
             </>
           )}
-        </ScrollView>
+        </KeyboardAvoidingScreen>
 
         {diff && diff.missing.length > 0 && (
           <View

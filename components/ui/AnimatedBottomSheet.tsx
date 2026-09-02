@@ -2,9 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
-  Keyboard,
   Modal,
-  Platform,
   Pressable,
   StyleProp,
   View,
@@ -12,6 +10,7 @@ import {
 } from 'react-native';
 
 import { Motion } from '@/constants/theme';
+import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { useMotion } from '@/hooks/use-motion';
 
 /**
@@ -47,7 +46,7 @@ export function AnimatedBottomSheet({
   onDismiss,
 }: AnimatedBottomSheetProps) {
   const [isMounted, setIsMounted] = useState(visible);
-  const [keyboardInset, setKeyboardInset] = useState(0);
+  const keyboardInset = useKeyboardInset(avoidKeyboard);
   const progress = useRef(new Animated.Value(0)).current;
   const motion = useMotion();
   const enterDuration = motion.duration('sheet');
@@ -93,34 +92,6 @@ export function AnimatedBottomSheet({
       animation?.stop();
     };
   }, [enterDuration, exitDurationMs, onDismiss, progress, visible]);
-
-  /**
-   * The sheet lifts itself rather than delegating to `KeyboardAvoidingView`.
-   *
-   * A sheet lives inside a `Modal`, which on Android is its own window that
-   * `adjustResize` never reaches — and `KeyboardAvoidingView` has no Android
-   * behavior to fall back on, so the keyboard simply covered the form and the
-   * user typed into fields they could not see. Measuring the keyboard and
-   * padding the sheet up by it is the one approach that behaves the same on
-   * both platforms and inside a modal.
-   */
-  useEffect(() => {
-    if (!avoidKeyboard) {
-      setKeyboardInset(0);
-      return;
-    }
-    // iOS reports the keyboard before it animates, Android only once it is up.
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const onShow = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardInset(event.endCoordinates?.height ?? 0);
-    });
-    const onHide = Keyboard.addListener(hideEvent, () => setKeyboardInset(0));
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, [avoidKeyboard]);
 
   if (!isMounted) return null;
 

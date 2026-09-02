@@ -1,4 +1,9 @@
-import { suggestAccountFromTransaction, type Account } from '@/lib/accounts';
+import {
+  getAutoAccountPayloadForPaymentMode,
+  suggestAccountFromTransaction,
+  type Account,
+} from '@/lib/accounts';
+import { PAYMENT_MODES } from '@/lib/payment-modes';
 
 const account = (overrides: Partial<Account>): Account => ({
   id: 1,
@@ -50,5 +55,23 @@ describe('transaction account suggestions', () => {
     expect(
       suggestAccountFromTransaction({ mode: 'Credit Card', accountHint: 'my credit card' }, [])
     ).toBeNull();
+  });
+});
+
+describe('auto-create payload coverage', () => {
+  // `Bank Account` was missing, so "Create one for me" threw before it reached
+  // the network — on salary, the transaction most likely to need it. A mode
+  // without a default is a dead button, so assert the whole set rather than
+  // the one that broke.
+  it('has an auto-create payload for every payment mode', () => {
+    const missing = PAYMENT_MODES.filter(
+      (mode) => getAutoAccountPayloadForPaymentMode(mode) === null
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('creates a bank account for bank-account mode', () => {
+    const payload = getAutoAccountPayloadForPaymentMode('Bank Account');
+    expect(payload).toMatchObject({ type: 'bank' });
   });
 });

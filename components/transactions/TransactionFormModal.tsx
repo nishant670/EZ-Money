@@ -34,7 +34,11 @@ import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { useEntitlementGate } from '@/hooks/use-entitlement-gate';
 import { UpgradeSheet } from '@/components/billing/UpgradeSheet';
 import type { Account, AccountSuggestion } from '@/lib/accounts';
-import { getAccountsForPaymentMode, getPreferredAccountForPaymentMode } from '@/lib/accounts';
+import {
+  getAccountsForPaymentMode,
+  getAutoAccountPayloadForPaymentMode,
+  getPreferredAccountForPaymentMode,
+} from '@/lib/accounts';
 import { formatTime, uses24HourClock } from '@/lib/datetime';
 import { haptics } from '@/lib/haptics';
 import { toAmountInputValue, toKeypadValue } from '@/lib/money';
@@ -154,9 +158,10 @@ interface TransactionFormModalProps {
   accounts?: Account[];
   splitFriends?: SplitFriend[];
   splitGroups?: SplitGroup[];
-  onManageAccounts?: () => void;
+  onManageAccounts?: (suggestion?: AccountSuggestion) => void;
   accountSuggestion?: AccountSuggestion | null;
-  onCreateSuggestedAccount?: (suggestion: AccountSuggestion) => void;
+  onSetupSuggestedAccount?: (suggestion: AccountSuggestion) => void;
+  onAutoCreateSuggestedAccount?: (suggestion: AccountSuggestion) => Promise<Account>;
   onDraftChange?: (data: EntryForm) => void;
   initialFocus?: 'category' | 'account';
   categorySuggestions?: string[];
@@ -207,7 +212,20 @@ const fieldLabels: Record<keyof EntryForm, string> = {
   subscriptionNotes: 'Subscription notes',
 };
 
-const modeOptions = PAYMENT_MODES;
+const getPaymentLanguage = (entryType: string) =>
+  entryType === 'Income'
+    ? {
+        modeLabel: 'Received via',
+        accountLabel: 'Received in account',
+        modeAccessibilityPrefix: 'Received via',
+        accountAccessibilityPrefix: 'Received in',
+      }
+    : {
+        modeLabel: 'Paid via',
+        accountLabel: 'Paid from account',
+        modeAccessibilityPrefix: 'Paid via',
+        accountAccessibilityPrefix: 'Paid from',
+      };
 // `business_daily` — "Market days", which skips weekends and market holidays —
 // is an SIP concept and is no longer offered anywhere subscriptions are
 // created. Existing rows can still hold it, so `formatSubscriptionInterval`
@@ -364,7 +382,8 @@ export function TransactionFormModal({
   splitGroups = emptySplitGroups,
   onManageAccounts,
   accountSuggestion = null,
-  onCreateSuggestedAccount,
+  onSetupSuggestedAccount,
+  onAutoCreateSuggestedAccount,
   onDraftChange,
   initialFocus,
   categorySuggestions = [],
@@ -531,12 +550,98 @@ export function TransactionFormModal({
     () => getAccountsForPaymentMode(accounts, form.mode),
     [accounts, form.mode]
   );
+  const paymentLanguage = getPaymentLanguage(form.type);
+  const modeOptions = useMemo(
+    () =>
+      form.type === 'Income'
+        ? PAYMENT_MODES.filter((option) => option !== 'Credit Card')
+        : PAYMENT_MODES,
+    [form.type]
+  );
+
+  useEffect(() => {
+    if (form.type !== 'Income' || form.mode !== 'Credit Card') return;
+    setForm((previous) =>
+      resolveEntryFormAccount({ ...previous, mode: 'Bank Account', accountId: null, account: '' })
+    );
+  }, [form.mode, form.type, resolveEntryFormAccount]);
   const [dismissedSuggestionKey, setDismissedSuggestionKey] = useState('');
   const suggestionKey = accountSuggestion
     ? `${accountSuggestion.type}:${accountSuggestion.provider}:${accountSuggestion.identifier}`
     : '';
   const visibleAccountSuggestion =
     accountSuggestion && suggestionKey !== dismissedSuggestionKey ? accountSuggestion : null;
+  const genericAutoAccount = getAutoAccountPayloadForPaymentMode(form.mode);
+  const actionableAccountSuggestion: AccountSuggestion | null =
+    visibleAccountSuggestion ??
+    (genericAutoAccount
+      ? {
+          type: genericAutoAccount.type,
+          name: genericAutoAccount.name,
+          color: genericAutoAccount.color,
+          provider: '',
+          identifier: '',
+          reason: `This matches ${form.mode}`,
+        }
+      : null);
+  const [autoCreatingAccount, setAutoCreatingAccount] = useState(false);
+  const [autoCreateAccountError, setAutoCreateAccountError] = useState<string | null>(null);
+  const [autoCreatedAccountName, setAutoCreatedAccountName] = useState('');
+
+  const handleAutoCreateSuggestedAccount = useCallback(
+    async (suggestion: AccountSuggestion) => {
+      if (!onAutoCreateSuggestedAccount || autoCreatingAccount) return;
+      setAutoCreatingAccount(true);
+      setAutoCreateAccountError(null);
+      try {
+        const saved = await onAutoCreateSuggestedAccount(suggestion);
+        setForm((previous) => ({ ...previous, accountId: saved.id, account: saved.name }));
+        setAutoCreatedAccountName(saved.name);
+        setDismissedSuggestionKey(suggestionKey);
+        setIsAccountPickerVisible(false);
+        haptics.saved();
+      } catch (error) {
+        haptics.rejected();
+        setAutoCreateAccountError(
+          getFriendlyErrorMessage(error, 'Could not create the account. You can still save without it.')
+        );
+      } finally {
+        setAutoCreatingAccount(false);
+      }
+    },
+    [autoCreatingAccount, onAutoCreateSuggestedAccount, suggestionKey]
+  );
+
+  /**
+   * Result of "Create one for me", rendered wherever that button is offered.
+   *
+   * It used to live only inside the `showFullForm` branch, and
+   * `showFullForm = !draftReview && …` — so on the AI draft sheet, the one place
+   * the button is most used, a failure produced no error and a success produced
+   * no confirmation. The button looked dead. Both call sites render this now.
+   */
+  const renderAutoCreateFeedback = () => {
+    if (!autoCreatedAccountName && !autoCreateAccountError) return null;
+    return (
+      <>
+        {autoCreatedAccountName ? (
+          <View
+            className="mt-3 flex-row items-center gap-2 rounded-2xl px-3 py-2"
+            style={{ backgroundColor: theme.secondary }}>
+            <MaterialCommunityIcons name="check-circle-outline" size={16} color={accent} />
+            <ThemedText className="text-xs font-bold" style={{ color: accent }}>
+              {autoCreatedAccountName} created and selected
+            </ThemedText>
+          </View>
+        ) : null}
+        {autoCreateAccountError ? (
+          <ThemedText tone="negative" className="mt-2 text-xs">
+            {autoCreateAccountError}
+          </ThemedText>
+        ) : null}
+      </>
+    );
+  };
 
   const reviewFields = useMemo(() => {
     const fields = new Set(aiReview?.missingFields ?? []);
@@ -1023,15 +1128,6 @@ export function TransactionFormModal({
       rejectSave(`Please provide ${fieldLabels[missingField]}.`);
       return;
     }
-    if (mode !== 'quick-prompt' && form.accountId === null) {
-      rejectSave(
-        compatibleAccounts.length === 0
-          ? `Add a ${form.mode || 'matching'} account before saving this transaction.`
-          : 'Please select an account.'
-      );
-      return;
-    }
-
     const amountValue = Number(form.amount);
     if (!Number.isFinite(amountValue) || amountValue <= 0) {
       rejectSave('Please enter a valid amount.');
@@ -1235,7 +1331,7 @@ export function TransactionFormModal({
   const renderReceiptField = (withSectionLabel: boolean) => (
     <View>
       {withSectionLabel && (
-        <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
+        <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
           Receipt
         </ThemedText>
       )}
@@ -1261,7 +1357,7 @@ export function TransactionFormModal({
                 : 'Attach a photo or PDF'}
             </ThemedText>
             {form.attachment ? (
-              <ThemedText className="text-[10px] font-bold text-gray-400 mt-0.5">
+              <ThemedText tone="muted" className="text-[10px] font-bold mt-0.5">
                 {isLocalAttachmentUri(form.attachment)
                   ? 'Uploads when you save'
                   : 'Saved to this transaction'}
@@ -1286,7 +1382,7 @@ export function TransactionFormModal({
         )}
       </Pressable>
       {attachmentError ? (
-        <ThemedText className="text-[11px] font-bold text-red-500 mt-2 ml-1">
+        <ThemedText tone="negative" className="text-[11px] font-bold mt-2 ml-1">
           {attachmentError}
         </ThemedText>
       ) : null}
@@ -1394,14 +1490,14 @@ export function TransactionFormModal({
           <DraftFieldCard
             key={field}
             testID="entry-mode-picker"
-            label="Paid via"
+            label={paymentLanguage.modeLabel}
             value={form.mode}
             placeholder="Choose a payment mode"
             icon={paymentModeVisual(form.mode).icon}
             iconColor={paymentModeVisual(form.mode).color}
             flagged={flagged}
             checked={checked}
-            accessibilityLabel={`Paid via ${form.mode || 'not set'}`}
+            accessibilityLabel={`${paymentLanguage.modeAccessibilityPrefix} ${form.mode || 'not set'}`}
             onPress={() => {
               markDraftFieldChecked('mode');
               setIsModePickerVisible(true);
@@ -1413,7 +1509,7 @@ export function TransactionFormModal({
           <DraftFieldCard
             key={field}
             testID="entry-account-picker"
-            label="Paid from account"
+            label={paymentLanguage.accountLabel}
             value={form.account}
             placeholder={
               compatibleAccounts.length === 0
@@ -1424,7 +1520,7 @@ export function TransactionFormModal({
             iconColor="#3B82F6"
             flagged={flagged}
             checked={checked}
-            accessibilityLabel={`Paid from ${form.account || 'no account yet'}`}
+            accessibilityLabel={`${paymentLanguage.accountAccessibilityPrefix} ${form.account || 'no account yet'}`}
             onPress={() => {
               markDraftFieldChecked('account');
               setIsAccountPickerVisible(true);
@@ -1550,7 +1646,7 @@ export function TransactionFormModal({
           <ActivityIndicator color="white" />
         ) : (
           <>
-            <ThemedText className="text-base font-black text-white">
+            <ThemedText tone="onAccent" className="text-base font-black">
               {isEdit
                 ? mode === 'quick-prompt'
                   ? 'Save Prompt'
@@ -1570,18 +1666,18 @@ export function TransactionFormModal({
           accessibilityRole="button"
           onPress={requestClose}
           className="w-full py-4 items-center justify-center active:opacity-50">
-          <ThemedText className="font-bold text-gray-500">Cancel</ThemedText>
+          <ThemedText tone="muted" className="font-bold">Cancel</ThemedText>
         </Pressable>
       )}
       {onDelete && (
         <Pressable
           onPress={onDelete}
           className="w-full py-4 items-center justify-center active:opacity-50">
-          <ThemedText className="font-bold text-red-500">Delete prompt</ThemedText>
+          <ThemedText tone="negative" className="font-bold">Delete prompt</ThemedText>
         </Pressable>
       )}
       {formError && (
-        <ThemedText className="text-center text-red-500 text-xs mt-2">{formError}</ThemedText>
+        <ThemedText tone="negative" className="text-center text-xs mt-2">{formError}</ThemedText>
       )}
     </View>
   );
@@ -1659,7 +1755,7 @@ export function TransactionFormModal({
                       height that keeps a clean draft scroll-free. Smart Sorting
                       being off is the one thing the banner cannot say. */}
                   {!fastEntry && (!draftReview || aiReview?.smartSortingDisabled) && (
-                    <ThemedText className="text-center text-gray-500 text-sm leading-5 px-3">
+                    <ThemedText tone="muted" className="text-center text-sm leading-5 px-3">
                       {isEdit
                         ? 'Make your changes and confirm below.'
                         : mode === 'audio'
@@ -1688,7 +1784,7 @@ export function TransactionFormModal({
                           size={13}
                           color="#9CA3AF"
                         />
-                        <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                        <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
                           {aiReview.inputSource === 'text' ? 'You typed' : 'You said'}
                         </ThemedText>
                       </View>
@@ -1710,12 +1806,12 @@ export function TransactionFormModal({
                             size={18}
                             color="#D97706"
                           />
-                          <ThemedText className="ml-2 text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                          <ThemedText tone="warning" className="ml-2 text-[11px] font-black uppercase tracking-widest">
                             AI draft
                           </ThemedText>
                         </View>
                         <View className="rounded-full border border-amber-200 bg-white px-2 py-1 dark:border-amber-800 dark:bg-gray-800">
-                          <ThemedText className="text-[9px] font-black uppercase text-amber-700 dark:text-amber-300">
+                          <ThemedText tone="warning" className="text-[9px] font-black uppercase">
                             {/* Mid-parse the chip has no fields to count, and
                                 the fallback "Review all fields" is a claim about
                                 a draft that does not exist yet. */}
@@ -1732,7 +1828,7 @@ export function TransactionFormModal({
                       {/* The review sheet gives every flagged field its own card
                           below, so naming them here as well would say it twice. */}
                       {!draftReview && reviewFields.length > 0 && (
-                        <ThemedText className="mt-3 text-sm font-bold text-amber-900 dark:text-amber-100">
+                        <ThemedText tone="warning" className="mt-3 text-sm font-bold">
                           Check: {reviewFields.map(formatFieldName).join(', ')}
                         </ThemedText>
                       )}
@@ -1748,12 +1844,12 @@ export function TransactionFormModal({
                               size={16}
                               color="#D97706"
                             />
-                            <ThemedText className="ml-2 flex-1 text-sm text-amber-900 dark:text-amber-100">
+                            <ThemedText tone="warning" className="ml-2 flex-1 text-sm">
                               {clarification}
                             </ThemedText>
                           </View>
                         ))}
-                      <ThemedText className="mt-3 text-xs text-amber-800 dark:text-amber-200">
+                      <ThemedText tone="warning" className="mt-3 text-xs">
                         AI suggestions are never saved until you confirm.
                       </ThemedText>
                     </View>
@@ -1802,7 +1898,7 @@ export function TransactionFormModal({
 
                       {draftFlaggedFields.length > 0 && (
                         <View className="mb-4 gap-3">
-                          <ThemedText className="mb-1 text-[11px] font-black uppercase tracking-widest text-amber-600 italic">
+                          <ThemedText tone="warning" className="mb-1 text-[11px] font-black uppercase tracking-widest italic">
                             {draftPendingCount > 0 ? 'Check these first' : 'You checked these'}
                           </ThemedText>
                           {draftFlaggedFields.map((field, fieldIndex) => (
@@ -1813,7 +1909,7 @@ export function TransactionFormModal({
                         </View>
                       )}
 
-                      {draftReview && visibleAccountSuggestion && onCreateSuggestedAccount && (
+                      {draftReview && visibleAccountSuggestion && onSetupSuggestedAccount && (
                         <View
                           testID="account-suggestion"
                           className="mb-4 rounded-[20px] border p-4"
@@ -1821,29 +1917,36 @@ export function TransactionFormModal({
                           <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
                             Add {visibleAccountSuggestion.name}?
                           </ThemedText>
-                          <ThemedText className="mt-1 text-xs text-gray-400">
-                            {visibleAccountSuggestion.reason}. Nothing is created until you confirm
-                            setup.
+                          <ThemedText tone="muted" className="mt-1 text-xs">
+                            {form.type === 'Income'
+                              ? 'Use it to record where this money was received. Review the details or create it now.'
+                              : 'Use it to keep this payment linked. Review the details or create it now.'}
                           </ThemedText>
                           <View className="mt-3 flex-row gap-3">
                             <Pressable
-                              onPress={() => onCreateSuggestedAccount(visibleAccountSuggestion)}
+                              onPress={() => onSetupSuggestedAccount(visibleAccountSuggestion)}
                               className="rounded-full px-4 py-2"
                               style={{ backgroundColor: accent }}>
-                              <ThemedText className="text-xs font-black text-white">
+                              <ThemedText tone="onAccent" className="text-xs font-black">
                                 Set up account
                               </ThemedText>
                             </Pressable>
                             <Pressable
-                              onPress={() => setDismissedSuggestionKey(suggestionKey)}
+                              disabled={autoCreatingAccount}
+                              onPress={() => void handleAutoCreateSuggestedAccount(visibleAccountSuggestion)}
                               className="rounded-full px-3 py-2">
-                              <ThemedText className="text-xs font-black text-gray-400">
-                                Not now
+                              <ThemedText tone="muted" className="text-xs font-black">
+                                {autoCreatingAccount ? 'Creating…' : 'Create one for me'}
                               </ThemedText>
                             </Pressable>
                           </View>
                         </View>
                       )}
+
+                      {/* Outside the card: a successful create dismisses the
+                          suggestion, so feedback nested inside it would unmount
+                          in the same commit that produced it. */}
+                      {draftReview && <View className="mb-4">{renderAutoCreateFeedback()}</View>}
 
                       <SettleIn index={draftSettleOrder.summary}>
                         <View className="mb-2">
@@ -1861,7 +1964,7 @@ export function TransactionFormModal({
                                 color="#10B981"
                               />
                               <View className="flex-1">
-                                <ThemedText className="text-[10px] font-bold uppercase text-gray-400">
+                                <ThemedText tone="muted" className="text-[10px] font-bold uppercase">
                                   {draftConfidentCount > 0
                                     ? `${draftConfidentCount} field${draftConfidentCount === 1 ? '' : 's'} the AI is sure about`
                                     : 'Everything else'}
@@ -1896,14 +1999,14 @@ export function TransactionFormModal({
                     <View className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
                       <View className="flex-row items-center">
                         <MaterialCommunityIcons name="playlist-check" size={18} color="#D97706" />
-                        <ThemedText className="ml-2 text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                        <ThemedText tone="warning" className="ml-2 text-[11px] font-black uppercase tracking-widest">
                           Review cleanup
                         </ThemedText>
                       </View>
-                      <ThemedText className="mt-3 text-sm font-bold text-amber-900 dark:text-amber-100">
+                      <ThemedText tone="warning" className="mt-3 text-sm font-bold">
                         Fix: {reviewFields.map(formatFieldName).join(', ')}
                       </ThemedText>
-                      <ThemedText className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                      <ThemedText tone="warning" className="mt-2 text-xs">
                         The highlighted field is opened first so you can resolve this transaction
                         quickly.
                       </ThemedText>
@@ -1914,7 +2017,7 @@ export function TransactionFormModal({
                       list instead, where it sits with the rest of the draft. */}
                   {!draftReview && (
                     <View className="mb-4">
-                      <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 italic">
+                      <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-2 italic">
                         Transaction Type
                       </ThemedText>
                       <View className="flex-row bg-gray-100 dark:bg-gray-800 rounded-[22px] p-1 relative overflow-hidden">
@@ -1993,7 +2096,7 @@ export function TransactionFormModal({
                         <Pressable
                           testID="entry-mode-chip"
                           accessibilityRole="button"
-                          accessibilityLabel={`Paid via ${form.mode}`}
+                          accessibilityLabel={`${paymentLanguage.modeAccessibilityPrefix} ${form.mode}`}
                           onPress={() => setIsModePickerVisible(true)}
                           className="flex-row items-center gap-1.5 rounded-full border px-3 py-2 active:opacity-60"
                           style={{ backgroundColor: theme.card, borderColor: theme.border }}>
@@ -2007,7 +2110,7 @@ export function TransactionFormModal({
                         <Pressable
                           testID="entry-account-chip"
                           accessibilityRole="button"
-                          accessibilityLabel={`Paid from ${form.account || 'no account yet'}`}
+                          accessibilityLabel={`${paymentLanguage.accountAccessibilityPrefix} ${form.account || 'no account yet'}`}
                           onPress={() => setIsAccountPickerVisible(true)}
                           className="flex-row items-center gap-1.5 rounded-full border px-3 py-2 active:opacity-60"
                           style={{ backgroundColor: theme.card, borderColor: theme.border }}>
@@ -2080,7 +2183,7 @@ export function TransactionFormModal({
                     <View
                       className="rounded-[20px] p-3 border shadow-sm mb-3"
                       style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                      <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">
+                      <ThemedText tone="muted" className="text-[10px] font-bold uppercase mb-2">
                         Transaction Title
                       </ThemedText>
                       <View className="flex-row items-center gap-3">
@@ -2117,7 +2220,7 @@ export function TransactionFormModal({
                         onPress={() => amountInputRef.current?.focus()}
                         className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
                         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
+                        <ThemedText tone="muted" className="text-[10px] font-bold uppercase">
                           Amount
                         </ThemedText>
                         <View className="flex-row items-center gap-1">
@@ -2139,8 +2242,8 @@ export function TransactionFormModal({
                         onPress={() => setIsModePickerVisible(true)}
                         className="flex-1 rounded-[20px] p-3 border shadow-sm h-24 justify-between"
                         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-                        <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
-                          Paid Via
+                        <ThemedText tone="muted" className="text-[10px] font-bold uppercase">
+                          {paymentLanguage.modeLabel}
                         </ThemedText>
                         <View className="flex-row items-center gap-2">
                           <MaterialCommunityIcons name="cash-multiple" size={21} color="#8B5CF6" />
@@ -2161,7 +2264,7 @@ export function TransactionFormModal({
                         className="w-full rounded-[20px] p-3 border shadow-sm flex-row items-center justify-between"
                         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                         <View>
-                          <ThemedText className="text-[10px] font-bold text-gray-400 uppercase mb-2">
+                          <ThemedText tone="muted" className="text-[10px] font-bold uppercase mb-2">
                             Date & Time
                           </ThemedText>
                           <View className="flex-row items-center gap-3">
@@ -2193,7 +2296,7 @@ export function TransactionFormModal({
                         }}>
                         {accountNeedsReview && (
                           <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
-                            <ThemedText className="text-[8px] font-black text-black">
+                            <ThemedText className="text-[8px] font-black">
                               Check this
                             </ThemedText>
                           </View>
@@ -2209,8 +2312,8 @@ export function TransactionFormModal({
                             />
                           </View>
                           <View className="flex-1">
-                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
-                              Paid from account
+                            <ThemedText tone="muted" className="text-[10px] font-bold uppercase">
+                              {paymentLanguage.accountLabel}
                             </ThemedText>
                             <ThemedText className="text-sm font-bold" style={{ color: theme.text }}>
                               {form.account ||
@@ -2222,7 +2325,7 @@ export function TransactionFormModal({
                         </View>
                         <MaterialCommunityIcons name="chevron-down" size={24} color="#D1D5DB" />
                       </Pressable>
-                      {!draftReview && visibleAccountSuggestion && onCreateSuggestedAccount && (
+                      {!draftReview && visibleAccountSuggestion && onSetupSuggestedAccount && (
                         <View
                           testID="account-suggestion"
                           className="mt-3 rounded-[20px] border p-4"
@@ -2239,26 +2342,28 @@ export function TransactionFormModal({
                                 style={{ color: theme.text }}>
                                 Add {visibleAccountSuggestion.name}?
                               </ThemedText>
-                              <ThemedText className="mt-1 text-xs text-gray-400">
-                                {visibleAccountSuggestion.reason}. Setup opens prefilled; nothing is
-                                created until you confirm it.
+                              <ThemedText tone="muted" className="mt-1 text-xs">
+                                {form.type === 'Income'
+                                  ? 'Use it to record where this money was received. Review the details or create it now.'
+                                  : 'Use it to keep this payment linked. Review the details or create it now.'}
                               </ThemedText>
                               <View className="mt-3 flex-row gap-3">
                                 <Pressable
                                   accessibilityRole="button"
-                                  onPress={() => onCreateSuggestedAccount(visibleAccountSuggestion)}
+                                  onPress={() => onSetupSuggestedAccount(visibleAccountSuggestion)}
                                   className="rounded-full px-4 py-2"
                                   style={{ backgroundColor: accent }}>
-                                  <ThemedText className="text-xs font-black text-white">
+                                  <ThemedText tone="onAccent" className="text-xs font-black">
                                     Set up account
                                   </ThemedText>
                                 </Pressable>
                                 <Pressable
                                   accessibilityRole="button"
-                                  onPress={() => setDismissedSuggestionKey(suggestionKey)}
+                                  disabled={autoCreatingAccount}
+                                  onPress={() => void handleAutoCreateSuggestedAccount(visibleAccountSuggestion)}
                                   className="rounded-full px-3 py-2">
-                                  <ThemedText className="text-xs font-black text-gray-400">
-                                    Not now
+                                  <ThemedText tone="muted" className="text-xs font-black">
+                                    {autoCreatingAccount ? 'Creating…' : 'Create one for me'}
                                   </ThemedText>
                                 </Pressable>
                               </View>
@@ -2266,6 +2371,7 @@ export function TransactionFormModal({
                           </View>
                         </View>
                       )}
+                      {renderAutoCreateFeedback()}
                     </>
                   )}
                 </View>
@@ -2316,7 +2422,7 @@ export function TransactionFormModal({
                                 style={{ color: theme.text }}>
                                 Add subscription
                               </ThemedText>
-                              <ThemedText className="text-xs text-gray-500">
+                              <ThemedText tone="muted" className="text-xs">
                                 Save recurring details with this payment.
                               </ThemedText>
                             </View>
@@ -2407,7 +2513,7 @@ export function TransactionFormModal({
                             </View>
 
                             <View>
-                              <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                              <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
                                 Billing interval
                               </ThemedText>
                               <View className="flex-row flex-wrap gap-2">
@@ -2467,7 +2573,7 @@ export function TransactionFormModal({
                                   onPress={handleOpenSubscriptionDatePicker}
                                   className="flex-1 flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
                                   <View className="flex-1">
-                                    <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                    <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
                                       Next payment date
                                     </ThemedText>
                                     <ThemedText
@@ -2507,7 +2613,7 @@ export function TransactionFormModal({
                               {form.subscriptionBillingInterval !== 'daily' &&
                               form.subscriptionBillingInterval !== 'business_daily' ? (
                                 <View className="w-28 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
-                                  <ThemedText className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                                  <ThemedText tone="muted" className="text-[9px] font-black uppercase tracking-wider">
                                     Remind before
                                   </ThemedText>
                                   <TextInput
@@ -2524,7 +2630,7 @@ export function TransactionFormModal({
                                     className="p-0 pt-1 text-sm font-bold"
                                     style={{ color: theme.text }}
                                   />
-                                  <ThemedText className="text-[10px] text-gray-400">
+                                  <ThemedText tone="muted" className="text-[10px]">
                                     days
                                   </ThemedText>
                                 </View>
@@ -2545,7 +2651,7 @@ export function TransactionFormModal({
                                   style={{ color: theme.text }}>
                                   Autopay
                                 </ThemedText>
-                                <ThemedText className="mt-1 text-[11px] text-gray-400">
+                                <ThemedText tone="muted" className="mt-1 text-[11px]">
                                   Automatically add each payment from the selected account, then ask
                                   you to confirm or correct it.
                                 </ThemedText>
@@ -2598,7 +2704,7 @@ export function TransactionFormModal({
                                 }}
                                 className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
                                 <View>
-                                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                  <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
                                     Cancellation reminder date
                                   </ThemedText>
                                   <ThemedText className="mt-1 text-sm font-bold">
@@ -2633,12 +2739,12 @@ export function TransactionFormModal({
 
                 {showFullForm && (
                   <View className="px-5 mb-6">
-                    <ThemedText className="text-[11px] font-black uppercase tracking-widest text-gray-400 italic mb-4">
+                    <ThemedText tone="muted" className="text-[11px] font-black uppercase tracking-widest italic mb-4">
                       {categoryNeedsReview ? 'Needs Attention' : 'Category'}
                     </ThemedText>
                     {visibleCategorySuggestions.length > 0 && (
                       <View className="mb-3">
-                        <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                        <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
                           Suggested from history
                         </ThemedText>
                         <View className="flex-row flex-wrap gap-2">
@@ -2667,7 +2773,7 @@ export function TransactionFormModal({
                     <View className="relative mb-4">
                       {categoryNeedsReview && (
                         <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
-                          <ThemedText className="text-[8px] font-black text-black">
+                          <ThemedText className="text-[8px] font-black">
                             Check this
                           </ThemedText>
                         </View>
@@ -2704,7 +2810,7 @@ export function TransactionFormModal({
                             />
                           </View>
                           <View>
-                            <ThemedText className="text-[10px] font-bold text-gray-400 uppercase">
+                            <ThemedText tone="muted" className="text-[10px] font-bold uppercase">
                               Category
                             </ThemedText>
                             <ThemedText
@@ -2745,7 +2851,7 @@ export function TransactionFormModal({
                       <View className="mt-4 gap-4">
                         <View className="flex-row gap-4">
                           <View className="flex-1">
-                            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
+                            <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
                               Merchant
                             </ThemedText>
                             <View
@@ -2774,7 +2880,7 @@ export function TransactionFormModal({
                         </View>
 
                         <View>
-                          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
+                          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
                             Tags
                           </ThemedText>
                           <View className="flex-row flex-wrap gap-2">
@@ -2798,7 +2904,7 @@ export function TransactionFormModal({
                         </View>
 
                         <View>
-                          <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 italic">
+                          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
                             Notes
                           </ThemedText>
                           <TextInput
@@ -2911,7 +3017,7 @@ export function TransactionFormModal({
                   className="flex-1 items-center rounded-2xl py-3"
                   style={{ backgroundColor: accent }}
                   onPress={handleConfirmDatePicker}>
-                  <ThemedText className="text-white font-bold">Set Date</ThemedText>
+                  <ThemedText tone="onAccent" className="font-bold">Set Date</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -2948,7 +3054,7 @@ export function TransactionFormModal({
                   }));
                   setIsCancellationDatePickerVisible(false);
                 }}>
-                <ThemedText className="font-bold text-white">Set reminder date</ThemedText>
+                <ThemedText tone="onAccent" className="font-bold">Set reminder date</ThemedText>
               </Pressable>
             </View>
           </AnimatedBottomSheet>
@@ -2989,7 +3095,7 @@ export function TransactionFormModal({
                     }));
                     setIsSubscriptionDatePickerVisible(false);
                   }}>
-                  <ThemedText className="font-bold text-white">Set date</ThemedText>
+                  <ThemedText tone="onAccent" className="font-bold">Set date</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -3053,7 +3159,7 @@ export function TransactionFormModal({
             <ScrollView style={{ maxHeight: 430 }}>
               {visibleCategorySuggestions.length > 0 && (
                 <View className="mb-4 rounded-3xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-900/20">
-                  <ThemedText className="mb-2 text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                  <ThemedText tone="warning" className="mb-2 text-[10px] font-black uppercase tracking-widest">
                     Suggested from history
                   </ThemedText>
                   <View className="flex-row flex-wrap gap-2">
@@ -3102,7 +3208,7 @@ export function TransactionFormModal({
                 ))}
               </View>
               <View className="mt-5 rounded-3xl border p-4" style={{ borderColor: theme.border }}>
-                <ThemedText className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                <ThemedText tone="muted" className="mb-3 text-[10px] font-black uppercase tracking-widest">
                   Custom category
                 </ThemedText>
                 <View className="flex-row gap-3">
@@ -3157,7 +3263,7 @@ export function TransactionFormModal({
                       className={`font-bold ${form.accountId === account.id ? 'text-blue-500' : 'text-gray-700'}`}>
                       {account.name}
                     </ThemedText>
-                    <ThemedText className="text-xs text-gray-400">
+                    <ThemedText tone="muted" className="text-xs">
                       {account.provider || account.type}
                     </ThemedText>
                   </View>
@@ -3168,21 +3274,49 @@ export function TransactionFormModal({
               ))}
               {compatibleAccounts.length === 0 && (
                 <View className="items-center gap-4 py-4">
-                  <ThemedText className="text-center text-sm text-gray-500">
+                  <ThemedText tone="muted" className="text-center text-sm">
                     {`No ${form.mode || 'matching'} account found.`}
                   </ThemedText>
-                  {onManageAccounts && (
+                  {actionableAccountSuggestion && onSetupSuggestedAccount ? (
                     <Pressable
                       accessibilityRole="button"
                       onPress={() => {
                         setIsAccountPickerVisible(false);
-                        onManageAccounts();
+                        onSetupSuggestedAccount(actionableAccountSuggestion);
                       }}
                       className="rounded-2xl px-5 py-3"
                       style={{ backgroundColor: accent }}>
-                      <ThemedText className="font-bold text-white">Manage accounts</ThemedText>
+                      <ThemedText tone="onAccent" className="font-bold">Set up account</ThemedText>
                     </Pressable>
-                  )}
+                  ) : null}
+                  {actionableAccountSuggestion && onAutoCreateSuggestedAccount ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={autoCreatingAccount}
+                      onPress={() => void handleAutoCreateSuggestedAccount(actionableAccountSuggestion)}
+                      className="rounded-2xl border px-5 py-3"
+                      style={{ borderColor: accent }}>
+                      <ThemedText className="font-bold" style={{ color: accent }}>
+                        {autoCreatingAccount ? 'Creating…' : 'Create one for me'}
+                      </ThemedText>
+                    </Pressable>
+                  ) : null}
+                  {autoCreateAccountError ? (
+                    <ThemedText tone="negative" className="text-center text-xs">
+                      {autoCreateAccountError}
+                    </ThemedText>
+                  ) : null}
+                  {onManageAccounts ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setIsAccountPickerVisible(false);
+                        onManageAccounts(actionableAccountSuggestion ?? undefined);
+                      }}
+                      className="px-3 py-2">
+                      <ThemedText tone="muted" className="text-xs font-bold">Manage accounts</ThemedText>
+                    </Pressable>
+                  ) : null}
                 </View>
               )}
               {compatibleAccounts.length > 0 && onManageAccounts && (

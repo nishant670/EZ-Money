@@ -153,7 +153,7 @@ export default function SpendingAnalysisScreen() {
             </ThemedText>
             {loading && <ActivityIndicator className="ml-2" size="small" color={theme.accent} />}
           </View>
-          <ThemedText className="mb-1 text-[11px] font-black uppercase tracking-widest text-gray-500">
+          <ThemedText tone="muted" className="mb-1 text-[11px] font-black uppercase tracking-widest">
             Total Spending
           </ThemedText>
           <ThemedText className="text-4xl font-black" style={{ color: theme.text }}>
@@ -197,7 +197,7 @@ export default function SpendingAnalysisScreen() {
           className="flex-row items-center justify-center rounded-2xl py-4 shadow-lg"
           style={{ backgroundColor: theme.accent }}>
           <MaterialCommunityIcons name="file-chart" size={20} color="white" />
-          <ThemedText className="ml-2 font-black text-white">Generate Weekly Report</ThemedText>
+          <ThemedText tone="onAccent" className="ml-2 font-black">Generate Weekly Report</ThemedText>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -241,7 +241,7 @@ function CategoryBreakdown({
               </View>
               <View className="flex-1">
                 <ThemedText className="text-sm font-black">{category.category}</ThemedText>
-                <ThemedText className="mt-1 text-[11px] text-gray-500">
+                <ThemedText tone="muted" className="mt-1 text-[11px]">
                   {Math.round(category.percentage)}% of total
                 </ThemedText>
               </View>
@@ -297,13 +297,13 @@ function TopMerchants({
               })
             }>
             <View className="mr-4 h-11 w-11 items-center justify-center rounded-full bg-gray-100">
-              <ThemedText className="text-[10px] font-black text-gray-400">
+              <ThemedText tone="muted" className="text-[10px] font-black">
                 {merchant.merchant.slice(0, 3).toUpperCase()}
               </ThemedText>
             </View>
             <View className="flex-1">
               <ThemedText className="text-sm font-bold">{merchant.merchant}</ThemedText>
-              <ThemedText className="text-[11px] text-gray-500">
+              <ThemedText tone="muted" className="text-[11px]">
                 {merchant.transaction_count} transactions
               </ThemedText>
             </View>
@@ -351,7 +351,7 @@ function BehavioralInsights({ cards }: { cards: InsightCard[] }) {
                 <ThemedText className="text-sm font-black" style={{ color }}>
                   {card.title}
                 </ThemedText>
-                <ThemedText className="mt-1 text-xs leading-5 text-gray-700">
+                <ThemedText tone="mutedStrong" className="mt-1 text-xs leading-5">
                   {card.body}
                 </ThemedText>
               </View>

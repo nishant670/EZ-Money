@@ -90,7 +90,7 @@ export function DraftFieldCard({
             />
           </View>
           <View className="flex-1">
-            <ThemedText className="text-[10px] font-bold uppercase text-gray-400">
+            <ThemedText tone="muted" className="text-[10px] font-bold uppercase">
               {label}
             </ThemedText>
             {children ?? (

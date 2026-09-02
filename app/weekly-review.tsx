@@ -158,7 +158,7 @@ export default function WeeklyReviewScreen() {
           )}
 
           <View className="rounded-[28px] border p-5 shadow-sm" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-            <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">This period</ThemedText>
+            <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">This period</ThemedText>
             <ThemedText className="mt-2 text-4xl font-black">{formatMoney(dashboard.summary.total_spent)}</ThemedText>
             <ThemedText className="mt-1 text-xs" style={{ color: muted }}>
               {dashboard.summary.transaction_count} confirmed transactions · {formatMoney(dashboard.summary.daily_average)}/day
@@ -181,7 +181,7 @@ export default function WeeklyReviewScreen() {
                   <MaterialCommunityIcons name={topAction.icon} size={23} color={colors.accent} />
                 </View>
                 <View className="flex-1">
-                  <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">Next action</ThemedText>
+                  <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">Next action</ThemedText>
                   <ThemedText className="mt-1 text-lg font-black">{topAction.title}</ThemedText>
                   <ThemedText className="mt-1 text-xs leading-5" style={{ color: muted }}>{topAction.body}</ThemedText>
                 </View>
@@ -236,7 +236,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   const theme = useThemeTokens();
   return (
     <View className="flex-1 rounded-2xl border px-3 py-3" style={{ backgroundColor: theme.colors.background, borderColor: theme.colors.border }}>
-      <ThemedText className="text-[10px] font-black uppercase text-gray-500">{label}</ThemedText>
+      <ThemedText tone="muted" className="text-[10px] font-black uppercase">{label}</ThemedText>
       <ThemedText className="mt-1 text-sm font-black" numberOfLines={1}>{value}</ThemedText>
     </View>
   );
@@ -271,7 +271,7 @@ function ReviewRow({
       </View>
       <View className="flex-1">
         <ThemedText className="text-sm font-black" numberOfLines={1}>{title}</ThemedText>
-        <ThemedText className="mt-1 text-xs leading-5 text-gray-500" numberOfLines={2}>{body}</ThemedText>
+        <ThemedText tone="muted" className="mt-1 text-xs leading-5" numberOfLines={2}>{body}</ThemedText>
       </View>
     </View>
   );

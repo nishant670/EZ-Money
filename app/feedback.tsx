@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -80,7 +81,7 @@ export default function FeedbackScreen() {
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor: colors.background }}>
       <AppHeader title="Feedback" subtitle="Ideas, issues, and requests" onBack={() => router.back()} />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
+      <KeyboardAvoidingScreen showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
         <View className="rounded-[28px] p-5" style={{ backgroundColor: colors.card }}>
           <View className="h-12 w-12 items-center justify-center rounded-2xl" style={{ backgroundColor: colors.secondary }}>
             <MaterialCommunityIcons name="message-draw" size={24} color={colors.accent} />
@@ -189,13 +190,13 @@ export default function FeedbackScreen() {
           ) : (
             <>
               <MaterialCommunityIcons name="send" size={18} color="white" />
-              <ThemedText className="ml-2 text-sm font-black text-white" style={{ fontFamily: Fonts.title }}>
+              <ThemedText tone="onAccent" className="ml-2 text-sm font-black" style={{ fontFamily: Fonts.title }}>
                 Send Feedback
               </ThemedText>
             </>
           )}
         </Pressable>
-      </ScrollView>
+      </KeyboardAvoidingScreen>
     </SafeAreaView>
   );
 }

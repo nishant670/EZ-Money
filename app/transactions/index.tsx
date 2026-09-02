@@ -15,6 +15,7 @@ import {
 } from '@/components/transactions/TransactionDeleteProvider';
 import { Colors } from '@/constants/theme';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { encodeFrame } from '@/hooks/use-shared-element';
 import { StateView } from '@/components/ui/StateView';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
@@ -354,6 +355,7 @@ export default function TransactionsScreen() {
         color={item.color}
         bgColor={item.bgColor}
         isIncome={isIncome}
+        unlinked={item.accountId == null}
         entranceIndex={index}
         onEdit={() => {
           setOpenSwipeId(null);
@@ -481,7 +483,7 @@ export default function TransactionsScreen() {
           </ScrollView>
         )}
       </View>
-      <ScrollView
+      <KeyboardAvoidingScreen
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}>
         {error && transactions.length > 0 && (
@@ -524,7 +526,7 @@ export default function TransactionsScreen() {
           <View style={{ opacity: isLoading ? 0.4 : 1 }}>
             {isRankedByAmount && (
               <View className="mb-3 px-6">
-                <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                <ThemedText tone="muted" className="text-xs font-bold uppercase tracking-widest">
                   {filters.sort === 'highest' ? 'Highest first' : 'Lowest first'}
                 </ThemedText>
               </View>
@@ -545,7 +547,7 @@ export default function TransactionsScreen() {
                 // it, and everything below has to move up rather than jump.
                 <Animated.View key={section.title} layout={motion.reflow()} className="mb-6">
                   <View className="flex-row justify-between items-center px-6 mb-3">
-                    <ThemedText className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                    <ThemedText tone="muted" className="text-xs font-bold uppercase tracking-widest">
                       {section.title.toUpperCase()}
                     </ThemedText>
                     <View className="bg-white dark:bg-gray-800 px-2 py-1 rounded-lg">
@@ -575,7 +577,7 @@ export default function TransactionsScreen() {
             </View>
           </View>
         )}
-      </ScrollView>
+      </KeyboardAvoidingScreen>
 
       {/* Advanced Filters Bottom Sheet */}
       <AnimatedBottomSheet

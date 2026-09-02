@@ -109,7 +109,15 @@ type AccountBadge = {
  * in the app — a list of payment sources you set up once and then only revisit
  * when a card changes. It belongs beside the things that spend from it.
  */
-export function AccountsPanel() {
+type SuggestedAccountSetup = {
+  type?: AccountType;
+  name?: string;
+  provider?: string;
+  identifier?: string;
+  color?: string;
+};
+
+export function AccountsPanel({ suggestedAccount }: { suggestedAccount?: SuggestedAccountSetup }) {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
@@ -223,11 +231,23 @@ export function AccountsPanel() {
   }, [accounts]);
 
   const handleAddAccount = (type?: AccountType) => {
-    if (type) {
-      router.push({ pathname: '/accounts/manage', params: { type } });
-      return;
+    const suggestionMatchesType = !type || !suggestedAccount?.type || suggestedAccount.type === type;
+    const setup = suggestionMatchesType ? suggestedAccount : undefined;
+    const selectedType = type ?? setup?.type;
+    if (selectedType || setup) {
+      router.push({
+        pathname: '/accounts/manage',
+        params: {
+          ...(selectedType ? { type: selectedType } : {}),
+          ...(setup?.name ? { name: setup.name } : {}),
+          ...(setup?.provider ? { provider: setup.provider } : {}),
+          ...(setup?.identifier ? { identifier: setup.identifier } : {}),
+          ...(setup?.color ? { color: setup.color } : {}),
+        },
+      });
+    } else {
+      router.push('/accounts/manage');
     }
-    router.push('/accounts/manage');
   };
 
   const handleEditAccount = (account: Account) => {
@@ -435,9 +455,9 @@ export function AccountsPanel() {
           <View className="gap-5">
             <StateView
               icon="wallet-outline"
-              title="No accounts yet"
-              message="Start with the payment source you use most. Finnri will use it to keep new transactions cleaner."
-              actionLabel="Add custom account"
+              title="Choose your first payment source"
+              message="Start with the account or card you use most. Finnri will preselect it when a transaction matches."
+              actionLabel="Set up an account"
               onAction={() => handleAddAccount()}
             />
 

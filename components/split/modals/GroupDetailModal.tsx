@@ -13,6 +13,7 @@ import {
 import type { GroupActionMode, SplitGroupSummary } from '@/components/split/split-types';
 import { SplitFullScreenModal } from '@/components/split/primitives/SplitFullScreenModal';
 import { ThemedText } from '@/components/themed-text';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { SplitBill, SplitFriend } from '@/lib/splits';
@@ -183,7 +184,7 @@ export function GroupDetailModal({
             </View>
           </View>
 
-          <ScrollView
+          <KeyboardAvoidingScreen
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 132 }}>
@@ -352,7 +353,7 @@ export function GroupDetailModal({
                 </View>
               )}
             </View>
-          </ScrollView>
+          </KeyboardAvoidingScreen>
 
           {canAddExpense ? (
             <FloatingExpenseButton onPress={() => onAddExpense(summary.group.id)} />

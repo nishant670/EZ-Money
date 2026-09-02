@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
   TextInput,
   TouchableOpacity,
   View,
@@ -14,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { HistoryDetailSkeleton } from '@/components/transactions/TransactionListSkeleton';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { StateView } from '@/components/ui/StateView';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -214,7 +214,7 @@ export default function CategoryDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <KeyboardAvoidingScreen
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
         refreshControl={
@@ -294,13 +294,13 @@ export default function CategoryDetailScreen() {
                     })
                   }>
                   <View className="mr-4 h-11 w-11 items-center justify-center rounded-full bg-gray-100">
-                    <ThemedText className="text-[10px] font-black text-gray-400">
+                    <ThemedText tone="muted" className="text-[10px] font-black">
                       {merchant.merchant.slice(0, 3).toUpperCase()}
                     </ThemedText>
                   </View>
                   <View className="flex-1">
                     <ThemedText className="text-sm font-black">{merchant.merchant}</ThemedText>
-                    <ThemedText className="mt-1 text-[11px] text-gray-500">
+                    <ThemedText tone="muted" className="mt-1 text-[11px]">
                       {merchant.count} transactions
                     </ThemedText>
                   </View>
@@ -358,7 +358,7 @@ export default function CategoryDetailScreen() {
         ) : (
           sections.map((section) => (
             <View key={section.title} className="mb-7 px-5">
-              <ThemedText className="mb-4 text-[13px] font-black uppercase tracking-[3px] text-gray-500">
+              <ThemedText tone="muted" className="mb-4 text-[13px] font-black uppercase tracking-[3px]">
                 {section.title}
               </ThemedText>
               <View className="overflow-hidden rounded-[26px] border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -373,7 +373,7 @@ export default function CategoryDetailScreen() {
             </View>
           ))
         )}
-      </ScrollView>
+      </KeyboardAvoidingScreen>
     </SafeAreaView>
   );
 }
@@ -381,7 +381,7 @@ export default function CategoryDetailScreen() {
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-1 rounded-[22px] border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-      <ThemedText className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+      <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
         {label}
       </ThemedText>
       <ThemedText className="mt-2 text-lg font-black">{value}</ThemedText>
@@ -420,7 +420,7 @@ function CategoryTransactionRow({
             style={{ color: transaction.color, backgroundColor: transaction.bgColor }}>
             {transaction.merchant || 'Merchant'}
           </ThemedText>
-          <ThemedText className="text-xs text-gray-500">
+          <ThemedText tone="muted" className="text-xs">
             {transaction.accountName ?? transaction.mode ?? 'Account not set'}
           </ThemedText>
         </View>
@@ -430,7 +430,7 @@ function CategoryTransactionRow({
           {isIncome ? '+' : ''}
           {formatMoney(amount)}
         </ThemedText>
-        <ThemedText className="mt-1 text-xs text-gray-500">
+        <ThemedText tone="muted" className="mt-1 text-xs">
           {transaction.dateLabel?.split(' ').slice(0, 2).join(' ') ?? ''}
         </ThemedText>
       </View>

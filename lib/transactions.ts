@@ -295,6 +295,14 @@ const resolveApiBaseUrl = () => {
     );
   }
 
+  // Jest never sets the variable and never makes a real request, so the
+  // fallback there is expected rather than a misconfigured build.
+  const warnFallback = (message: string) => {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(message);
+    }
+  };
+
   const manifest = Constants.manifest as { hostUri?: string; debuggerHost?: string } | null;
   const hostUri =
     Constants.expoConfig?.hostUri ??
@@ -305,10 +313,24 @@ const resolveApiBaseUrl = () => {
   if (hostUri) {
     const host = hostUri.split(':')[0];
     if (host) {
+      // Say so. A dev build carrying this address works on the WiFi that built
+      // it and nowhere else, and the symptom — every screen reading "Could not
+      // connect to Finnri" the moment the phone leaves the house — looks like a
+      // backend outage from the outside. Naming the address here is what turns
+      // that into a one-line diagnosis.
+      warnFallback(
+        `[api] EXPO_PUBLIC_API_URL is unset; falling back to http://${host}:8080 ` +
+          '(the machine serving Metro). This build reaches the API on that ' +
+          'network only. Set EXPO_PUBLIC_API_URL in .env or the EAS profile.',
+      );
       return `http://${host}:8080`;
     }
   }
 
+  warnFallback(
+    '[api] EXPO_PUBLIC_API_URL is unset and no Metro host is known; falling ' +
+      'back to http://127.0.0.1:8080, which reaches nothing from a handset.',
+  );
   return 'http://127.0.0.1:8080';
 };
 
