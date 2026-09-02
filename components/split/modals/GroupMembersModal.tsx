@@ -1,13 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Contacts from 'expo-contacts/legacy';
 import { cssInterop } from 'nativewind';
-import { ActivityIndicator, Image, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, TextInput, View } from 'react-native';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { contactMatchesFriend } from '@/components/split/split-utils';
 import type { DeviceContactOption, SplitGroupSummary } from '@/components/split/split-types';
 import { SplitFullScreenModal } from '@/components/split/primitives/SplitFullScreenModal';
 import { ThemedText } from '@/components/themed-text';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -118,7 +119,7 @@ export function GroupMembersModal({
             />
           </View>
 
-          <ScrollView
+          <KeyboardAvoidingScreen
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 44 }}>
@@ -208,7 +209,7 @@ export function GroupMembersModal({
                 {normalizedSearch ? 'No matching Finnri friends.' : 'No Finnri friends yet.'}
               </TText>
             )}
-          </ScrollView>
+          </KeyboardAvoidingScreen>
         </>
       )}
     </SplitFullScreenModal>

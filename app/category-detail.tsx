@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
   TextInput,
   TouchableOpacity,
   View,
@@ -14,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { HistoryDetailSkeleton } from '@/components/transactions/TransactionListSkeleton';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { StateView } from '@/components/ui/StateView';
 import { Colors } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -214,7 +214,7 @@ export default function CategoryDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <KeyboardAvoidingScreen
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
         refreshControl={
@@ -373,7 +373,7 @@ export default function CategoryDetailScreen() {
             </View>
           ))
         )}
-      </ScrollView>
+      </KeyboardAvoidingScreen>
     </SafeAreaView>
   );
 }

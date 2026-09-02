@@ -6,6 +6,7 @@ export type DashboardSummary = {
     total_income: number;
     daily_average: number;
     transaction_count: number;
+    lifetime_transaction_count?: number;
     /**
      * Expenses only, where `transaction_count` is every entry in the window.
      * Anything pairing a count with a *spend* figure must read this one — a

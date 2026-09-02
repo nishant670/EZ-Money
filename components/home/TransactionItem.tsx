@@ -164,6 +164,8 @@ interface TransactionItemProps {
    * and takes the gap with it, so the list closes over it instead of jumping.
    */
   collapsed?: boolean;
+  /** Account-less entries stay saveable, but remain visibly recoverable. */
+  unlinked?: boolean;
 }
 
 export function TransactionItem({
@@ -187,6 +189,7 @@ export function TransactionItem({
   swipeOpen = false,
   onSwipeOpenChange,
   collapsed = false,
+  unlinked = false,
 }: TransactionItemProps) {
   const theme = useThemeTokens();
   const motion = useMotion();
@@ -486,6 +489,14 @@ export function TransactionItem({
                   {isList ? subtitle : `• ${subtitle}`}
                 </ThemedText>
               )}
+              {unlinked ? (
+                <View style={styles.unlinkedPill}>
+                  <MaterialCommunityIcons name="link-variant-off" size={11} color="#D97706" />
+                  <ThemedText variant="micro" style={styles.unlinkedText}>
+                    Unlinked
+                  </ThemedText>
+                </View>
+              ) : null}
             </View>
           </View>
 
@@ -680,6 +691,20 @@ const styles = StyleSheet.create({
   cardSubtitleText: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  unlinkedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  unlinkedText: {
+    color: '#B45309',
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
   amountBlock: {
     minWidth: 88,

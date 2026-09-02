@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { roundToPaise, toAmountInputValue } from '@/lib/money';
 import { buildParticipantsForGroup } from '@/lib/split-draft';
@@ -58,12 +59,15 @@ export function TransactionSplitFields({
   onRemoveParticipant,
 }: TransactionSplitFieldsProps) {
   const theme = useThemeTokens().colors;
+  const keyboardInset = useKeyboardInset(form.splitEnabled);
   const accent = theme.accent;
   const accentSurface = theme.secondary;
   const selectedGroup = groups.find((group) => group.id === form.splitGroupId) ?? null;
 
   return (
-    <View className="px-5 mb-6">
+    <View
+      className="px-5 mb-6"
+      style={keyboardInset > 0 ? { paddingBottom: keyboardInset + 24 } : undefined}>
       <View
         className="rounded-[24px] border p-3"
         style={{ backgroundColor: theme.card, borderColor: theme.border }}>

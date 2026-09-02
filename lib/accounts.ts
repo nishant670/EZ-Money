@@ -102,6 +102,7 @@ export type Account = {
   balance?: number;
   fee_month?: string;
   is_default?: boolean;
+  auto_created?: boolean;
   summary?: AccountSummary;
   created_at?: string;
   updated_at?: string;
@@ -127,6 +128,8 @@ export type AccountPayload = {
   fee_month?: string;
   balance?: number;
   is_default?: boolean;
+  /** Set only by the one-tap capture shortcut; cleared by the first user edit. */
+  auto_created?: boolean;
 };
 
 export type AccountType =
@@ -158,6 +161,12 @@ const paymentModeAccountDefaults: Record<
   Cash: { type: 'cash', name: 'Cash Account', color: '#2ECC71' },
   UPI: { type: 'upi', name: 'UPI Account', color: '#00D2B4' },
   'Credit Card': { type: 'credit_card', name: 'Credit Card Account', color: '#8257E5' },
+  // Every mode in PAYMENT_MODES needs an entry. `Bank Account` was the one gap,
+  // and it is the mode salary lands on — so one-tap account creation failed on
+  // exactly the transaction most likely to need it. `accountsCoverEveryPaymentMode`
+  // in `__tests__/account-suggestions.test.ts` now fails if a mode is added
+  // here without a default.
+  'Bank Account': { type: 'bank', name: 'Bank Account', color: '#42A5F5' },
   Wallets: { type: 'wallet', name: 'Wallet Account', color: '#FF9F43' },
 };
 

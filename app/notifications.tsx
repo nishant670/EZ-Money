@@ -117,6 +117,12 @@ export default function NotificationsScreen() {
       return;
     }
 
+    const accountMatch = notification.action_url?.match(/^\/accounts\/(\d+)$/);
+    if (accountMatch) {
+      router.push({ pathname: '/accounts/[id]', params: { id: accountMatch[1] } });
+      return;
+    }
+
     const splitGroupMatch = notification.action_url?.match(/^\/split\/groups\/(\d+)$/);
     if (splitGroupMatch) {
       router.push('/(tabs)/split');

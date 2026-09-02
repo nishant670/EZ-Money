@@ -7,7 +7,6 @@ import {
   Alert,
   Modal,
   Pressable,
-  ScrollView,
   TextInput,
   View,
 } from 'react-native';
@@ -17,6 +16,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { HapticSwitch } from '@/components/ui/HapticSwitch';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -139,7 +139,7 @@ export default function SecurityScreen() {
     <SafeAreaView className="flex-1" edges={['top', 'left', 'right']} style={{ backgroundColor }}>
       <AppHeader title="Keep it Safe" onBack={() => router.back()} />
 
-      <ScrollView
+      <KeyboardAvoidingScreen
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}>
         <View className="px-6 items-center mt-6">
@@ -397,7 +397,7 @@ export default function SecurityScreen() {
           style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
           YOUR PRIVACY IS OUR PRIORITY
         </TText>
-      </ScrollView>
+      </KeyboardAvoidingScreen>
 
       <Modal
         transparent

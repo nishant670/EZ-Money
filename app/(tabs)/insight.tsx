@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   TouchableOpacity,
@@ -25,6 +26,8 @@ import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { CURRENCY_SYMBOL } from '@/constants/Currency';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { fetchAccounts, type Account } from '@/lib/accounts';
+import { linkEntryAccount } from '@/lib/entries';
 import { formatMoney } from '@/lib/money';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
@@ -42,11 +45,12 @@ const defaultRange = (): DateRange => {
 };
 
 const getInsightLevel = (dashboard: DashboardResponse) => {
-  const count = dashboard.summary.transaction_count;
+  const count =
+    dashboard.summary.lifetime_transaction_count ?? dashboard.summary.transaction_count;
   if (count === 0) return 0;
   if (count < 3) return 1;
-  if (dashboard.top_categories.length < 2 || dashboard.top_merchants.length < 1) return 2;
-  if (dashboard.account_spending.length < 1 || dashboard.insights.length < 2) return 3;
+  if (count < 10) return 2;
+  if (count < 30) return 3;
   return 4;
 };
 
@@ -382,50 +386,47 @@ export default function InsightScreen() {
         }>
         {error && <ErrorBanner message={error} onRetry={() => void loadData()} />}
 
-        {dashboard.summary.transaction_count === 0 && (
-          <StateView
-            icon="chart-box-outline"
-            title="No insights for this period"
-            message="Choose a wider period or add transactions to populate this screen."
-            actionLabel="Change period"
-            onAction={() => setPickerVisible(true)}
-            compact
-          />
-        )}
+        {insightLevel <= 1 ? (
+          <Reflow>
+            <InsightsUnlockProgressCard
+              count={dashboard.summary.lifetime_transaction_count ?? dashboard.summary.transaction_count}
+            />
+          </Reflow>
+        ) : null}
 
-        <Reflow>
-          <TopTakeawayCard dashboard={dashboard} reviewCount={reviewItems.length} />
-        </Reflow>
+        {insightLevel >= 2 ? (
+          <>
+            <Reflow>
+              <TopTakeawayCard dashboard={dashboard} reviewCount={reviewItems.length} />
+            </Reflow>
+            <Reflow>
+              <PeriodPulseCard
+                dashboard={dashboard}
+                insightLevel={insightLevel}
+                reviewCount={reviewItems.length}
+              />
+            </Reflow>
+          </>
+        ) : null}
 
-        <Reflow>
-          <PeriodPulseCard
-            dashboard={dashboard}
-            insightLevel={insightLevel}
-            reviewCount={reviewItems.length}
-          />
-        </Reflow>
+        {insightLevel >= 4 ? (
+          <>
+            <Reflow>
+              <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
+            </Reflow>
+            <Reflow>
+              <MonthlyReviewTeaser />
+            </Reflow>
+          </>
+        ) : null}
 
-        <Reflow>
-          <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
-        </Reflow>
-
-        <Reflow>
-          <MonthlyReviewTeaser />
-        </Reflow>
-
-        {allClear && (
+        {insightLevel >= 3 && allClear && (
           <Reflow>
             <AllClearCard dashboard={dashboard} />
           </Reflow>
         )}
 
-        {insightLevel >= 1 && (
-          <Reflow>
-            <ProgressiveHint insightLevel={insightLevel} dashboard={dashboard} />
-          </Reflow>
-        )}
-
-        {dashboard.summary.transaction_count > 0 && (
+        {insightLevel >= 2 && dashboard.summary.transaction_count > 0 && (
           <Reflow>
             <SpendingAnalysisCard
               dashboard={dashboard}
@@ -443,7 +444,7 @@ export default function InsightScreen() {
           </Reflow>
         )}
 
-        {insightLevel >= 2 && (
+        {insightLevel >= 3 && (
           <Reflow>
             <SmartAlerts
               cards={smartAlertCards}
@@ -453,19 +454,19 @@ export default function InsightScreen() {
           </Reflow>
         )}
 
-        {dashboard.budget_statuses?.some((budget) => budget.status !== 'safe') && (
+        {insightLevel >= 3 && dashboard.budget_statuses?.some((budget) => budget.status !== 'safe') && (
           <Reflow>
             <BudgetWatchSection dashboard={dashboard} rangeLabel={currentRange.label} />
           </Reflow>
         )}
 
-        {dashboard.recurring_candidates.length > 0 && (
+        {insightLevel >= 3 && dashboard.recurring_candidates.length > 0 && (
           <Reflow>
             <RecurringReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
           </Reflow>
         )}
 
-        {insightLevel >= 3 && (
+        {insightLevel >= 4 && (
           <Reflow>
             <AccountIntelligence dashboard={dashboard} />
           </Reflow>
@@ -478,15 +479,11 @@ export default function InsightScreen() {
               totalCount={reviewItems.length}
               periodStart={dashboard.period.start}
               periodEnd={dashboard.period.end}
+              onLinked={() => void loadData(true)}
             />
           </Reflow>
         )}
 
-        {insightLevel < 4 && dashboard.summary.transaction_count > 0 && (
-          <Reflow>
-            <UnlockCard dashboard={dashboard} insightLevel={insightLevel} />
-          </Reflow>
-        )}
       </ScrollView>
 
       <PeriodPicker
@@ -927,46 +924,6 @@ function PulseMetric({
 
 /** Shared so the counting figure and the static one cannot drift apart. */
 const PULSE_VALUE_CLASS = 'mt-1 text-sm font-black';
-
-function ProgressiveHint({
-  dashboard,
-  insightLevel,
-}: {
-  dashboard: DashboardResponse;
-  insightLevel: number;
-}) {
-  const theme = useThemeTokens();
-  const next =
-    insightLevel >= 4
-      ? 'Full insight set active'
-      : insightLevel === 1
-        ? 'Add a few more transactions to unlock category and merchant intelligence.'
-        : insightLevel === 2
-          ? 'More account-linked transactions will unlock account intelligence.'
-          : 'Review items and richer behavior patterns unlock as data variety grows.';
-
-  return (
-    <View
-      className="rounded-2xl border px-4 py-3"
-      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
-      <View className="flex-row items-center justify-between">
-        <View className="flex-1 pr-3">
-          <ThemedText className="text-xs font-black">Insights Level {insightLevel}</ThemedText>
-          <ThemedText tone="muted" className="mt-1 text-[11px] leading-4">{next}</ThemedText>
-        </View>
-        <ThemedText className="text-[11px] font-black" style={{ color: theme.colors.accent }}>
-          {dashboard.summary.transaction_count} txns
-        </ThemedText>
-      </View>
-      <View className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
-        <View
-          className="h-full rounded-full"
-          style={{ width: `${Math.max(10, insightLevel * 25)}%`, backgroundColor: theme.colors.accent }}
-        />
-      </View>
-    </View>
-  );
-}
 
 /**
  * Spending Analysis — the section this tab was missing.
@@ -1520,13 +1477,40 @@ function NeedsReview({
   totalCount,
   periodStart,
   periodEnd,
+  onLinked,
 }: {
   entries: DashboardResponse['recent_transactions'];
   totalCount: number;
   periodStart: string;
   periodEnd: string;
+  onLinked: () => void;
 }) {
   const theme = useThemeTokens();
+  const { token } = useAuthStore();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [pickerEntryID, setPickerEntryID] = useState<string | number | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token || !entries.some((entry) => !entry.account_id)) return;
+    void fetchAccounts(token).then(setAccounts).catch(() => setAccounts([]));
+  }, [entries, token]);
+
+  const linkAccount = async (entryID: string | number, account: Account) => {
+    if (!token || linking) return;
+    setLinking(true);
+    setLinkError(null);
+    try {
+      await linkEntryAccount(token, entryID, account.id);
+      setPickerEntryID(null);
+      onLinked();
+    } catch (error) {
+      setLinkError(getFriendlyErrorMessage(error, 'Unable to link this transaction right now.'));
+    } finally {
+      setLinking(false);
+    }
+  };
 
   return (
     <SectionHeader
@@ -1592,6 +1576,61 @@ function NeedsReview({
                   </View>
                 ))}
               </View>
+              {!entry.account_id && entry.id != null ? (
+                <View className="ml-12 mt-3">
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      setLinkError(null);
+                      setPickerEntryID((current) => (current === entry.id ? null : entry.id!));
+                    }}
+                    className="self-start rounded-full px-3 py-2"
+                    style={{ backgroundColor: theme.colors.accent }}>
+                    <ThemedText tone="onAccent" className="text-[11px] font-black">
+                      Choose account
+                    </ThemedText>
+                  </Pressable>
+                  {pickerEntryID === entry.id ? (
+                    <View className="mt-3 gap-2 rounded-2xl p-3" style={{ backgroundColor: theme.colors.secondary }}>
+                      {accounts.length > 0 ? (
+                        accounts.map((account) => (
+                          <Pressable
+                            key={account.id}
+                            accessibilityRole="button"
+                            disabled={linking}
+                            onPress={(event) => {
+                              event.stopPropagation();
+                              void linkAccount(entry.id!, account);
+                            }}
+                            className="flex-row items-center justify-between rounded-xl px-3 py-2"
+                            style={{ backgroundColor: theme.colors.card }}>
+                            <ThemedText className="text-xs font-bold">{account.name}</ThemedText>
+                            {linking ? (
+                              <ActivityIndicator size="small" color={theme.colors.accent} />
+                            ) : (
+                              <MaterialCommunityIcons name="link-variant" size={16} color={theme.colors.accent} />
+                            )}
+                          </Pressable>
+                        ))
+                      ) : (
+                        <Pressable
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            router.push('/money?segment=accounts');
+                          }}>
+                          <ThemedText className="text-xs font-bold" style={{ color: theme.colors.accent }}>
+                            Set up an account first
+                          </ThemedText>
+                        </Pressable>
+                      )}
+                      {linkError ? (
+                        <ThemedText tone="negative" className="text-xs">{linkError}</ThemedText>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </TouchableOpacity>
           );
         })}
@@ -1600,29 +1639,41 @@ function NeedsReview({
   );
 }
 
-function UnlockCard({
-  dashboard,
-  insightLevel,
-}: {
-  dashboard: DashboardResponse;
-  insightLevel: number;
-}) {
+function InsightsUnlockProgressCard({ count }: { count: number }) {
   const theme = useThemeTokens();
-  const remaining = insightLevel === 1 ? 3 - dashboard.summary.transaction_count : 1;
-  const copy =
-    insightLevel === 1
-      ? `${Math.max(1, remaining)} more transactions unlock spending analysis.`
-      : insightLevel === 2
-        ? 'Link spending to accounts to unlock account intelligence.'
-        : 'More repeated behavior unlocks deeper review and pattern insights.';
+  const progress = Math.min(3, Math.max(0, count));
   return (
     <View
-      className="rounded-[24px] border border-dashed p-5"
-      style={{ backgroundColor: theme.colors.secondary, borderColor: theme.colors.border }}>
-      <ThemedText className="text-sm font-black" style={{ color: theme.colors.accent }}>
-        More insights are waiting
+      className="rounded-[28px] border p-6"
+      style={{ backgroundColor: theme.colors.card, borderColor: theme.colors.border }}>
+      <View
+        className="h-12 w-12 items-center justify-center rounded-2xl"
+        style={{ backgroundColor: theme.colors.secondary }}>
+        <MaterialCommunityIcons name="chart-box-plus-outline" size={24} color={theme.colors.accent} />
+      </View>
+      <ThemedText className="mt-4 text-lg font-black">Add 3 transactions to unlock insights</ThemedText>
+      <ThemedText tone="muted" className="mt-2 text-xs leading-5">
+        A few real entries are enough for Finnri to start showing useful patterns.
       </ThemedText>
-      <ThemedText tone="muted" className="mt-1 text-xs leading-5">{copy}</ThemedText>
+      <View className="mt-5 h-2 overflow-hidden rounded-full" style={{ backgroundColor: theme.colors.secondary }}>
+        <View
+          className="h-full rounded-full"
+          style={{ backgroundColor: theme.colors.accent, width: `${(progress / 3) * 100}%` }}
+        />
+      </View>
+      <View className="mt-2 flex-row items-center justify-between">
+        <ThemedText tone="muted" className="text-[11px] font-bold">{progress}/3 added</ThemedText>
+        <ThemedText className="text-[11px] font-black" style={{ color: theme.colors.accent }}>
+          {Math.max(0, 3 - progress)} to go
+        </ThemedText>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push('/(tabs)')}
+        className="mt-5 items-center rounded-full py-3"
+        style={{ backgroundColor: theme.colors.accent }}>
+        <ThemedText tone="onAccent" className="text-sm font-black">Add transaction</ThemedText>
+      </Pressable>
     </View>
   );
 }

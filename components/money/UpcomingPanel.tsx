@@ -24,6 +24,8 @@ const HORIZON_DAYS = 30;
 
 type UpcomingPanelProps = {
   onSelectSegment: (segment: MoneySegment) => void;
+  prefetchedAccounts?: Account[];
+  prefetchedSubscriptions?: Subscription[];
 };
 
 /**
@@ -34,7 +36,11 @@ type UpcomingPanelProps = {
  * both halves of and answered neither. The merge is in `lib/upcoming.ts` and
  * takes `today` as an argument, which is why it can be tested.
  */
-export function UpcomingPanel({ onSelectSegment }: UpcomingPanelProps) {
+export function UpcomingPanel({
+  onSelectSegment,
+  prefetchedAccounts,
+  prefetchedSubscriptions,
+}: UpcomingPanelProps) {
   const router = useRouter();
   const theme = useThemeTokens();
   const colors = theme.colors;
@@ -68,8 +74,14 @@ export function UpcomingPanel({ onSelectSegment }: UpcomingPanelProps) {
 
   useFocusEffect(
     useCallback(() => {
+      if (prefetchedAccounts !== undefined && prefetchedSubscriptions !== undefined) {
+        setAccounts(prefetchedAccounts);
+        setSubscriptions(prefetchedSubscriptions);
+        setLoading(false);
+        return;
+      }
       void load();
-    }, [load])
+    }, [load, prefetchedAccounts, prefetchedSubscriptions])
   );
 
   const dues = useMemo(

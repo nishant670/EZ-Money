@@ -151,6 +151,26 @@ describe('TransactionFormModal', () => {
     expect(await findByText('HDFC UPI')).toBeTruthy();
   });
 
+  it('keeps an account-less entry saveable when no compatible account exists', async () => {
+    const { findByTestId, onSave } = await renderModal({
+      mode: 'audio',
+      accounts: [],
+      initialData: {
+        ...completeInitialData,
+        mode: 'UPI',
+        accountId: null,
+        account: '',
+      },
+    });
+
+    await fireEvent.press(await findByTestId('entry-save-button'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ mode: 'UPI', accountId: null, account: '' })
+    );
+  });
+
   it('opens quick prompt creation without optional collection props', async () => {
     const { findByText } = await render(
       <TransactionFormModal

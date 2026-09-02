@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Platform, Pressable, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { ThemedText } from '@/components/themed-text';
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import type { Account } from '@/lib/accounts';
 import { CATEGORIES, categoryVisual } from '@/lib/categories';
@@ -196,7 +197,7 @@ export const AdvancedFilter = ({
         </Pressable>
       </View>
 
-      <ScrollView
+      <KeyboardAvoidingScreen
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         className="flex-1"
@@ -465,7 +466,7 @@ export const AdvancedFilter = ({
             })}
           </View>
         )}
-      </ScrollView>
+      </KeyboardAvoidingScreen>
 
       {showPicker && (
         <DateTimePicker

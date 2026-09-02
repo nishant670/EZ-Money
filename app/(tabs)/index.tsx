@@ -43,10 +43,14 @@ import { useMotion } from '@/hooks/use-motion';
 import { encodeFrame } from '@/hooks/use-shared-element';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import {
+  fetchNotifications,
   fetchNewUnreadBudgetNotification,
   fetchUnreadBudgetNotificationIds,
   fetchUnreadNotificationCount,
+  markNotificationRead,
+  type AppNotification,
 } from '@/lib/notifications';
+import { isAccountSetupNudgeSnoozed, snoozeAccountSetupNudge } from '@/lib/account-setup-nudge';
 import {
   API_BASE_URL,
   formatApiDate,
@@ -60,6 +64,7 @@ import {
 } from '@/lib/transactions';
 import { Transaction } from '@/types/transaction';
 import { useAuthStore } from '@/hooks/use-auth-store';
+import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { DEFAULT_CURRENCY } from '@/constants/Currency';
 import { Motion } from '@/constants/theme';
 import { DEFAULT_CATEGORY } from '@/lib/categories';
@@ -71,9 +76,11 @@ import {
 import {
   fetchAccounts as loadAccounts,
   getAccountTypeForPaymentMode,
+  getAutoAccountPayloadForPaymentMode,
   getPreferredAccountForPaymentMode,
   normalizeAccountType,
   suggestAccountFromTransaction,
+  saveAccount,
   type Account,
   type AccountSuggestionHint,
   type AccountType,
@@ -355,6 +362,7 @@ export default function HomeScreen() {
   // The scroll view's own height, so the content can be padded to guarantee
   // the collapse has somewhere to run. See `contentContainerStyle` below.
   const [viewportHeight, setViewportHeight] = useState(0);
+  const keyboardInset = useKeyboardInset();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   // Re-tapping the Home tab returns the feed to the top. The reanimated ref
   // holds the same ScrollView instance react-navigation's helper looks for.
@@ -521,6 +529,7 @@ export default function HomeScreen() {
 
   const [quickPromptKey, setQuickPromptKey] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [accountSetupNudge, setAccountSetupNudge] = useState<AppNotification | null>(null);
 
   const getInitialPromptData = (): Partial<
     import('@/components/transactions/TransactionFormModal').EntryForm
@@ -707,6 +716,28 @@ export default function HomeScreen() {
       }),
     [fetchEntries, fetchMonthSummary]
   );
+
+  // This is deliberately a cold-start check, not a focus check. The server
+  // notification is durable; the local snooze makes it quiet between launches.
+  useEffect(() => {
+    let active = true;
+    if (!token) {
+      setAccountSetupNudge(null);
+      return;
+    }
+    void isAccountSetupNudgeSnoozed().then(async (snoozed) => {
+      if (snoozed || !active) return;
+      const payload = await fetchNotifications(token, 'unread').catch(() => null);
+      if (!active || !payload) return;
+      setAccountSetupNudge(
+        payload.notifications.find((notification) => notification.type === 'account.needs_setup') ??
+          null
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   const sections = useMemo(() => groupTransactionsBySection(transactions), [transactions]);
   const hasTransactions = sections.length > 0;
@@ -914,7 +945,7 @@ export default function HomeScreen() {
         return preferredAccount;
       }
 
-      throw new Error('Please select an account before saving this transaction.');
+      return null;
     },
     [accounts]
   );
@@ -963,7 +994,7 @@ export default function HomeScreen() {
             currency: formData.currency || DEFAULT_CURRENCY,
             source: modalMode === 'audio' ? aiInputSource : 'manual',
             source_text: modalMode === 'audio' ? aiSourceText : '',
-            account_id: resolvedAccount.id,
+            account_id: resolvedAccount?.id ?? null,
             type: formData.type.toLowerCase(),
             mode: formData.mode,
             category: formData.category,
@@ -997,7 +1028,7 @@ export default function HomeScreen() {
             purpose_type:
               formData.tag.toLowerCase() === 'investment' ? 'investment' : 'normal_spend',
             notes: formData.subscriptionNotes.trim(),
-            account_id: resolvedAccount.id,
+            account_id: resolvedAccount?.id ?? null,
           });
         }
         const createdTransaction = mapEntryToTransaction(createdEntry);
@@ -1419,6 +1450,7 @@ export default function HomeScreen() {
                         color={item.color}
                         bgColor={item.bgColor}
                         isIncome={item.entryType === 'income'}
+                        unlinked={item.accountId == null}
                         variant="list"
                         isNew={item.id === newTransactionId}
                         entranceIndex={groupOffset + index}
@@ -1479,7 +1511,12 @@ export default function HomeScreen() {
           onLayout={(event) => setViewportHeight(Math.round(event.nativeEvent.layout.height))}
           contentContainerStyle={{
             paddingTop: pinnedTopHeight + captureExpandedHeight,
-            paddingBottom: hasTransactions ? LIST_BOTTOM_PADDING : EMPTY_BOTTOM_PADDING,
+            paddingBottom:
+              keyboardInset > 0
+                ? keyboardInset + 24
+                : hasTransactions
+                  ? LIST_BOTTOM_PADDING
+                  : EMPTY_BOTTOM_PADDING,
             // The card shrinks one pixel per pixel scrolled, so it needs a
             // scroll range of exactly its collapse distance to finish. A feed
             // that runs out before then leaves the card stranded halfway with
@@ -1622,6 +1659,55 @@ export default function HomeScreen() {
               style={{ marginHorizontal: 24, marginBottom: 24 }}
             />
           )}
+
+          {accountSetupNudge ? (
+            <View
+              className="mx-6 mb-4 rounded-3xl border p-4"
+              style={{
+                backgroundColor: themeTokens.colors.card,
+                borderColor: themeTokens.colors.border,
+              }}>
+              <View className="flex-row items-start gap-3">
+                <MaterialCommunityIcons
+                  name="wallet-plus-outline"
+                  size={24}
+                  color={themeTokens.colors.accent}
+                />
+                <View className="flex-1">
+                  <ThemedText className="font-black">{accountSetupNudge.title}</ThemedText>
+                  <ThemedText className="mt-1 text-xs opacity-60">
+                    {accountSetupNudge.body}
+                  </ThemedText>
+                  <View className="mt-3 flex-row gap-2">
+                    <Pressable
+                      className="rounded-xl px-4 py-2"
+                      style={{ backgroundColor: themeTokens.colors.accent }}
+                      onPress={() => {
+                        const accountID = accountSetupNudge.action_url?.match(/^\/accounts\/(\d+)$/)?.[1];
+                        if (!accountID || !token) return;
+                        void markNotificationRead(token, accountSetupNudge.id).catch(() => undefined);
+                        setAccountSetupNudge(null);
+                        router.push({ pathname: '/accounts/[id]', params: { id: accountID } });
+                      }}>
+                      <ThemedText tone="onAccent" className="text-xs font-black">
+                        Complete setup
+                      </ThemedText>
+                    </Pressable>
+                    <Pressable
+                      className="rounded-xl px-4 py-2"
+                      onPress={() => {
+                        void snoozeAccountSetupNudge();
+                        setAccountSetupNudge(null);
+                      }}>
+                      <ThemedText tone="muted" className="text-xs font-black">
+                        Later
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </View>
+          ) : null}
 
           {errorMessage && (
             <ErrorBanner
@@ -1790,7 +1876,7 @@ export default function HomeScreen() {
         splitGroups={splitGroups}
         recentEntries={transactions}
         accountSuggestion={accountSuggestion}
-        onCreateSuggestedAccount={(suggestion) => {
+        onSetupSuggestedAccount={(suggestion) => {
           pendingSuggestionSetup.current = {
             type: suggestion.type,
             count: accounts.filter(
@@ -1810,11 +1896,41 @@ export default function HomeScreen() {
             },
           });
         }}
+        onAutoCreateSuggestedAccount={async (suggestion) => {
+          if (!token) throw new Error('Please sign in again before creating an account.');
+          const base = getAutoAccountPayloadForPaymentMode(form.mode);
+          if (!base) throw new Error(`Could not create an account for ${form.mode}.`);
+          const saved = await saveAccount(token, {
+            ...base,
+            name: suggestion.name || base.name,
+            color: suggestion.color || base.color,
+            provider: suggestion.provider ?? base.provider,
+            identifier: suggestion.identifier ?? base.identifier,
+            auto_created: true,
+          });
+          setAccounts((current) => [saved, ...current.filter((account) => account.id !== saved.id)]);
+          setAccountSuggestionHint(null);
+          return saved;
+        }}
         onDraftChange={setForm}
-        onManageAccounts={() => {
+        onManageAccounts={(suggestion) => {
           resumeDraftAfterAccounts.current = true;
           setIsEditOpen(false);
-          router.push('/money?segment=accounts');
+          router.push({
+            pathname: '/money',
+            params: {
+              segment: 'accounts',
+              ...(suggestion
+                ? {
+                    type: suggestion.type,
+                    name: suggestion.name,
+                    provider: suggestion.provider ?? '',
+                    identifier: suggestion.identifier ?? '',
+                    color: suggestion.color,
+                  }
+                : {}),
+            },
+          });
         }}
       />
       <TransactionFormModal

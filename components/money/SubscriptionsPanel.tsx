@@ -659,9 +659,9 @@ export function SubscriptionsPanel({ embedded = false }: MoneyPanelProps) {
         ) : !listError ? (
           <StateView
             icon="calendar-sync-outline"
-            title="No subscriptions yet"
-            message="Add the ones you already pay for, or log a few months of spending and Finnri will spot them for you."
-            actionLabel="Add subscription"
+            title="Track your first recurring payment"
+            message="Add the next service or bill that renews automatically. It will then appear in Upcoming before it is due."
+            actionLabel="Track a subscription"
             onAction={openCreateForm}
             compact
           />

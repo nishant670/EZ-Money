@@ -93,6 +93,23 @@ export const updateEntry = async (
   return response.json();
 };
 
+/** Link an existing review item without rebuilding its entire edit payload. */
+export const linkEntryAccount = async (
+  token: string,
+  id: string | number,
+  accountId: number
+): Promise<ApiEntry> => {
+  const response = await fetch(`${API_BASE_URL}/v1/entries/${id}`, {
+    method: 'PUT',
+    headers: entryHeaders(token),
+    body: JSON.stringify({ account_id: accountId }),
+  });
+  if (!response.ok) {
+    throw await readApiError(response, 'Unable to link this account right now.', entryFieldLabels);
+  }
+  return response.json();
+};
+
 export const deleteEntry = async (token: string, id: string | number): Promise<void> => {
   const response = await fetch(`${API_BASE_URL}/v1/entries/${id}`, {
     method: 'DELETE',

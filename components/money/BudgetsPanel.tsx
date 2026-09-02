@@ -391,10 +391,10 @@ export function BudgetsPanel({ embedded = false }: MoneyPanelProps) {
             <View className="items-center rounded-[28px] border p-8" style={{ borderColor: colors.border }}>
               <MaterialCommunityIcons name="chart-donut" size={36} color={colors.accent} />
               <ThemedText className="mt-3 text-center text-sm font-black">
-                No budgets yet
+                Set your first monthly limit
               </ThemedText>
               <ThemedText className="mt-1 text-center text-xs" style={{ color: muted }}>
-                Create one to receive monthly threshold alerts.
+                Pick the spending area you want to control first; Finnri will warn you before you cross the limit.
               </ThemedText>
             </View>
           ) : (
