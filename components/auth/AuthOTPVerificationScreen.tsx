@@ -6,14 +6,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 
 import { styles } from './styles';
 import { ScreenProps } from './types';
@@ -164,21 +163,18 @@ export const AuthOTPVerificationScreen = ({
   };
 
   return (
-    <KeyboardAvoidingView
+    // `KeyboardAvoidingView` used to wrap this screen, on the reasoning that
+    // Android's `adjustResize` had already resized the window so the component
+    // needed no Android behavior of its own. That stopped being true when the
+    // app moved to Expo 57 / RN 0.86, where Android edge-to-edge is mandatory
+    // and `adjustResize` no longer resizes anything — leaving the wrapper a
+    // no-op and the keypad squarely on top of the six code boxes, on the one
+    // screen a user cannot skip.
+    <KeyboardAvoidingScreen
       style={{ flex: 1 }}
-      // Android's manifest already declares `adjustResize`, so the window is
-      // resized for the keyboard before this component sees it. `height` then
-      // subtracts the keyboard a second time, and the layout it settles on is
-      // not the one on screen when the touch starts — which is why a tap on a
-      // button near the keyboard lands on nothing and has to be repeated. The
-      // rest of the app passes `undefined` here for exactly that reason.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      contentContainerStyle={[styles.authScrollContent, { flexGrow: 1, justifyContent: 'center' }]}
+      showsVerticalScrollIndicator={false}
     >
-      <ScrollView
-        contentContainerStyle={[styles.authScrollContent, { flexGrow: 1, justifyContent: 'center' }]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
         <View style={styles.topSection}>
           <View style={styles.imageContainer}>
             <View style={styles.glowCircle} />
@@ -275,7 +271,6 @@ export const AuthOTPVerificationScreen = ({
             </Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 };
