@@ -180,9 +180,14 @@ export function OverviewBand({
             <ThemedText
               key={month.month}
               numberOfLines={1}
-              className="text-center text-[9px]"
+              className="text-center"
+              // fontSize lives in `style`, not in an arbitrary `text-[9px]`
+              // class. Those do not survive a release build — they fall back to
+              // ThemedText's 14px preset — and twelve month labels at 14px do
+              // not fit the strip's width. Style-driven sizes are unaffected.
               style={{
                 width: barWidth,
+                fontSize: 9,
                 color: month.month === selectedMonth ? theme.accent : theme.muted,
               }}>
               {month.label.slice(0, 1)}
