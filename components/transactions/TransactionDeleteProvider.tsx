@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Alert, TouchableOpacity, View } from 'react-native';
+import { TouchableOpacity, View } from 'react-native';
 import Animated, {
   interpolate,
   useAnimatedStyle,
@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -46,16 +47,18 @@ const TransactionDeleteContext = createContext<TransactionDeleteContextValue | n
 
 export function TransactionDeleteProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
+  const dialog = useAppDialog();
   const [toastHosts, setToastHosts] = useState(0);
   const { pending, request, undo } = useUndoableDelete<PendingTransactionDelete>((target) => {
     if (!token) return;
     void deleteEntry(token, target.id)
       .then(notifyTransactionsChanged)
       .catch(() => {
-        Alert.alert(
-          'Delete failed',
-          `${target.name} is still in your ledger. Check your connection and try again.`
-        );
+        void dialog.alert({
+          title: 'Delete failed',
+          message: `${target.name} is still in your ledger. Check your connection and try again.`,
+          tone: 'danger',
+        });
         notifyTransactionsChanged();
       });
   });

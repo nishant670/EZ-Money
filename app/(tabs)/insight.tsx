@@ -14,6 +14,8 @@ import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategoryDonut } from '@/components/insights/CategoryDonut';
+import { EmptyPeriodCard } from '@/components/insights/EmptyPeriodCard';
+import { OverviewBand } from '@/components/insights/OverviewBand';
 import { DateRange, PeriodPicker } from '@/components/insights/PeriodPicker';
 import { InsightsSkeleton } from '@/components/insights/InsightsSkeleton';
 import { SpendTrendChart } from '@/components/insights/SpendTrendChart';
@@ -30,6 +32,11 @@ import { fetchAccounts, type Account } from '@/lib/accounts';
 import { linkEntryAccount } from '@/lib/entries';
 import { formatMoney } from '@/lib/money';
 import { DashboardResponse, InsightCard, fetchDashboard } from '@/lib/insights';
+import {
+  periodIsEmptyButAccountIsNot,
+  rangeForOverviewMonth,
+  selectedMonthKey,
+} from '@/lib/insights-periods';
 import { subscribeTransactionsChanged } from '@/lib/transaction-events';
 import { openFilteredTransactions } from '@/lib/transaction-links';
 import { formatApiDate, resolveCategoryMetadata } from '@/lib/transactions';
@@ -301,6 +308,18 @@ export default function InsightScreen() {
       ),
     [dashboard, reviewItems.length]
   );
+  const overview = dashboard?.overview ?? null;
+  /**
+   * The state the whole tab used to have no answer for: a window with nothing
+   * in it on an account that is full.
+   *
+   * It is not an edge case — it is where every account lands on the 1st of
+   * every month, which is when somebody opens Insights to plan. Answering it
+   * with the ordinary cards produced ₹0 four times over "Waiting for data": a
+   * true description of the window, and a false one of the account.
+   */
+  const periodIsEmpty = periodIsEmptyButAccountIsNot(dashboard);
+
   // The hero card promotes one insight to the top of the screen. Smart Alerts
   // must not then repeat it — the same alert twice on one screen reads as
   // padding and made the whole tab look thinner than it is.
@@ -386,6 +405,20 @@ export default function InsightScreen() {
         }>
         {error && <ErrorBanner message={error} onRetry={() => void loadData()} />}
 
+        {/* First on the screen and independent of the period, because it is the
+            one thing that is still true when the period is empty — and because
+            a month means very little until there is something to read it
+            against. See `OverviewBand`. */}
+        {overview?.has_history ? (
+          <Reflow>
+            <OverviewBand
+              overview={overview}
+              selectedMonth={selectedMonthKey(currentRange)}
+              onSelectMonth={(month) => setCurrentRange(rangeForOverviewMonth(month))}
+            />
+          </Reflow>
+        ) : null}
+
         {insightLevel <= 1 ? (
           <Reflow>
             <InsightsUnlockProgressCard
@@ -394,7 +427,18 @@ export default function InsightScreen() {
           </Reflow>
         ) : null}
 
-        {insightLevel >= 2 ? (
+        {periodIsEmpty && overview ? (
+          <Reflow>
+            <EmptyPeriodCard
+              rangeLabel={currentRange.label}
+              overview={overview}
+              onOpenMonth={(month) => setCurrentRange(rangeForOverviewMonth(month))}
+              onAddTransaction={() => router.push('/(tabs)')}
+            />
+          </Reflow>
+        ) : null}
+
+        {insightLevel >= 2 && !periodIsEmpty ? (
           <>
             <Reflow>
               <TopTakeawayCard dashboard={dashboard} reviewCount={reviewItems.length} />
@@ -411,9 +455,15 @@ export default function InsightScreen() {
 
         {insightLevel >= 4 ? (
           <>
-            <Reflow>
-              <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
-            </Reflow>
+            {/* The weekly review reads the selected window, so it is one of the
+                cards that had nothing to say in an empty one. The monthly
+                review is not period-scoped and stays — in a month with no
+                data yet, last month's review is the useful thing on screen. */}
+            {periodIsEmpty ? null : (
+              <Reflow>
+                <WeeklyReviewTeaser dashboard={dashboard} rangeLabel={currentRange.label} />
+              </Reflow>
+            )}
             <Reflow>
               <MonthlyReviewTeaser />
             </Reflow>
@@ -466,7 +516,7 @@ export default function InsightScreen() {
           </Reflow>
         )}
 
-        {insightLevel >= 4 && (
+        {insightLevel >= 4 && dashboard.account_spending.length > 0 && (
           <Reflow>
             <AccountIntelligence dashboard={dashboard} />
           </Reflow>

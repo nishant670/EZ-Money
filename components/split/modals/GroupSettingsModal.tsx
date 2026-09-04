@@ -5,7 +5,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { AvatarCircle } from '@/components/split/primitives/SplitPrimitives';
 import { SplitFullScreenModal } from '@/components/split/primitives/SplitFullScreenModal';
-import { GroupTile } from '@/components/split/rows/GroupTile';
+import { GroupAvatar } from '@/components/split/GroupAvatar';
 import { getGroupKindConfig } from '@/components/split/split-utils';
 import type { SplitGroupSummary } from '@/components/split/split-types';
 import { ThemedText } from '@/components/themed-text';
@@ -85,7 +85,7 @@ export function GroupSettingsModal({
             <View
               className="flex-row items-center gap-5 border-b px-6 py-4"
               style={{ borderColor: theme.border }}>
-              <GroupTile icon={kindConfig.icon} />
+              <GroupAvatar icon={kindConfig.icon} photoUri={summary.group.photo_url || null} />
               <View className="flex-1">
                 <TText variant="screenTitle" style={{ color: theme.text }}>
                   {summary.group.name}

@@ -1,5 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Contacts from 'expo-contacts/legacy';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useFocusEffect, useRouter, useScrollToTop } from 'expo-router';
@@ -7,7 +8,6 @@ import { cssInterop } from 'nativewind';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Share,
@@ -34,6 +34,7 @@ import { GroupDetailModal } from '@/components/split/modals/GroupDetailModal';
 import { GroupDefaultSplitModal } from '@/components/split/modals/GroupDefaultSplitModal';
 import { GroupSettingsModal } from '@/components/split/modals/GroupSettingsModal';
 import { GroupMembersModal } from '@/components/split/modals/GroupMembersModal';
+import { GroupAvatar } from '@/components/split/GroupAvatar';
 import { GroupTile } from '@/components/split/rows/GroupTile';
 import { SwipeActionRow } from '@/components/split/rows/SwipeActionRow';
 import { GroupActionModal } from '@/components/split/modals/GroupActionModal';
@@ -56,6 +57,7 @@ import {
   groupMatchesSearch,
   parseAmount,
   todayApiDate,
+  zeroBalanceLabel,
 } from '@/components/split/split-utils';
 import type {
   DeviceContactOption,
@@ -74,6 +76,7 @@ import { notifyTransactionsChanged } from '@/lib/transaction-events';
 import { FriendActionsSheet } from '@/components/split/sheets/FriendActionsSheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { CountUpMoney } from '@/components/ui/CountUpMoney';
 import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
@@ -89,6 +92,7 @@ import { fetchAccounts, getPreferredAccountForPaymentMode } from '@/lib/accounts
 import { userDisplayName } from '@/lib/display-name';
 import { createEntry } from '@/lib/entries';
 import { toAmountString } from '@/lib/money';
+import { resolveAttachmentForSave } from '@/lib/uploads';
 import {
   buildSeedWeights,
   computeSplitShares,
@@ -188,27 +192,43 @@ const toDeviceContactOption = (contact: Contacts.ExistingContact): DeviceContact
 
 const getBalanceTone = (
   value: number,
-  colors: { positive: string; negative: string; neutral: string }
+  colors: { positive: string; negative: string; neutral: string },
+  hasActivity = true
 ) => {
   if (value > 0) return { label: `you are owed ${formatBalance(value)}`, color: colors.positive };
   if (value < 0) return { label: `you owe ${formatBalance(value)}`, color: colors.negative };
-  return { label: 'settled up', color: colors.neutral };
+  return { label: zeroBalanceLabel({ hasActivity }), color: colors.neutral };
 };
 
+/**
+ * A zero balance, and which of the two things it means.
+ *
+ * "Settled up" is a claim about what happened: money was owed and it came back.
+ * A group made ten seconds ago has a zero balance for the opposite reason —
+ * nothing has happened in it at all — and saying "settled up" there is the app
+ * congratulating the user on an event that never took place. It also erases
+ * the one thing the row should be prompting: add the first expense.
+ *
+ * `hasActivity` is what tells them apart. It is false only when there is
+ * nothing on the ledger to settle, so a group that genuinely balanced out to
+ * zero still reads "settled up" and keeps its meaning.
+ */
 function BalanceFigure({
   value,
   color,
   overall = false,
+  hasActivity = true,
 }: {
   value: number;
   color: string;
   overall?: boolean;
+  hasActivity?: boolean;
 }) {
   const variant = overall ? 'sectionTitle' : 'cardTitle';
   if (value === 0) {
     return (
       <TText variant={variant} style={{ color }}>
-        {overall ? 'Overall, settled up' : 'settled up'}
+        {zeroBalanceLabel({ hasActivity, overall })}
       </TText>
     );
   }
@@ -438,6 +458,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const { token, user } = useAuthStore();
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
+  const dialog = useAppDialog();
   const motion = useMotion();
   const borderColor = theme.border;
   const currentUserName = userDisplayName(user?.username, 'You');
@@ -542,6 +563,16 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const [groupName, setGroupName] = useState('');
   const [groupKind, setGroupKind] = useState<GroupKind>('trip');
+  /**
+   * The group photo as the composer currently has it.
+   *
+   * A local `file://` until the group is saved, a hosted URL afterwards, and
+   * `''` when the user has removed one. `null` means "not touched" — which the
+   * payload has to preserve, because an edit that omits the field must leave a
+   * photo set on another device alone rather than clearing it by silence.
+   */
+  const [groupPhotoUri, setGroupPhotoUri] = useState<string | null>(null);
+  const [groupPhotoBusy, setGroupPhotoBusy] = useState(false);
   const [groupBalanceAlertEnabled, setGroupBalanceAlertEnabled] = useState(false);
   const [groupBalanceAlertAmount, setGroupBalanceAlertAmount] = useState('');
   const [groupInviteEmail, setGroupInviteEmail] = useState('');
@@ -577,6 +608,15 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const [simplifyGroupDebts, setSimplifyGroupDebts] = useState(false);
 
   const [settlementFriendId, setSettlementFriendId] = useState<number | null>(null);
+  /**
+   * The group a settlement is closing, when it was started from one.
+   *
+   * A settlement recorded inside a group has to go when the group does. Left
+   * behind it keeps applying its full amount to a ledger whose expenses no
+   * longer exist — which is how a Splits screen with no groups on it reported
+   * an outstanding balance with nothing anywhere to account for it.
+   */
+  const [settlementGroupId, setSettlementGroupId] = useState<number | null>(null);
   const [settlementAmount, setSettlementAmount] = useState('');
   const [settlementDate, setSettlementDate] = useState(todayApiDate());
   const [settlementDirection, setSettlementDirection] =
@@ -709,7 +749,16 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   }, [balances]);
 
   const overallNetBalance = totals.owedByFriends - totals.owedToFriends;
-  const overallTone = getBalanceTone(overallNetBalance, theme);
+  /**
+   * Whether there is any shared spending at all behind the headline figure.
+   *
+   * `bills` is the whole ledger the screen draws from, so an empty one means
+   * nothing has ever been split — which is not the same statement as
+   * "everything has been paid back", and it is the one the headline was
+   * making.
+   */
+  const hasLedgerActivity = bills.length > 0;
+  const overallTone = getBalanceTone(overallNetBalance, theme, hasLedgerActivity);
 
   /**
    * Whether the screen is drawing from an answer the server actually gave.
@@ -922,10 +971,20 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     [billGroupId, groups]
   );
 
-  const reportMemberInvites = useCallback((invites: SplitGroupMemberInvite[]) => {
-    const message = describeMemberInvites(invites);
-    if (message) Alert.alert('Added to the group', message);
-  }, []);
+  const reportMemberInvites = useCallback(
+    (invites: SplitGroupMemberInvite[]) => {
+      const message = describeMemberInvites(invites);
+      if (message) {
+        void dialog.alert({
+          title: 'Added to the group',
+          message,
+          tone: 'success',
+          iconName: 'account-multiple-plus-outline',
+        });
+      }
+    },
+    [dialog]
+  );
 
   const resolveFriendName = useCallback(
     (friendId: number) => friendById.get(friendId)?.name ?? 'Friend',
@@ -1096,6 +1155,8 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   const resetGroupForm = () => {
     setGroupName('');
     setGroupKind('trip');
+    setGroupPhotoUri(null);
+    setGroupPhotoBusy(false);
     setGroupBalanceAlertEnabled(false);
     setGroupBalanceAlertAmount('');
     setSelectedGroupFriendIds([]);
@@ -1119,6 +1180,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const resetSettlementForm = () => {
     setSettlementFriendId(friends[0]?.id ?? null);
+    setSettlementGroupId(null);
     setSettlementAmount('');
     setSettlementDate(todayApiDate());
     setSettlementDirection('friend_paid_user');
@@ -1213,6 +1275,45 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     );
   };
 
+  /**
+   * Picks a group photo and holds it locally until the group is saved.
+   *
+   * Deliberately not uploaded on pick: a photo chosen and then abandoned by
+   * closing the sheet would otherwise leave a file on the upload volume that
+   * nothing references and nothing will ever delete.
+   */
+  const pickGroupPhoto = async () => {
+    if (groupPhotoBusy) return;
+    setGroupPhotoBusy(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset?.uri) {
+        await dialog.alert({
+          title: 'Photo not selected',
+          message: 'Please choose an image file to use as the group photo.',
+        });
+        return;
+      }
+      setGroupPhotoUri(asset.uri);
+    } catch {
+      await dialog.alert({
+        title: 'Photo not updated',
+        message: 'Unable to select that image right now.',
+        tone: 'danger',
+      });
+    } finally {
+      setGroupPhotoBusy(false);
+    }
+  };
+
+  const removeGroupPhoto = () => setGroupPhotoUri('');
+
   const handleCreateGroup = async () => {
     if (!token || saving) return;
     if (!groupName.trim()) {
@@ -1223,9 +1324,18 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSaving(true);
     setError(null);
     try {
+      // The picked file only becomes a group photo here, once the group is
+      // actually being saved. `resolveAttachmentForSave` passes a URL the
+      // server already issued straight through, so re-saving a group does not
+      // re-upload the same image.
+      const photoUrl =
+        groupPhotoUri === null
+          ? undefined
+          : ((await resolveAttachmentForSave(token, groupPhotoUri || null)) ?? '');
       const payload = {
         name: groupName.trim(),
         kind: groupKind,
+        ...(photoUrl === undefined ? {} : { photo_url: photoUrl }),
         friend_ids: selectedGroupFriendIds,
       };
       const savedGroup = editingGroupId
@@ -1263,26 +1373,27 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       action === 'archive'
         ? 'Archived friends stay out of new split bills.'
         : 'This removes the friend from active split lists while preserving past split records.';
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: action === 'archive' ? 'Archive' : 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          if (!token) return;
-          setError(null);
-          setSelectedFriendActions(null);
-          void archiveSplitFriend(token, friend.id)
-            .then(async () => {
-              haptics.removed();
-              await loadSplitData();
-            })
-            .catch((archiveError: unknown) => {
-              reportSplitError(archiveError, 'Unable to archive friend.');
-            });
-        },
-      },
-    ]);
+    void dialog
+      .confirm({
+        title,
+        message,
+        confirmLabel: action === 'archive' ? 'Archive' : 'Delete',
+        destructive: true,
+        iconName: action === 'archive' ? 'archive-outline' : 'delete-outline',
+      })
+      .then((confirmed) => {
+        if (!confirmed || !token) return;
+        setError(null);
+        setSelectedFriendActions(null);
+        return archiveSplitFriend(token, friend.id)
+          .then(async () => {
+            haptics.removed();
+            await loadSplitData();
+          })
+          .catch((archiveError: unknown) => {
+            reportSplitError(archiveError, 'Unable to archive friend.');
+          });
+      });
   };
 
   const confirmDeleteFriend = () => {
@@ -1560,6 +1671,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     try {
       await createSplitSettlement(token, {
         friend_id: settlementFriendId,
+        ...(settlementGroupId ? { group_id: settlementGroupId } : {}),
         amount,
         direction: settlementDirection,
         date: settlementDate.trim(),
@@ -1596,6 +1708,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setGroupSettingsId(null);
     setGroupName(summary.group.name);
     setGroupKind(summary.kind);
+    setGroupPhotoUri(summary.group.photo_url || null);
     setGroupBalanceAlertEnabled(groupBalanceAlertById[summary.group.id]?.enabled ?? false);
     setGroupBalanceAlertAmount(groupBalanceAlertById[summary.group.id]?.amount ?? '');
     setSelectedGroupFriendIds(summary.memberIds);
@@ -2061,6 +2174,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setSettlementAmount(toAmountString(Math.abs(balance)));
     setSettlementDirection(balance > 0 ? 'friend_paid_user' : 'user_paid_friend');
     setSettlementNotes(`Settlement for ${summary.group.name}`);
+    setSettlementGroupId(summary.group.id);
     setGroupAction(null);
     setModal('settlement');
   };
@@ -2118,7 +2232,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       return;
     }
 
-    Alert.alert('Activity details', 'This activity is not linked to a detail page yet.');
+    void dialog.alert({
+      title: 'Activity details',
+      message: 'This activity is not linked to a detail page yet.',
+    });
   };
 
   if (screenState === 'loading') {
@@ -2223,7 +2340,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const renderGroupCard = (summary: SplitGroupSummary, entranceIndex: number) => {
     const { group, detailLines, memberIds, kind, netBalance, billCount, latestBill } = summary;
-    const tone = getBalanceTone(netBalance, theme);
+    const tone = getBalanceTone(netBalance, theme, billCount > 0);
     const kindConfig = getGroupKindConfig(kind);
     const memberNames = memberIds
       .map((memberId) => friendById.get(memberId)?.name)
@@ -2260,13 +2377,17 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
               accessibilityRole="button"
               onPress={() => setSelectedGroupDetailId(group.id)}
               className="flex-row gap-4 p-4">
-              <GroupTile icon={kindConfig.icon} />
+              <GroupAvatar icon={kindConfig.icon} photoUri={group.photo_url || null} />
               <View className="flex-1 justify-center">
                 <TText variant="cardTitle" style={{ color: theme.text }}>
                   {group.name}
                 </TText>
                 <View className="mt-1">
-                  <BalanceFigure value={netBalance} color={tone.color} />
+                  <BalanceFigure
+                    value={netBalance}
+                    color={tone.color}
+                    hasActivity={billCount > 0}
+                  />
                 </View>
                 {detailLines.length > 0 ? (
                   detailLines.map((line) => (
@@ -2283,7 +2404,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                     numberOfLines={1}>
                     {latestBill
                       ? `${billCount} bill${billCount === 1 ? '' : 's'} • last on ${latestBill.date}`
-                      : memberNames || 'No expenses yet'}
+                      : // The balance line above already says "No expenses yet"
+                        // when there are none, so this line spends itself on
+                        // the next thing the user needs instead of repeating it.
+                        memberNames || 'Add members or the first expense'}
                   </TText>
                 )}
               </View>
@@ -2295,7 +2419,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const renderNonGroupRow = (entranceIndex: number) => {
-    const tone = getBalanceTone(nonGroupSummary.netBalance, theme);
+    const tone = getBalanceTone(
+      nonGroupSummary.netBalance,
+      theme,
+      nonGroupSummary.billCount > 0
+    );
     return (
       <Animated.View entering={motion.rowEntering(entranceIndex)} layout={motion.reflow()}>
         <Card compact style={{ padding: 0 }}>
@@ -2309,7 +2437,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
             Non-group expenses
           </TText>
           <View className="mt-1">
-            <BalanceFigure value={nonGroupSummary.netBalance} color={tone.color} />
+            <BalanceFigure
+              value={nonGroupSummary.netBalance}
+              color={tone.color}
+              hasActivity={nonGroupSummary.billCount > 0}
+            />
           </View>
           {nonGroupSummary.detailLines.length > 0 ? (
             nonGroupSummary.detailLines.map((line) => (
@@ -2475,6 +2607,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                     value={overallNetBalance}
                     color={overallTone.color}
                     overall
+                    hasActivity={hasLedgerActivity}
                   />
                 </View>
                 <Pressable
@@ -2904,6 +3037,10 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           doneLabel={editingGroupId ? 'Save' : 'Done'}
           groupName={groupName}
           groupKind={groupKind}
+          photoUri={groupPhotoUri}
+          photoBusy={groupPhotoBusy}
+          onPickPhoto={() => void pickGroupPhoto()}
+          onRemovePhoto={removeGroupPhoto}
           balanceAlertEnabled={groupBalanceAlertEnabled}
           balanceAlertAmount={groupBalanceAlertAmount}
           friends={friends}

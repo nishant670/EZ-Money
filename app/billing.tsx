@@ -1,11 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { SkeletonCards, SkeletonFrame } from '@/components/ui/Skeleton';
 import { Card } from '@/components/ui/theme-primitives';
 import { Fonts } from '@/constants/theme';
@@ -75,6 +76,7 @@ export default function BillingScreen() {
   const colors = theme.colors;
   const router = useRouter();
   const { token, user } = useAuthStore();
+  const dialog = useAppDialog();
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -91,14 +93,15 @@ export default function BillingScreen() {
       setPlans(planList);
       setStatus(billingStatus);
     } catch (error) {
-      Alert.alert(
-        'Billing did not load',
-        getFriendlyErrorMessage(error, 'Please try again.')
-      );
+      void dialog.alert({
+        title: 'Billing did not load',
+        message: getFriendlyErrorMessage(error, 'Please try again.'),
+        tone: 'danger',
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [dialog, token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -114,21 +117,26 @@ export default function BillingScreen() {
     if (!token) return;
     if (plan.billing_interval === 'lifetime_quote') {
       if (!status?.lifetime_eligibility.eligible) {
-        Alert.alert(
-          'Lifetime quote unavailable',
-          `Complete ${status?.lifetime_eligibility.required_paid_months ?? 3} paid months before requesting a lifetime quote.`
-        );
+        void dialog.alert({
+          title: 'Lifetime quote unavailable',
+          message: `Complete ${status?.lifetime_eligibility.required_paid_months ?? 3} paid months before requesting a lifetime quote.`,
+        });
         return;
       }
       setBusyPlan(plan.code);
       try {
         await requestLifetimeQuote(token);
-        Alert.alert('Quote requested', 'Your 90-day AI usage summary is ready for review.');
+        void dialog.alert({
+          title: 'Quote requested',
+          message: 'Your 90-day AI usage summary is ready for review.',
+          tone: 'success',
+        });
       } catch (error) {
-        Alert.alert(
-          'Quote request failed',
-          getFriendlyErrorMessage(error, 'Please try again.')
-        );
+        void dialog.alert({
+          title: 'Quote request failed',
+          message: getFriendlyErrorMessage(error, 'Please try again.'),
+          tone: 'danger',
+        });
       } finally {
         setBusyPlan(null);
       }
@@ -139,10 +147,11 @@ export default function BillingScreen() {
     try {
       await createBillingCheckout(token, plan.code);
     } catch (error) {
-      Alert.alert(
-        'Checkout not ready',
-        getFriendlyErrorMessage(error, 'Please try again.')
-      );
+      void dialog.alert({
+        title: 'Checkout not ready',
+        message: getFriendlyErrorMessage(error, 'Please try again.'),
+        tone: 'danger',
+      });
     } finally {
       setBusyPlan(null);
     }

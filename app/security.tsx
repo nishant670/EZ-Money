@@ -4,7 +4,6 @@ import { cssInterop } from 'nativewind';
 import React from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   TextInput,
@@ -15,6 +14,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Colors, Fonts } from '@/constants/theme';
@@ -30,6 +30,7 @@ export default function SecurityScreen() {
   const theme = Colors[colorScheme];
   const router = useRouter();
   const { user, token, updateUser, clearAuth } = useAuthStore();
+  const dialog = useAppDialog();
   const [isCheckingLock, setIsCheckingLock] = React.useState(false);
   const [isCheckingBiometrics, setIsCheckingBiometrics] = React.useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = React.useState(false);
@@ -41,7 +42,7 @@ export default function SecurityScreen() {
   const mutedTextColor = colorScheme === 'light' ? '#6B7280' : 'rgba(255,255,255,0.58)';
 
   const showSecurityAlert = (message: string) => {
-    Alert.alert('Security settings', message);
+    void dialog.alert({ title: 'Security settings', message, tone: 'danger' });
   };
 
   const toggleLock = async (enabled: boolean) => {
@@ -126,10 +127,11 @@ export default function SecurityScreen() {
       setDeleteConfirmation('');
       router.replace('/auth');
     } catch (error) {
-      Alert.alert(
-        'Could not delete account',
-        getFriendlyAuthErrorMessage(error, 'Unable to delete your account right now.')
-      );
+      void dialog.alert({
+        title: 'Could not delete account',
+        message: getFriendlyAuthErrorMessage(error, 'Unable to delete your account right now.'),
+        tone: 'danger',
+      });
     } finally {
       setIsDeletingAccount(false);
     }

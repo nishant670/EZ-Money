@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, type AppStateStatus } from 'react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { ThemedConfirmDialog } from '@/components/ui/ThemedConfirmDialog';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
@@ -25,6 +26,7 @@ import {
 export function SplitInvitePrompt() {
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
+  const dialog = useAppDialog();
   const [invites, setInvites] = useState<PendingSplitGroupInvite[]>([]);
   const [accepting, setAccepting] = useState(false);
   const loadingRef = useRef(false);
@@ -80,10 +82,11 @@ export function SplitInvitePrompt() {
       // than sit behind it. Deferring keeps the invite in notifications, where
       // the full invite screen can explain a paywall or a revoked link.
       deferInvite();
-      Alert.alert(
-        `Could not join ${current.group_name}`,
-        getFriendlyErrorMessage(acceptError, 'Unable to join this split group right now.')
-      );
+      void dialog.alert({
+        title: `Could not join ${current.group_name}`,
+        message: getFriendlyErrorMessage(acceptError, 'Unable to join this split group right now.'),
+        tone: 'danger',
+      });
     } finally {
       setAccepting(false);
     }

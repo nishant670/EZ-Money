@@ -3,7 +3,6 @@ import { useFocusEffect, useLocalSearchParams, useRouter, useScrollToTop } from 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,6 +15,7 @@ import { UpgradeSheet } from '@/components/billing/UpgradeSheet';
 import { PanelActionRow } from '@/components/money/PanelActionRow';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { SkeletonCards, SkeletonFrame } from '@/components/ui/Skeleton';
 import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { Fonts } from '@/constants/theme';
@@ -72,6 +72,7 @@ export function BudgetsPanel({ embedded = false }: MoneyPanelProps) {
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
   const { token } = useAuthStore();
+  const dialog = useAppDialog();
   const theme = useThemeTokens();
   const colors = theme.colors;
   const muted = `${colors.text}99`;
@@ -250,28 +251,26 @@ export function BudgetsPanel({ embedded = false }: MoneyPanelProps) {
     }
   };
 
-  const confirmDelete = (budget: Budget) => {
+  const confirmDelete = async (budget: Budget) => {
     if (!token) return;
-    Alert.alert('Delete budget?', `${budget.name} alerts will stop after deletion.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteBudget(token, budget.id);
-            if (editing?.id === budget.id) resetForm();
-            await load();
-          } catch (deleteError) {
-            if (captureEntitlement(deleteError)) {
-              presentUpgrade();
-              return;
-            }
-            setError(getFriendlyErrorMessage(deleteError, 'Unable to delete this budget.'));
-          }
-        },
-      },
-    ]);
+    const confirmed = await dialog.confirm({
+      title: 'Delete budget?',
+      message: `${budget.name} alerts will stop after deletion.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await deleteBudget(token, budget.id);
+      if (editing?.id === budget.id) resetForm();
+      await load();
+    } catch (deleteError) {
+      if (captureEntitlement(deleteError)) {
+        presentUpgrade();
+        return;
+      }
+      setError(getFriendlyErrorMessage(deleteError, 'Unable to delete this budget.'));
+    }
   };
 
   return (
@@ -432,7 +431,7 @@ export function BudgetsPanel({ embedded = false }: MoneyPanelProps) {
                         {budget.active ? 'Active' : 'Paused'}
                       </ThemedText>
                     </View>
-                    <Pressable onPress={() => confirmDelete(budget)} hitSlop={10}>
+                    <Pressable onPress={() => void confirmDelete(budget)} hitSlop={10}>
                       <MaterialCommunityIcons name="trash-can-outline" size={20} color="#D32F2F" />
                     </Pressable>
                   </View>

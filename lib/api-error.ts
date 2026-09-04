@@ -136,11 +136,41 @@ const codeMessages: Record<string, string> = {
   last_account: 'Create another account before deleting your only account.',
 };
 
-const humanizeField = (field: string) =>
-  field
-    .replace(/_id$/, '')
-    .replaceAll('_', ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+/**
+ * A field path the backend names, turned into something a person can act on.
+ *
+ * Server field names are paths, not labels: `split.participants[0].friend_id`.
+ * Title-casing one whole produced **"Split.Participants[0].Friend must belong
+ * to the current user"** under a Save button — three lines of it at once, in
+ * the shape of a stack trace, about people the user could see on screen.
+ *
+ * So the path is read rather than decorated. The last segment is the thing the
+ * message is actually about; the segments in front of it are context worth at
+ * most a short prefix; and an index is a position in a list the user filled in,
+ * which means it counts from one, not zero.
+ */
+const humanizeField = (field: string) => {
+  const segments = field.split('.').filter(Boolean);
+  const last = segments[segments.length - 1] ?? field;
+
+  // `participants[0]` — the index belongs to the row, not to the leaf.
+  const indexed = /^(.*)\[(\d+)\]$/.exec(segments[segments.length - 2] ?? '');
+  const word = (value: string) =>
+    value
+      .replace(/\[\d+\]$/, '')
+      .replace(/_id$/, '')
+      .replaceAll('_', ' ')
+      .trim();
+
+  const leaf = word(last);
+  const titled = leaf.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  if (!indexed) {
+    return titled || field;
+  }
+  const position = Number(indexed[2]) + 1;
+  const container = word(indexed[1]).replace(/s$/, '');
+  return `${container.replace(/\b\w/g, (letter) => letter.toUpperCase())} ${position} ${leaf}`;
+};
 
 const humanizeCode = (code: string) =>
   code.replaceAll('_', ' ').replace(/^\w/, (letter) => letter.toUpperCase());
@@ -187,12 +217,27 @@ export const getFriendlyErrorMessage = (
   return message;
 };
 
+/**
+ * The label for a field, allowing a caller's map to match on the leaf.
+ *
+ * A caller cannot enumerate `split.participants[0].friend_id`,
+ * `[1]`, `[2]` and so on, so an exact-match-only lookup meant every indexed
+ * field fell through to the generated label no matter how carefully the caller
+ * had named things.
+ */
+const fieldLabel = (field: string, labels: Record<string, string>) => {
+  if (labels[field]) return labels[field];
+  const leaf = field.split('.').pop() ?? field;
+  if (labels[leaf]) return labels[leaf];
+  return humanizeField(field);
+};
+
 export const formatApiFieldErrors = (
   fields: ApiFieldErrors,
   labels: Record<string, string> = {},
 ) => Object.entries(fields)
   .map(([field, message]) => {
-    const label = labels[field] ?? humanizeField(field);
+    const label = fieldLabel(field, labels);
     return ensurePunctuation(`${label} ${message}`);
   });
 

@@ -1,11 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
@@ -34,6 +35,7 @@ export default function FeedbackScreen() {
   const { token } = useAuthStore();
   const theme = useThemeTokens();
   const colors = theme.colors;
+  const dialog = useAppDialog();
   const [type, setType] = useState<FeedbackType>('feature_request');
   const [area, setArea] = useState('Capture');
   const [impact, setImpact] = useState<FeedbackImpact>('high');
@@ -48,11 +50,14 @@ export default function FeedbackScreen() {
 
   const handleSubmit = async () => {
     if (!token) {
-      Alert.alert('Sign in needed', 'Please sign in before sending feedback.');
+      void dialog.alert({ title: 'Sign in needed', message: 'Please sign in before sending feedback.' });
       return;
     }
     if (!title.trim() || !message.trim()) {
-      Alert.alert('Add a little detail', 'Please add a short title and explain the idea or issue.');
+      void dialog.alert({
+        title: 'Add a little detail',
+        message: 'Please add a short title and explain the idea or issue.',
+      });
       return;
     }
 
@@ -67,11 +72,19 @@ export default function FeedbackScreen() {
       });
       setTitle('');
       setMessage('');
-      Alert.alert('Feedback sent', 'Thanks. This is now in the Finnri feedback list for review.', [
-        { text: 'Done', onPress: () => router.back() },
-      ]);
+      await dialog.alert({
+        title: 'Feedback sent',
+        message: 'Thanks. This is now in the Finnri feedback list for review.',
+        tone: 'success',
+        buttonLabel: 'Done',
+      });
+      router.back();
     } catch (error) {
-      Alert.alert('Could not send', getFriendlyErrorMessage(error, 'Unable to send feedback right now.'));
+      void dialog.alert({
+        title: 'Could not send',
+        message: getFriendlyErrorMessage(error, 'Unable to send feedback right now.'),
+        tone: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }

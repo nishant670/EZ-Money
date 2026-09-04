@@ -3,6 +3,15 @@ import { API_BASE_URL, type ApiEntry } from './transactions';
 
 const entryFieldLabels: Record<string, string> = {
   account_id: 'Account',
+  // A transaction can carry a split, and the server reports its problems under
+  // `split.*` paths. Without these the composer surfaced raw field paths —
+  // "Split.Participants[0].Friend must belong to the current user" — which
+  // names an internal shape rather than anything on screen.
+  'split.group_id': 'Split group',
+  'split.participants': 'Split shares',
+  friend_id: 'Friend',
+  share_amount: 'Share amount',
+  direction: 'Split direction',
   amount: 'Amount',
   attachment: 'Receipt',
   category: 'Category',

@@ -75,6 +75,15 @@ const noHandTunedMotion = [
 // `View.performHapticFeedback`, which honours it. That choice has to be made
 // in one place or the next call site silently buzzes someone who asked for
 // silence. See C8.
+// Dialogs go through one themed host. `Alert.alert` renders the platform's own
+// box — its type, its corner radius, its blue — which is a visible seam at the
+// end of a flow that was Finnri's the whole way up to it. The rule exists
+// because the convention alone did not hold: the themed dialogs were built,
+// agreed on, and then bypassed a dozen times, because wiring one up by hand
+// cost more than reaching for the global.
+const dialogMessage =
+  'Raise dialogs with useAppDialog() from @/components/ui/AppDialogProvider (alert / confirm), not Alert.alert. The system dialog carries none of the app\'s type, colour or corner radius, so a themed flow ends on a stock Android box.';
+
 const hapticsMessage =
   'Fire haptics through the vocabulary in @/lib/haptics (haptics.select/toggle/saved/rejected/…), not expo-haptics directly. A direct impactAsync goes through Android\'s raw Vibrator and ignores the system haptic setting.';
 
@@ -124,6 +133,19 @@ module.exports = defineConfig([
     ],
     rules: {
       'no-restricted-syntax': ['error', ...noHandTunedMotion],
+    },
+  },
+  {
+    files: ['**/*.{ts,tsx}'],
+    rules: {
+      // A separate rule name from the `no-restricted-syntax` blocks above on
+      // purpose: in flat config a later block replaces an earlier one's entry
+      // for the same rule, so folding this in would silently retire whichever
+      // list it landed next to.
+      'no-restricted-properties': [
+        'error',
+        { object: 'Alert', property: 'alert', message: dialogMessage },
+      ],
     },
   },
   {

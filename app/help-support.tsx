@@ -1,10 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Alert, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 
@@ -62,17 +63,25 @@ export default function HelpSupportScreen() {
   const router = useRouter();
   const theme = useThemeTokens();
   const colors = theme.colors;
+  const dialog = useAppDialog();
 
   const openSupportLink = async (url: string) => {
     try {
       const canOpen = await Linking.canOpenURL(url);
       if (!canOpen) {
-        Alert.alert('Support', 'No email app is available on this device.');
+        void dialog.alert({
+          title: 'Support',
+          message: 'No email app is available on this device.',
+        });
         return;
       }
       await Linking.openURL(url);
     } catch {
-      Alert.alert('Support', 'Unable to open support right now.');
+      void dialog.alert({
+        title: 'Support',
+        message: 'Unable to open support right now.',
+        tone: 'danger',
+      });
     }
   };
 

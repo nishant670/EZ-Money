@@ -15,6 +15,7 @@ import '../global.css';
 
 import { FinnriSplashScreen } from '@/components/SplashScreen';
 import { TransactionDeleteProvider } from '@/components/transactions/TransactionDeleteProvider';
+import { AppDialogProvider } from '@/components/ui/AppDialogProvider';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMotion } from '@/hooks/use-motion';
@@ -206,6 +207,12 @@ export default function RootLayout() {
           see `OnboardingScreenWrapper` for the reflow that cost. */}
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <ThemeProvider value={navigationTheme}>
+      {/* Above the delete provider because that provider raises dialogs of its
+          own. One host for the whole app is what makes the themed dialog the
+          cheap option — see `AppDialogProvider`; every flow that ended on a
+          stock Android box ended there because reaching for `Alert.alert` was
+          less work than wiring a themed one up by hand. */}
+      <AppDialogProvider>
       <TransactionDeleteProvider>
       {showCustomSplash && <FinnriSplashScreen onAnimationComplete={handleCustomSplashComplete} />}
       <Stack
@@ -283,6 +290,7 @@ export default function RootLayout() {
       </Stack>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </TransactionDeleteProvider>
+      </AppDialogProvider>
       </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
