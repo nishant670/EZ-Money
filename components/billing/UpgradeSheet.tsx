@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { IN_APP_PURCHASE_ENABLED } from '@/lib/purchase-policy';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -128,7 +129,9 @@ export function UpgradeSheet({ visible, entitlement, onClose }: UpgradeSheetProp
   const [plans, setPlans] = useState<BillingPlan[] | null>(null);
 
   useEffect(() => {
-    if (!visible || plans) return;
+    // Prices are only ever shown where the app may sell. Fetching them for a
+    // sheet that will not display one is a request for nothing.
+    if (!visible || plans || !IN_APP_PURCHASE_ENABLED) return;
     let active = true;
     fetchBillingPlans()
       .then((loaded) => {
@@ -214,7 +217,7 @@ export function UpgradeSheet({ visible, entitlement, onClose }: UpgradeSheetProp
         </View>
       )}
 
-      {priceLine && (
+      {IN_APP_PURCHASE_ENABLED && priceLine && (
         <View
           className="mt-5 rounded-2xl px-4 py-3"
           style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }}>
@@ -225,25 +228,34 @@ export function UpgradeSheet({ visible, entitlement, onClose }: UpgradeSheetProp
         </View>
       )}
 
+      {/*
+        With in-app purchase off, this sheet explains the feature and stops
+        there. Google Play forbids both selling digital content outside Play
+        Billing and steering users to somewhere that does, so there is no buy
+        button, no price, and no link out - only a way back to the plan and
+        credits the account already has.
+      */}
       <Pressable
         accessibilityRole="button"
-        onPress={openPlans}
+        onPress={IN_APP_PURCHASE_ENABLED ? openPlans : onClose}
         className="mt-6 h-13 items-center justify-center rounded-2xl"
         style={{ backgroundColor: colors.accent, minHeight: 52 }}>
         <ThemedText className="text-sm font-black" style={{ color: 'white' }}>
-          See plans
+          {IN_APP_PURCHASE_ENABLED ? 'See plans' : 'Got it'}
         </ThemedText>
       </Pressable>
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={onClose}
-        className="mt-2 items-center justify-center"
-        style={{ minHeight: 44 }}>
-        <ThemedText className="text-xs font-bold" style={{ color: muted }}>
-          Not now
-        </ThemedText>
-      </Pressable>
+      {IN_APP_PURCHASE_ENABLED ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onClose}
+          className="mt-2 items-center justify-center"
+          style={{ minHeight: 44 }}>
+          <ThemedText className="text-xs font-bold" style={{ color: muted }}>
+            Not now
+          </ThemedText>
+        </Pressable>
+      ) : null}
     </AnimatedBottomSheet>
   );
 }

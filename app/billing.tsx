@@ -13,6 +13,7 @@ import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { IN_APP_PURCHASE_ENABLED } from '@/lib/purchase-policy';
 import {
   createBillingCheckout,
   fetchBillingPlans,
@@ -86,8 +87,11 @@ export default function BillingScreen() {
   const loadBilling = useCallback(async () => {
     setIsLoading(true);
     try {
+      // The catalogue is only rendered where the app may sell. Fetching it
+      // otherwise costs a request on every visit to a screen that will not
+      // show a single price.
       const [planList, billingStatus] = await Promise.all([
-        fetchBillingPlans(),
+        IN_APP_PURCHASE_ENABLED ? fetchBillingPlans() : Promise.resolve([]),
         token ? fetchBillingStatus(token) : Promise.resolve(null),
       ]);
       setPlans(planList);
@@ -289,69 +293,89 @@ export default function BillingScreen() {
               <MaterialCommunityIcons name="account-arrow-up-outline" size={22} color="#2F80ED" />
               <View style={{ flex: 1 }}>
                 <ThemedText style={{ color: colors.text, fontFamily: Fonts.title, fontWeight: '800' }}>
-                  Create an account before subscribing
+                  Create an account to keep your plan
                 </ThemedText>
                 <ThemedText style={{ color: `${colors.text}99` }}>
-                  Paid plans are tied to your profile, not a temporary guest device.
+                  A plan is tied to your profile, not a temporary guest device.
                 </ThemedText>
               </View>
             </View>
           </Card>
         ) : null}
 
-        <View style={{ gap: theme.spacing.sm }}>
-          <ThemedText
-            style={{
-              color: colors.text,
-              fontFamily: Fonts.title,
-              fontSize: 18,
-              fontWeight: '900',
-            }}>
-            Choose your AI budget
-          </ThemedText>
-          <ThemedText style={{ color: `${colors.text}99` }}>
-            Every plan includes manual tracking. Credits are only used when Finnri AI processes text
-            or voice capture.
-          </ThemedText>
-        </View>
+        {IN_APP_PURCHASE_ENABLED ? (
+          <>
+          <View style={{ gap: theme.spacing.sm }}>
+            <ThemedText
+              style={{
+                color: colors.text,
+                fontFamily: Fonts.title,
+                fontSize: 18,
+                fontWeight: '900',
+              }}>
+              Choose your AI budget
+            </ThemedText>
+            <ThemedText style={{ color: `${colors.text}99` }}>
+              Every plan includes manual tracking. Credits are only used when Finnri AI processes text
+              or voice capture.
+            </ThemedText>
+          </View>
 
-        {isLoading ? (
-          <SkeletonFrame label="Loading plans" testID="billing-skeleton">
-            <SkeletonCards count={3} lines={3} radius={22} />
-          </SkeletonFrame>
+          {isLoading ? (
+            <SkeletonFrame label="Loading plans" testID="billing-skeleton">
+              <SkeletonCards count={3} lines={3} radius={22} />
+            </SkeletonFrame>
+          ) : (
+            plans.map((plan, index) => {
+              const isLifetime = plan.billing_interval === 'lifetime_quote';
+              const lifetimeEligible = status?.lifetime_eligibility.eligible ?? false;
+              const isCurrent = status?.plan?.code === plan.code;
+              const isRecommended = plan.code === recommendedPlanCode;
+              const disabled = busyPlan !== null || (isLifetime && !lifetimeEligible);
+              const accent = planAccents[index % planAccents.length];
+              const actionLabel = isGuest
+                ? 'Create account'
+                : isCurrent
+                  ? 'Current plan'
+                  : isLifetime
+                    ? lifetimeEligible
+                      ? 'Request quote'
+                      : `${status?.lifetime_eligibility.paid_months_completed ?? 0}/${plan.requires_prior_paid_months} months`
+                    : plan.checkout_enabled
+                      ? 'Subscribe'
+                      : 'Notify me';
+              return (
+                <PlanCard
+                  key={plan.code}
+                  plan={plan}
+                  accent={accent}
+                  actionLabel={actionLabel}
+                  busy={busyPlan === plan.code}
+                  disabled={disabled || isCurrent}
+                  isCurrent={isCurrent}
+                  isRecommended={isRecommended}
+                  onPress={() => void handlePlanPress(plan)}
+                />
+              );
+            })
+          )}
+          </>
         ) : (
-          plans.map((plan, index) => {
-            const isLifetime = plan.billing_interval === 'lifetime_quote';
-            const lifetimeEligible = status?.lifetime_eligibility.eligible ?? false;
-            const isCurrent = status?.plan?.code === plan.code;
-            const isRecommended = plan.code === recommendedPlanCode;
-            const disabled = busyPlan !== null || (isLifetime && !lifetimeEligible);
-            const accent = planAccents[index % planAccents.length];
-            const actionLabel = isGuest
-              ? 'Create account'
-              : isCurrent
-                ? 'Current plan'
-                : isLifetime
-                  ? lifetimeEligible
-                    ? 'Request quote'
-                    : `${status?.lifetime_eligibility.paid_months_completed ?? 0}/${plan.requires_prior_paid_months} months`
-                  : plan.checkout_enabled
-                    ? 'Subscribe'
-                    : 'Notify me';
-            return (
-              <PlanCard
-                key={plan.code}
-                plan={plan}
-                accent={accent}
-                actionLabel={actionLabel}
-                busy={busyPlan === plan.code}
-                disabled={disabled || isCurrent}
-                isCurrent={isCurrent}
-                isRecommended={isRecommended}
-                onPress={() => void handlePlanPress(plan)}
-              />
-            );
-          })
+          <Card compact style={{ padding: theme.spacing.lg, gap: theme.spacing.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+              <MaterialCommunityIcons name="information-outline" size={22} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <ThemedText
+                  style={{ color: colors.text, fontFamily: Fonts.title, fontWeight: '800' }}>
+                  Managed on your account
+                </ThemedText>
+                <ThemedText style={{ color: `${colors.text}99` }}>
+                  Plan changes are not available in this version of the app. Everything above is
+                  what your account has right now.
+                </ThemedText>
+              </View>
+            </View>
+          </Card>
         )}
       </ScrollView>
     </SafeAreaView>
