@@ -9,12 +9,12 @@ import {
   ScrollView,
   View,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -56,6 +56,7 @@ import { formatTime, toApiTime } from '@/lib/datetime';
 import { formatMoney, toAmountInputValue } from '@/lib/money';
 
 export default function TransactionDetailsScreen() {
+  const dialog = useAppDialog();
   const router = useRouter();
   const params = useLocalSearchParams<{
     id: string;
@@ -278,7 +279,11 @@ export default function TransactionDetailsScreen() {
     try {
       await WebBrowser.openBrowserAsync(receiptUrl);
     } catch {
-      Alert.alert('Receipt unavailable', 'This receipt could not be opened right now.');
+      void dialog.alert({
+        title: 'Receipt unavailable',
+        message: 'This receipt could not be opened right now.',
+        tone: 'danger',
+      });
     }
   };
 
@@ -375,10 +380,17 @@ export default function TransactionDetailsScreen() {
           () => null
         );
         if (notification) {
-          Alert.alert(notification.title, notification.body, [
-            { text: 'Later', style: 'cancel' },
-            { text: 'View Budgets', onPress: () => router.push('/budgets') },
-          ]);
+          if (
+            await dialog.confirm({
+              title: notification.title,
+              message: notification.body,
+              confirmLabel: 'View Budgets',
+              cancelLabel: 'Later',
+              iconName: 'wallet-outline',
+            })
+          ) {
+            router.push('/budgets');
+          }
         }
       }
     } catch (error) {

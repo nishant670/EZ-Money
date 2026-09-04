@@ -83,6 +83,14 @@ export type SplitGroup = {
   name: string;
   archived: boolean;
   kind?: SplitGroupKind;
+  /**
+   * The group's picture, hosted by the backend. Empty when it has none.
+   *
+   * A URL rather than a device path on purpose: the photo belongs to the group,
+   * so every member has to see the same one. A file kept on whichever phone
+   * picked it is a private note, not a group photo.
+   */
+  photo_url?: string;
   default_split?: SplitGroupDefaultSplit | null;
   owner_name?: string;
   /** Which member friend row is the caller. Absent for the group's owner. */
@@ -233,11 +241,23 @@ export type SplitBillPayload = {
 export type SplitGroupPayload = {
   name: string;
   kind: SplitGroupKind;
+  /**
+   * Omit to leave the group's photo alone; send an empty string to remove it.
+   * The server rejects anything that is not a URL it issued from `/v1/upload`.
+   */
+  photo_url?: string;
   friend_ids: number[];
 };
 
 export type SplitSettlementPayload = {
   friend_id: number;
+  /**
+   * The group whose expenses this payment closes, when it was recorded from
+   * one. A settlement that names a group is deleted with it — otherwise it
+   * outlives the expenses it settled and keeps moving the running total with
+   * nothing left on screen to explain it.
+   */
+  group_id?: number;
   amount: number;
   direction: SettlementDirection;
   date: string;

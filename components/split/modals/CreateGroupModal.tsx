@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { cssInterop } from 'nativewind';
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
 
@@ -32,6 +33,10 @@ export function CreateGroupModal({
   doneLabel,
   groupName,
   groupKind,
+  photoUri,
+  photoBusy,
+  onPickPhoto,
+  onRemovePhoto,
   balanceAlertEnabled,
   balanceAlertAmount,
   friends,
@@ -50,6 +55,15 @@ export function CreateGroupModal({
   doneLabel: string;
   groupName: string;
   groupKind: GroupKind;
+  /**
+   * The photo as the composer has it: a local file the user just picked, a
+   * hosted URL on an existing group, `''` once removed, or `null` for a group
+   * that has never had one.
+   */
+  photoUri: string | null;
+  photoBusy: boolean;
+  onPickPhoto: () => void;
+  onRemovePhoto: () => void;
   balanceAlertEnabled: boolean;
   balanceAlertAmount: string;
   friends: SplitFriend[];
@@ -106,16 +120,38 @@ export function CreateGroupModal({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: 24, paddingBottom: 44 }}>
           <View className="flex-row items-center gap-5">
+            {/* The control was drawn from the first version of this sheet and
+                wired to nothing, so the one affordance that looks like it takes
+                a photo did not. */}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Choose group photo"
-              className="h-20 w-20 items-center justify-center rounded-xl border"
-              style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-              <MaterialCommunityIcons
-                name="camera-plus-outline"
-                size={30}
-                color={theme.mutedStrong}
-              />
+              accessibilityLabel={photoUri ? 'Change group photo' : 'Choose group photo'}
+              accessibilityHint={photoUri ? 'Opens the picker to replace this photo' : undefined}
+              disabled={photoBusy}
+              onPress={onPickPhoto}
+              className="h-20 w-20 items-center justify-center overflow-hidden rounded-xl border"
+              style={{
+                backgroundColor: theme.card,
+                borderColor: photoUri ? theme.accent : theme.border,
+                opacity: photoBusy ? 0.6 : 1,
+              }}>
+              {photoBusy ? (
+                <ActivityIndicator color={theme.accent} />
+              ) : photoUri ? (
+                <Image
+                  source={{ uri: photoUri }}
+                  style={{ height: '100%', width: '100%' }}
+                  contentFit="cover"
+                  transition={0}
+                  accessibilityIgnoresInvertColors
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name="camera-plus-outline"
+                  size={30}
+                  color={theme.mutedStrong}
+                />
+              )}
             </Pressable>
             <View className="flex-1">
               <TText className="text-sm" style={{ color: theme.muted }}>Group name</TText>
@@ -134,6 +170,18 @@ export function CreateGroupModal({
                   fontSize: 20,
                 }}
               />
+              {photoUri ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove group photo"
+                  onPress={onRemovePhoto}
+                  hitSlop={8}
+                  className="mt-2 self-start">
+                  <TText className="text-sm" style={{ color: theme.accent }}>
+                    Remove photo
+                  </TText>
+                </Pressable>
+              ) : null}
             </View>
           </View>
 

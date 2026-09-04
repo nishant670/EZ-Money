@@ -4,7 +4,6 @@ import { useFocusEffect, useLocalSearchParams, useRouter, useScrollToTop } from 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Platform,
   Pressable,
@@ -17,6 +16,7 @@ import { PanelActionRow } from '@/components/money/PanelActionRow';
 import { RecurringCandidatesCard } from '@/components/money/RecurringCandidatesCard';
 import { AppHeader } from '@/components/navigation/AppHeader';
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { SkeletonCards, SkeletonFrame } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
@@ -193,6 +193,7 @@ export function SubscriptionsPanel({ embedded = false }: MoneyPanelProps) {
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
   const { token } = useAuthStore();
+  const dialog = useAppDialog();
   const theme = useThemeTokens();
   const colors = theme.colors;
   const muted = `${colors.text}99`;
@@ -549,30 +550,22 @@ export function SubscriptionsPanel({ embedded = false }: MoneyPanelProps) {
     }
   };
 
-  const confirmDelete = (subscription: Subscription) => {
+  const confirmDelete = async (subscription: Subscription) => {
     if (!token) return;
-    Alert.alert(
-      'Delete subscription?',
-      `${subscription.name} reminders will stop after deletion.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteSubscription(token, subscription.id);
-              if (editing?.id === subscription.id) resetForm();
-              await load();
-            } catch (deleteError) {
-              setListError(
-                getFriendlyErrorMessage(deleteError, 'Unable to delete this subscription.')
-              );
-            }
-          },
-        },
-      ]
-    );
+    const confirmed = await dialog.confirm({
+      title: 'Delete subscription?',
+      message: `${subscription.name} reminders will stop after deletion.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await deleteSubscription(token, subscription.id);
+      if (editing?.id === subscription.id) resetForm();
+      await load();
+    } catch (deleteError) {
+      setListError(getFriendlyErrorMessage(deleteError, 'Unable to delete this subscription.'));
+    }
   };
 
   const closeForm = () => {
@@ -652,7 +645,7 @@ export function SubscriptionsPanel({ embedded = false }: MoneyPanelProps) {
                 onPress={() => editSubscription(subscription)}
                 onMarkPaid={() => void markPaid(subscription)}
                 onCancelNow={() => void cancelNow(subscription)}
-                onDelete={() => confirmDelete(subscription)}
+                onDelete={() => void confirmDelete(subscription)}
               />
             ))}
           </View>

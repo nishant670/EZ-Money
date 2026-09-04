@@ -239,3 +239,31 @@ export function composerMemberKeys(
     : fallback.map((friend) => String(friend.id));
   return [...new Set(keys)];
 }
+
+/**
+ * What a zero balance means, and which of the two things it is.
+ *
+ * "Settled up" is a claim about what happened: money was owed and it came back.
+ * A group made ten seconds ago has a zero balance for the opposite reason —
+ * nothing has happened in it at all — and the screen said "settled up" there
+ * too, congratulating the user on an event that never took place and hiding the
+ * one thing the row should have been prompting: add the first expense.
+ *
+ * `hasActivity` is the whole distinction. It is false only when there is
+ * nothing on that ledger to settle, so a group that genuinely balanced back out
+ * to zero keeps "settled up" and keeps its meaning.
+ *
+ * Returns the phrase for a zero balance only; a non-zero one is drawn with an
+ * animated amount beside it and cannot be a plain string.
+ */
+export const zeroBalanceLabel = ({
+  hasActivity,
+  overall = false,
+}: {
+  hasActivity: boolean;
+  /** The screen-wide figure rather than one row's. */
+  overall?: boolean;
+}) => {
+  if (!hasActivity) return overall ? 'Nothing to settle yet' : 'No expenses yet';
+  return overall ? 'Overall, settled up' : 'settled up';
+};

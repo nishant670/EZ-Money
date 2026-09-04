@@ -1,22 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { View } from 'react-native';
 
-import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { GroupAvatar } from '@/components/split/GroupAvatar';
 
+/**
+ * The kind-icon-only group tile.
+ *
+ * Kept as the name the non-group rows use — "Non-group expenses" has no group
+ * and therefore never has a photo. Anything drawing an actual group should use
+ * `GroupAvatar` directly and pass its `photo_url`.
+ */
 export function GroupTile({ icon }: { icon: keyof typeof MaterialCommunityIcons.glyphMap }) {
-  const theme = useThemeTokens();
-
-  return (
-    <View
-      className="h-[58px] w-[58px] items-center justify-center border"
-      style={{
-        backgroundColor: theme.colors.secondary,
-        borderColor: theme.colors.border,
-        borderRadius: theme.icon.containerRadius,
-      }}>
-      <View className="flex-1 items-center justify-center">
-        <MaterialCommunityIcons name={icon} size={27} color={theme.colors.accent} />
-      </View>
-    </View>
-  );
+  return <GroupAvatar icon={icon} />;
 }

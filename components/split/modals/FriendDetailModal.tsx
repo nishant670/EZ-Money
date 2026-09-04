@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { cssInterop } from 'nativewind';
 import { useRef } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
@@ -69,7 +70,13 @@ export function FriendDetailModal({
         ? `You owe ${friendFirstName} ${formatBalance(netBalance)}${
             unsettledGroup ? ` in "${unsettledGroup.group.name}"` : ''
           }`
-        : `You and ${friendFirstName} are settled up.`;
+        : // "Settled up" is a claim that money was owed and came back. With
+          // nothing split between the two of them yet it is a congratulation
+          // for something that never happened, and it hides the prompt this
+          // line should be carrying.
+          summary.bills.length > 0
+          ? `You and ${friendFirstName} are settled up.`
+          : `Nothing split with ${friendFirstName} yet.`;
   const groupedRows = groups.reduce((acc, group) => {
     const date = group.latestBill?.date ?? group.group.created_at ?? todayApiDate();
     const section = formatMonthYear(date);
@@ -252,7 +259,18 @@ function FriendSharedGroupRow({
       <View
         className="h-16 w-16 items-center justify-center overflow-hidden rounded-xl"
         style={{ backgroundColor: theme.accent }}>
-        <MaterialCommunityIcons name={kindConfig.icon} size={32} color={theme.onAccent} />
+        {summary.group.photo_url ? (
+          <Image
+            source={{ uri: summary.group.photo_url }}
+            style={{ height: '100%', width: '100%' }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={0}
+            accessibilityIgnoresInvertColors
+          />
+        ) : (
+          <MaterialCommunityIcons name={kindConfig.icon} size={32} color={theme.onAccent} />
+        )}
       </View>
       <View className="flex-1">
         <TText variant="screenTitle" style={{ color: theme.text }}>
@@ -262,7 +280,9 @@ function FriendSharedGroupRow({
       </View>
       <View className="items-end">
         {friendNet === 0 ? (
-          <TText className="text-base" style={{ color: theme.muted }}>settled up</TText>
+          <TText className="text-base" style={{ color: theme.muted }}>
+            {summary.bills.length > 0 ? 'settled up' : 'no expenses yet'}
+          </TText>
         ) : (
           <>
             <TText

@@ -11,7 +11,6 @@ import { useRouter, useFocusEffect, useLocalSearchParams, useScrollToTop } from 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated as RNAnimated,
   Easing,
   Pressable,
@@ -34,6 +33,7 @@ import { VoiceInputCard } from '@/components/home/VoiceInputCard';
 import { CreditStatusCard } from '@/components/billing/CreditStatusCard';
 import { GuestUpgradePrompt } from '@/components/home/GuestUpgradePrompt';
 import { ThemedText } from '@/components/themed-text';
+import { useAppDialog } from '@/components/ui/AppDialogProvider';
 import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { StateView } from '@/components/ui/StateView';
@@ -229,6 +229,7 @@ export default function HomeScreen() {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
   const isDark = themeTokens.mode === 'dark';
+  const dialog = useAppDialog();
   const router = useRouter();
   const { captureFile } = useLocalSearchParams<{ captureFile?: string | string[] }>();
   const consumedCaptureFile = useRef<string | null>(null);
@@ -663,16 +664,23 @@ export default function HomeScreen() {
           previousBudgetNotificationIds
         );
         if (!notification) return;
-        Alert.alert(notification.title, notification.body, [
-          { text: 'Later', style: 'cancel' },
-          { text: 'View Budgets', onPress: () => router.push('/budgets') },
-        ]);
+        if (
+          await dialog.confirm({
+            title: notification.title,
+            message: notification.body,
+            confirmLabel: 'View Budgets',
+            cancelLabel: 'Later',
+            iconName: 'wallet-outline',
+          })
+        ) {
+          router.push('/budgets');
+        }
         await fetchNotificationCount();
       } catch {
         // Budget alerts are also available in Notifications if the inline alert cannot load.
       }
     },
-    [fetchNotificationCount, router, token]
+    [dialog, fetchNotificationCount, router, token]
   );
 
   useFocusEffect(

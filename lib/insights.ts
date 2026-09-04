@@ -176,6 +176,61 @@ export type RecurringCandidateDecision = {
     updated_at: string;
 };
 
+export type DashboardOverviewMonth = {
+    /** YYYY-MM. */
+    month: string;
+    /** Short month name, for the strip. */
+    label: string;
+    spent: number;
+    income: number;
+    count: number;
+};
+
+/**
+ * What the Insights tab knows regardless of which period is selected.
+ *
+ * Everything else on this response is filtered by the range, which is why the
+ * tab used to go blank on a schedule: every month, from the 1st until the first
+ * transaction was captured, an account with a year of history rendered ₹0 four
+ * times over "Waiting for data". A window with nothing in it is not the same
+ * thing as an account with nothing in it — and a single month means very little
+ * without the months either side to read it against.
+ */
+export type DashboardOverview = {
+    /** False only for a genuinely new account. */
+    has_history: boolean;
+    tracked_since?: string;
+    months_tracked: number;
+    lifetime_spent: number;
+    lifetime_income: number;
+    lifetime_transaction_count: number;
+    /** Mean over the last six months that had activity. */
+    average_monthly_spend: number;
+    /**
+     * How many complete months backed the two figures above. Check it before
+     * calling anything "typical": one or two months is a sample, not a habit.
+     */
+    baseline_months?: number;
+    /**
+     * Median over the same months. Lead with this one — a single holiday or
+     * insurance renewal drags the mean far enough to make an ordinary month
+     * look frugal.
+     */
+    typical_monthly_spend: number;
+    /** Twelve calendar months, oldest first, quiet ones included. */
+    recent_months: DashboardOverviewMonth[];
+    /**
+     * The most recent month with any activity. This is what turns an empty
+     * selected period from a dead end into one tap to where the data is.
+     */
+    last_active_month?: DashboardOverviewMonth | null;
+    top_category?: string;
+    top_category_amount: number;
+    top_category_share: number;
+    /** How many months the top-category window actually spans (at most six). */
+    top_category_months?: number;
+};
+
 export type DashboardResponse = {
     period: DashboardPeriod;
     summary: DashboardSummary;
@@ -188,6 +243,11 @@ export type DashboardResponse = {
     review_items: ApiEntry[];
     insights: InsightCard[];
     recurring_candidates: DashboardRecurringCandidate[];
+    /**
+     * Absent on a backend that predates it, so every read has to tolerate
+     * `undefined` rather than assuming the block is there.
+     */
+    overview?: DashboardOverview;
 };
 
 export const fetchDashboard = async (

@@ -110,12 +110,22 @@ export function GroupActionModal({
                       onPress={() => onSettleWithFriend(summary, row.friend.id, row.balance)}
                     />
                   ))
-                ) : (
+                ) : summary.billCount > 0 ? (
                   <StateView
                     compact
                     icon="check-circle-outline"
                     title="Settled up"
                     message="There are no open balances in this group."
+                  />
+                ) : (
+                  // Nothing has been recorded here yet, which is a different
+                  // state from everything having been paid back — and the only
+                  // one of the two that has a next step.
+                  <StateView
+                    compact
+                    icon="receipt-text-outline"
+                    title="No expenses yet"
+                    message="Add the first expense and balances will appear here."
                   />
                 )}
               </View>
@@ -163,6 +173,7 @@ export function GroupActionModal({
                     key={row.friend.id}
                     friend={row.friend}
                     balance={row.balance}
+                    hasActivity={summary.billCount > 0}
                   />
                 ))}
               </View>
@@ -264,11 +275,14 @@ function ExportPreviewRow({ label, value }: { label: string; value: string }) {
 function GroupBalanceActionRow({
   friend,
   balance,
+  hasActivity = true,
   actionLabel,
   onPress,
 }: {
   friend: SplitFriend;
   balance: number;
+  /** False when nothing has been split with this person yet. */
+  hasActivity?: boolean;
   actionLabel?: string;
   onPress?: () => void;
 }) {
@@ -287,7 +301,9 @@ function GroupBalanceActionRow({
           </TText>
           <TText className="mt-1 text-sm" style={{ color }}>
             {settled
-              ? 'settled up'
+              ? hasActivity
+                ? 'settled up'
+                : 'no expenses yet'
               : balance > 0
                 ? `owes you ${formatBalance(balance)}`
                 : `you owe ${formatBalance(balance)}`}

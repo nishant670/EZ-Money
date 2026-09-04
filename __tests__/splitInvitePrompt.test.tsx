@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { SplitInvitePrompt } from '@/components/split/SplitInvitePrompt';
+import { AppDialogProvider } from '@/components/ui/AppDialogProvider';
 import { resetDeferredSplitInvites } from '@/lib/split-invite-deferrals';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { acceptSplitGroupInvite, fetchPendingSplitGroupInvites } from '@/lib/splits';
@@ -10,6 +11,15 @@ jest.mock('@/lib/splits', () => ({
   fetchPendingSplitGroupInvites: jest.fn(),
   acceptSplitGroupInvite: jest.fn(),
 }));
+
+// The prompt reports a failed join through the app's themed dialog host, so it
+// has to be mounted inside one — the same as anywhere it renders for real.
+const renderPrompt = () =>
+  render(
+    <AppDialogProvider>
+      <SplitInvitePrompt />
+    </AppDialogProvider>
+  );
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
@@ -38,7 +48,7 @@ describe('split invite prompt', () => {
   it('brings the invite to the user with both answers', async () => {
     fetchPending.mockResolvedValue([invite(1, 'Couple')]);
 
-    const screen = await render(<SplitInvitePrompt />);
+    const screen = await renderPrompt();
 
     expect(await screen.findByText('Join Couple?')).toBeTruthy();
     expect(screen.getByText(/Nishant added you to Couple/)).toBeTruthy();
@@ -50,7 +60,7 @@ describe('split invite prompt', () => {
     fetchPending.mockResolvedValue([invite(2, 'Goa')]);
     accept.mockResolvedValue({} as never);
 
-    const screen = await render(<SplitInvitePrompt />);
+    const screen = await renderPrompt();
     const acceptButton = await screen.findByText('Accept');
     await act(async () => {
       fireEvent.press(acceptButton);
@@ -64,7 +74,7 @@ describe('split invite prompt', () => {
   it('checking later closes it without accepting anything', async () => {
     fetchPending.mockResolvedValue([invite(3, 'Flat')]);
 
-    const screen = await render(<SplitInvitePrompt />);
+    const screen = await renderPrompt();
     const laterButton = await screen.findByText('Check later');
     await act(async () => {
       fireEvent.press(laterButton);
@@ -79,7 +89,7 @@ describe('split invite prompt', () => {
     fetchPending.mockResolvedValue([invite(4, 'Trip')]);
 
 
-    const first = await render(<SplitInvitePrompt />);
+    const first = await renderPrompt();
     const laterButton = await first.findByText('Check later');
     await act(async () => {
       fireEvent.press(laterButton);
@@ -88,7 +98,7 @@ describe('split invite prompt', () => {
 
     // A second open in the same session — the invite is still pending server
     // side, but the user has already said "later".
-    const second = await render(<SplitInvitePrompt />);
+    const second = await renderPrompt();
     await waitFor(() => expect(fetchPending).toHaveBeenCalledTimes(2));
     expect(second.queryByText('Join Trip?')).toBeNull();
     second.unmount();
@@ -97,7 +107,7 @@ describe('split invite prompt', () => {
   it('asks about one group at a time', async () => {
     fetchPending.mockResolvedValue([invite(5, 'Couple'), invite(6, 'Office')]);
 
-    const screen = await render(<SplitInvitePrompt />);
+    const screen = await renderPrompt();
 
     expect(await screen.findByText('Join Couple?')).toBeTruthy();
     expect(screen.queryByText('Join Office?')).toBeNull();
@@ -106,7 +116,7 @@ describe('split invite prompt', () => {
   it('stays out of the way when nobody is signed in', async () => {
     useAuthStore.setState({ token: null, user: null });
 
-    const screen = await render(<SplitInvitePrompt />);
+    const screen = await renderPrompt();
 
     expect(fetchPending).not.toHaveBeenCalled();
     expect(screen.toJSON()).toBeNull();
