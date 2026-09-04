@@ -55,8 +55,41 @@ const googleDiscovery = {
 
 // Read from the app config so it cannot drift from the package name Google has
 // registered against the Android OAuth client; a mismatch fails the whole flow.
-const GOOGLE_NATIVE_REDIRECT_SCHEME =
+const GOOGLE_ANDROID_REDIRECT_SCHEME =
   Constants.expoConfig?.android?.package ?? 'com.finnri.app';
+
+/**
+ * The custom scheme an iOS OAuth client redirects to.
+ *
+ * Google does not use the bundle identifier here the way Android uses the
+ * package name — it uses the client id reversed, so
+ * `123-abc.apps.googleusercontent.com` becomes `com.googleusercontent.apps.123-abc`.
+ * Deriving it from the client id keeps the two from drifting apart.
+ */
+export const reversedIOSClientScheme = (clientId: string) => {
+  const suffix = '.apps.googleusercontent.com';
+  if (!clientId.endsWith(suffix)) return null;
+  return `com.googleusercontent.apps.${clientId.slice(0, -suffix.length)}`;
+};
+
+/**
+ * The OAuth client for the platform actually running.
+ *
+ * Never falls back across platforms. Google rejects an Android client
+ * presented from iOS, and the old chain did exactly that — `_ANDROID_` is set,
+ * so an iOS build would have picked it up and failed inside Google's consent
+ * screen rather than saying plainly that iOS has no client yet.
+ *
+ * `_MOBILE_` is honoured as a deliberate cross-platform override; `_ANDROID_`
+ * and `_IOS_` are each only ever used on their own platform.
+ */
+const googleClientIdForPlatform = () => {
+  const shared = process.env.EXPO_PUBLIC_GOOGLE_MOBILE_CLIENT_ID;
+  if (shared) return shared;
+  if (Platform.OS === 'ios') return process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+  if (Platform.OS === 'android') return process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+  return process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+};
 
 export default function AuthFlow() {
   const router = useRouter();
@@ -189,27 +222,39 @@ export default function AuthFlow() {
       return;
     }
 
-    const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_MOBILE_CLIENT_ID
-      ?? process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
-      ?? process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
-      ?? process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+    const googleClientId = googleClientIdForPlatform();
     if (!googleClientId) {
-      setIdentifyError('Google sign-in is not configured yet.');
+      setIdentifyError(
+        Platform.OS === 'ios'
+          ? 'Google sign-in is not set up for iOS yet. Please continue with an email address.'
+          : 'Google sign-in is not configured yet.'
+      );
       return;
     }
 
-    setIdentifyError(null);
-    setGuestError(null);
-    setIsGoogleChecking(true);
-    const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     // Google's Android clients only accept a redirect whose scheme is the
     // package name, with a single slash: "com.finnri.app:/oauth2redirect".
     // makeRedirectUri emits "scheme://path", and Google rejects that double
     // slash, so this one is spelled out rather than generated. The app's own
     // "ezmoney" scheme stays registered for split-group invite links.
+    //
+    // Resolved before the spinner starts: every bail-out below it would
+    // otherwise leave the button spinning with nothing on its way back.
+    const nativeRedirectScheme = Platform.OS === 'ios'
+      ? reversedIOSClientScheme(googleClientId)
+      : GOOGLE_ANDROID_REDIRECT_SCHEME;
+    if (Platform.OS !== 'web' && !nativeRedirectScheme) {
+      setIdentifyError('Google sign-in is not set up correctly on this build.');
+      return;
+    }
     const redirectUri = Platform.OS === 'web'
       ? AuthSession.makeRedirectUri({ path: 'auth/google' })
-      : `${GOOGLE_NATIVE_REDIRECT_SCHEME}:/oauth2redirect`;
+      : `${nativeRedirectScheme}:/oauth2redirect`;
+
+    setIdentifyError(null);
+    setGuestError(null);
+    setIsGoogleChecking(true);
+    const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
     try {
       const request = await AuthSession.loadAsync(
