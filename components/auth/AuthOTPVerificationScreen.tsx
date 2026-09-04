@@ -1,6 +1,6 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { authOtpSend, getFriendlyAuthErrorMessage } from '@/lib/auth';
+import { AuthOtpSendError, authOtpSend, getFriendlyAuthErrorMessage } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/transactions';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
@@ -156,6 +156,12 @@ export const AuthOTPVerificationScreen = ({
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } catch (error) {
+      // The server keeps its own per-address cooldown, and it is the one that
+      // decides. If it says wait, restart the local timer from its number
+      // rather than leaving the button live and inviting another rejection.
+      if (error instanceof AuthOtpSendError && error.retryAfterSeconds) {
+        setTimer(error.retryAfterSeconds);
+      }
       setErrorMessage(getFriendlyAuthErrorMessage(error, 'Unable to resend code.'));
     } finally {
       setIsResending(false);

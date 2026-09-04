@@ -1,3 +1,4 @@
+import { PHONE_IDENTIFIER_ENABLED } from '@/lib/auth';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -56,11 +57,25 @@ export const AuthScreen2 = ({
   const normalizedInput = input.trim();
   const isEmail = isValidEmail(normalizedInput);
   const isPhone = isValidPhone(normalizedInput);
-  const isValid = isEmail || isPhone;
+  const isValid = isEmail || (PHONE_IDENTIFIER_ENABLED && isPhone);
+
+  const identifierPlaceholder = PHONE_IDENTIFIER_ENABLED
+    ? 'Email address or mobile number'
+    : 'Email address';
+  // Someone who typed ten digits has not made a typo — they have chosen a
+  // channel that does not exist yet. Telling them "that is invalid" would send
+  // them back to correct a number that was already correct.
+  const invalidIdentifierMessage =
+    !PHONE_IDENTIFIER_ENABLED && isPhone
+      ? 'Codes by SMS are not available yet. Please use an email address.'
+      : PHONE_IDENTIFIER_ENABLED
+        ? 'Enter a valid 10-digit mobile number or email.'
+        : 'Enter a valid email address.';
+
   const showValidationError = touched && normalizedInput.length > 0 && !isValid;
   const mergedErrorMessage =
     showValidationError && !localError
-      ? 'Enter a valid 10-digit mobile number or email.'
+      ? invalidIdentifierMessage
       : localError || errorMessage || null;
 
   const handleInputChange = (value: string) => {
@@ -73,7 +88,7 @@ export const AuthScreen2 = ({
   const handleContinue = () => {
     setTouched(true);
     if (!isValid) {
-      setLocalError('Enter a valid 10-digit mobile number or email.');
+      setLocalError(invalidIdentifierMessage);
       return;
     }
     onContinue(isPhone ? normalizedInput : normalizedInput.toLowerCase());
@@ -119,7 +134,8 @@ export const AuthScreen2 = ({
           <View style={styles.formSection}>
             <TextInput
               style={[styles.input, { backgroundColor: theme.border, color: theme.text }]}
-              placeholder="Email address or mobile number"
+              placeholder={identifierPlaceholder}
+              keyboardType={PHONE_IDENTIFIER_ENABLED ? 'default' : 'email-address'}
               placeholderTextColor={theme.text + '66'}
               value={input}
               autoCapitalize="none"

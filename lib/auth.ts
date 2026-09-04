@@ -1,6 +1,20 @@
 import { API_BASE_URL } from './transactions';
 import { getFriendlyErrorMessage } from './api-error';
 
+/**
+ * Whether a phone number may be used as a sign-in identifier.
+ *
+ * False until an SMS provider exists. India SMS needs DLT template
+ * registration before any provider will accept transactional traffic, so the
+ * backend refuses a phone identifier with `otp_channel_unavailable`. Offering
+ * the field anyway means advertising a signup route that cannot complete —
+ * which is the sort of dead end a store reviewer opens the app and finds.
+ *
+ * Flip this to true in the same change that wires the SMS driver, and set
+ * OTP_PHONE_CHANNEL_ENABLED on the backend to match.
+ */
+export const PHONE_IDENTIFIER_ENABLED = false;
+
 const AUTH_NETWORK_ERROR_MESSAGE = 'Could not connect to Finnri. Check your connection and try again.';
 
 const authErrorMessages: Record<string, string> = {
@@ -11,7 +25,33 @@ const authErrorMessages: Record<string, string> = {
   failed_create_session: 'Could not start your session. Please try again.',
   invalid_request: 'Something went wrong while starting guest mode. Please try again.',
   weak_pin: 'Choose a PIN that is not easy to guess.',
+  // The server now actually sends the code, so it can also actually fail to.
+  // Before this existed every one of these was "Failed to send OTP", which
+  // told a user nothing about whether waiting would help.
+  otp_send_failed: 'We could not send your code just now. Please try again in a moment.',
+  otp_resend_too_soon: 'Your code is on its way. Give it a moment before asking for another.',
+  otp_channel_unavailable: 'Codes by SMS are not available yet. Please sign in with an email address instead.',
+  invalid_phone: 'That does not look like a valid phone number.',
+  identifier_required: 'Enter an email address to continue.',
 };
+
+/**
+ * Carries the server's error code and, for a throttled resend, how long the
+ * app should wait. The screens need the code itself — an OTP that cannot be
+ * sent at all and one that was sent 10 seconds ago need different UI, and a
+ * single message string cannot tell them apart.
+ */
+export class AuthOtpSendError extends Error {
+  readonly code: string;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(message: string, code: string, retryAfterSeconds: number | null) {
+    super(message);
+    this.name = 'AuthOtpSendError';
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
 
 export const getFriendlyAuthErrorMessage = (
   error: unknown,
@@ -265,14 +305,41 @@ export const deleteUserAccount = async (token: string): Promise<void> => {
   }
 };
 
-export const authOtpSend = async (identifier: string) => {
-  // Mock function to simulate OTP send, since backend mocks it too
+export type OtpSendResponse = {
+  message: string;
+  expires_at: string;
+  channel: string;
+  /** Only present when the server is running with OTP_DEBUG_RESPONSE on. */
+  dev_otp?: string;
+};
+
+export const authOtpSend = async (identifier: string): Promise<OtpSendResponse> => {
   const response = await fetch(`${API_BASE_URL}/v1/auth/otp/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ identifier }),
   });
-  if (!response.ok) throw new Error('Failed to send OTP');
+
+  if (!response.ok) {
+    // The body is read once and reused for both the code and the message —
+    // a Response body cannot be consumed twice.
+    let payload: { error?: string; retry_after_seconds?: number } = {};
+    try {
+      payload = JSON.parse(await response.text());
+    } catch {
+      // A proxy or gateway error is not JSON; the fallback message covers it.
+    }
+    const code = payload.error ?? 'otp_send_failed';
+    const retryAfterHeader = Number.parseInt(response.headers.get('Retry-After') ?? '', 10);
+    const retryAfter = payload.retry_after_seconds
+      ?? (Number.isFinite(retryAfterHeader) ? retryAfterHeader : null);
+    throw new AuthOtpSendError(
+      authErrorMessages[code] ?? 'We could not send your code just now. Please try again.',
+      code,
+      retryAfter,
+    );
+  }
+
   return response.json();
 };
 

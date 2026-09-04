@@ -25,7 +25,13 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
-import { updateProfile, authOtpSend, authOtpVerify } from '@/lib/auth';
+import {
+  updateProfile,
+  authOtpSend,
+  authOtpVerify,
+  getFriendlyAuthErrorMessage,
+  PHONE_IDENTIFIER_ENABLED,
+} from '@/lib/auth';
 import { getMonogram } from '@/lib/monogram';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
@@ -166,10 +172,12 @@ export default function EditProfileScreen() {
       await authOtpSend(identifier);
       setOtpCode('');
       setShowOtp(true);
-    } catch {
+    } catch (error) {
+      // "Failed to send OTP" covered a provider outage, a throttled resend and
+      // an unsupported channel alike, and told the user nothing about which.
       showAlert({
         title: 'Error',
-        message: 'Failed to send OTP. Please try again.',
+        message: getFriendlyAuthErrorMessage(error, 'Failed to send OTP. Please try again.'),
         tone: 'danger',
       });
     } finally {
@@ -340,7 +348,15 @@ export default function EditProfileScreen() {
               </View>
 
               {/* Mobile */}
-              <View>
+              {/*
+                Changing a mobile number has to be proved by an OTP, and there
+                is no SMS channel to carry one — the backend answers
+                otp_channel_unavailable. An editable field that can never be
+                saved is worse than no field, so it is hidden until SMS lands.
+                The existing value is still submitted unchanged by
+                performUpdate, so nothing is lost by not showing it.
+              */}
+              <View style={{ display: PHONE_IDENTIFIER_ENABLED ? 'flex' : 'none' }}>
                 <TText
                   className="text-xs font-bold opacity-60 mb-2 ml-4 uppercase"
                   style={{ fontFamily: Fonts.body }}>
