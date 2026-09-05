@@ -31,6 +31,7 @@ import {
   authOtpVerify,
   getFriendlyAuthErrorMessage,
   PHONE_IDENTIFIER_ENABLED,
+  EMAIL_LOGIN_ENABLED,
 } from '@/lib/auth';
 import { getMonogram } from '@/lib/monogram';
 
@@ -337,12 +338,26 @@ export default function EditProfileScreen() {
                     style={{ backgroundColor: '#FFEBEE' }}>
                     <MaterialCommunityIcons name="email-outline" size={22} color="#D32F2F" />
                   </View>
+                  {/*
+                    Changing an email address has to be proved by an OTP, and
+                    OTP sign-in is off. The address also *is* the Google
+                    identity the account signs in with, so editing it here
+                    could only ever disagree with the thing that actually
+                    authenticates. Shown, not edited.
+                  */}
                   <TextInput
                     value={email}
                     onChangeText={setEmail}
-                    placeholder="Enter your email"
+                    editable={EMAIL_LOGIN_ENABLED}
+                    placeholder={EMAIL_LOGIN_ENABLED ? 'Enter your email' : 'No email on this account'}
                     keyboardType="email-address"
-                    style={{ flex: 1, fontFamily: Fonts.body, fontSize: 14, color: theme.text }}
+                    style={{
+                      flex: 1,
+                      fontFamily: Fonts.body,
+                      fontSize: 14,
+                      color: theme.text,
+                      opacity: EMAIL_LOGIN_ENABLED ? 1 : 0.6,
+                    }}
                   />
                 </View>
               </View>

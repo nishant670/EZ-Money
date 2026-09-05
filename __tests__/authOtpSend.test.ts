@@ -1,4 +1,12 @@
-import { AuthOtpSendError, authOtpSend, PHONE_IDENTIFIER_ENABLED } from '@/lib/auth';
+import fs from 'fs';
+import path from 'path';
+
+import {
+  AuthOtpSendError,
+  authOtpSend,
+  EMAIL_LOGIN_ENABLED,
+  PHONE_IDENTIFIER_ENABLED,
+} from '@/lib/auth';
 
 const jsonResponse = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -84,5 +92,36 @@ describe('authOtpSend', () => {
   // If this ever fails, the app is offering a signup route the server refuses.
   it('keeps the phone identifier switched off while SMS is unwired', () => {
     expect(PHONE_IDENTIFIER_ENABLED).toBe(false);
+  });
+
+  it('renders the disabled gate as a route onward, not as a failure', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      jsonResponse(503, { error: 'otp_sign_in_disabled', available_channels: ['google', 'guest'] }),
+    ) as unknown as typeof fetch;
+
+    await expect(authOtpSend('a@example.com')).rejects.toMatchObject({
+      code: 'otp_sign_in_disabled',
+      message: 'Sign in with Google, or keep going as a guest.',
+    });
+  });
+});
+
+describe('sign-in policy', () => {
+  const read = (relativePath: string) =>
+    fs.readFileSync(path.join(path.resolve(__dirname, '..'), relativePath), 'utf8');
+
+  // Google and guest are the two doors in for launch. The backend refuses OTP
+  // with AUTH_OTP_ENABLED=false, so any screen still offering email or a phone
+  // number walks someone into a 503 on a screen they cannot get past.
+  it('keeps email sign-in switched off', () => {
+    expect(EMAIL_LOGIN_ENABLED).toBe(false);
+  });
+
+  it.each([
+    ['components/auth/AuthScreen1.tsx', 'the welcome screen'],
+    ['app/auth.tsx', 'the auth flow'],
+    ['app/edit-profile.tsx', 'the profile editor'],
+  ])('gates %s behind the flag', (file) => {
+    expect(read(file)).toContain('EMAIL_LOGIN_ENABLED');
   });
 });

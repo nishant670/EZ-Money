@@ -2,6 +2,26 @@ import { API_BASE_URL } from './transactions';
 import { getFriendlyErrorMessage } from './api-error';
 
 /**
+ * Whether email/PIN/OTP sign-in is offered at all.
+ *
+ * **False for launch.** Google and guest are the two doors in. Email-only OTP
+ * was a half-measure: almost anyone willing to type an email address picks
+ * Google instead, and the people who actually want a one-time code want it on
+ * a phone — which needs DLT registration India has not granted yet. So both
+ * channels ship together later rather than half of one now.
+ *
+ * Nobody with a Google-backed address is stranded by this: the backend's
+ * `authGoogle` matches an existing account by email and links the Google
+ * subject to it, so an old email-and-PIN account signs in with Google and
+ * lands on its own data.
+ *
+ * The backend gates the same flow with `AUTH_OTP_ENABLED`, and it is the
+ * authority — the endpoints answer 503 whatever this flag says. Flip both
+ * together, in the change that ships email *and* SMS.
+ */
+export const EMAIL_LOGIN_ENABLED = false;
+
+/**
  * Whether a phone number may be used as a sign-in identifier.
  *
  * False until an SMS provider exists. India SMS needs DLT template
@@ -31,6 +51,7 @@ const authErrorMessages: Record<string, string> = {
   otp_send_failed: 'We could not send your code just now. Please try again in a moment.',
   otp_resend_too_soon: 'Your code is on its way. Give it a moment before asking for another.',
   otp_channel_unavailable: 'Codes by SMS are not available yet. Please sign in with an email address instead.',
+  otp_sign_in_disabled: 'Sign in with Google, or keep going as a guest.',
   invalid_phone: 'That does not look like a valid phone number.',
   identifier_required: 'Enter an email address to continue.',
 };

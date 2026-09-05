@@ -15,6 +15,7 @@ import {
 
 import { FinnriLogoMark } from '@/components/FinnriLogoMark';
 
+import { EMAIL_LOGIN_ENABLED } from '@/lib/auth';
 import { GoogleGlyph } from './GoogleGlyph';
 import { styles } from './styles';
 import { HERO_BASE_SIZE, welcomeHeroSize } from './welcome-layout';
@@ -25,6 +26,12 @@ type AuthScreen1Props = {
   onGoogle?: () => void;
   /** The email/mobile signup path, demoted to a text link. */
   onIdentifier: () => void;
+  /**
+   * 'link' is a guest arriving from "save your workspace" rather than a first
+   * run. They already have data, so the screen has to be about keeping it, not
+   * about starting.
+   */
+  mode?: 'welcome' | 'link';
   errorMessage?: string | null;
   isGuestLoading?: boolean;
   isGoogleLoading?: boolean;
@@ -55,6 +62,7 @@ export const AuthScreen1 = ({
   onGuest,
   onGoogle,
   onIdentifier,
+  mode = 'welcome',
   errorMessage,
   isGuestLoading,
   isGoogleLoading,
@@ -119,10 +127,12 @@ export const AuthScreen1 = ({
 
       <View style={welcomeStyles.textSection}>
         <Text style={[styles.title, welcomeStyles.title, { color: theme.text }]}>
-          Welcome to Finnri
+          {mode === 'link' ? 'Save your workspace' : 'Welcome to Finnri'}
         </Text>
         <Text style={[styles.subtitle, welcomeStyles.subtitle, { color: theme.text, opacity: 0.6 }]}>
-          Track your money intelligently — your way.
+          {mode === 'link'
+            ? 'Sign in to back up everything you have tracked so far and reach it from any device.'
+            : 'Track your money intelligently — your way.'}
         </Text>
       </View>
 
@@ -141,7 +151,9 @@ export const AuthScreen1 = ({
             <ActivityIndicator color="white" />
           ) : (
             <>
-              <Text style={styles.primaryButtonText}>Start tracking — it&apos;s free</Text>
+              <Text style={styles.primaryButtonText}>
+                {mode === 'link' ? 'Keep using guest' : "Start tracking — it's free"}
+              </Text>
               <MaterialCommunityIcons
                 name="arrow-right"
                 size={20}
@@ -155,7 +167,9 @@ export const AuthScreen1 = ({
         {/* The guest terms, stated before the tap rather than on a screen after
             it. This is what the interstitial used to say. */}
         <Text style={[styles.helperText, { color: theme.text, opacity: 0.55 }]}>
-          No account needed. Your data stays on this device — sign in any time to back it up.
+          {mode === 'link'
+            ? 'Guest data lives only on this device. Clearing app data or changing phone loses it.'
+            : 'No account needed. Your data stays on this device — sign in any time to back it up.'}
         </Text>
 
         <View style={[styles.dividerRow, welcomeStyles.dividerRow]}>
@@ -188,16 +202,24 @@ export const AuthScreen1 = ({
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          accessibilityRole="button"
-          style={[styles.textButton, welcomeStyles.textButton]}
-          disabled={isBusy}
-          onPress={onIdentifier}
-        >
-          <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.75 }]}>
-            Use email or mobile
-          </Text>
-        </TouchableOpacity>
+        {/*
+          Email and mobile sign-in are switched off for launch — Google and
+          guest are the two doors in, and the backend refuses OTP outright.
+          Offering the button anyway would walk someone into a dead end on the
+          one screen they cannot get past.
+        */}
+        {EMAIL_LOGIN_ENABLED ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            style={[styles.textButton, welcomeStyles.textButton]}
+            disabled={isBusy}
+            onPress={onIdentifier}
+          >
+            <Text style={[styles.textButtonText, { color: theme.text, opacity: 0.75 }]}>
+              Use email or mobile
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         {errorMessage ? (
           <View style={styles.smartErrorContainer}>

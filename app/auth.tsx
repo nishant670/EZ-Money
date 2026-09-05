@@ -27,6 +27,7 @@ import {
 } from '@/components/auth';
 import type { ClaimTokenResult } from '@/components/auth/AuthOTPVerificationScreen';
 import {
+  EMAIL_LOGIN_ENABLED,
   authOtpSend,
   getFriendlyAuthErrorMessage,
   guestCheckin,
@@ -98,7 +99,12 @@ export default function AuthFlow() {
   const theme = Colors[colorScheme];
   const { user, setAuth } = useAuthStore();
   const isGuestLinking = params.mode === 'link' && !!user?.is_guest;
-  const [step, setStep] = useState<AuthStep>(() => (isGuestLinking ? 'identifier' : 'welcome'));
+  // A guest linking used to land straight on the identifier form. With email
+  // sign-in off there is no form to land on, so they get Welcome in its
+  // "save your workspace" dress, which offers the Google button they need.
+  const [step, setStep] = useState<AuthStep>(() =>
+    isGuestLinking && EMAIL_LOGIN_ENABLED ? 'identifier' : 'welcome'
+  );
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [identifier, setIdentifier] = useState('');
   const [claimToken, setClaimToken] = useState<string | null>(null);
@@ -226,7 +232,7 @@ export default function AuthFlow() {
     if (!googleClientId) {
       setIdentifyError(
         Platform.OS === 'ios'
-          ? 'Google sign-in is not set up for iOS yet. Please continue with an email address.'
+          ? 'Google sign-in is not set up for iOS yet.'
           : 'Google sign-in is not configured yet.'
       );
       return;
@@ -477,8 +483,11 @@ export default function AuthFlow() {
       case 'welcome':
         return (
           <AuthScreen1
+            mode={isGuestLinking ? 'link' : 'welcome'}
             onGoogle={handleGoogleContinue}
-            onGuest={handleGuestContinue}
+            // A guest who is already signed in as a guest needs no check-in —
+            // the button means "never mind", so it just leaves.
+            onGuest={isGuestLinking ? finish : handleGuestContinue}
             onIdentifier={() => {
               setGuestError(null);
               changeStep('identifier', 'forward');
