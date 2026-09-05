@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { IN_APP_PURCHASE_ENABLED } from '@/lib/purchase-policy';
+import { CHECKOUT_LINK_ENABLED, IN_APP_PURCHASE_ENABLED } from '@/lib/purchase-policy';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
@@ -104,6 +104,13 @@ const cheapestPayablePlan = (plans: BillingPlan[]) =>
     .filter((plan) => (plan.price_minor ?? 0) > 0)
     .sort((first, second) => (first.price_minor ?? 0) - (second.price_minor ?? 0))[0] ?? null;
 
+/**
+ * Whether there is a plan screen worth sending anyone to. True when either
+ * route to paying exists — an in-app purchase (off) or the hosted checkout
+ * page opened in a browser (on).
+ */
+const PLANS_REACHABLE = IN_APP_PURCHASE_ENABLED || CHECKOUT_LINK_ENABLED;
+
 const intervalSuffix: Record<string, string> = {
   weekly: 'week',
   monthly: 'month',
@@ -131,7 +138,7 @@ export function UpgradeSheet({ visible, entitlement, onClose }: UpgradeSheetProp
   useEffect(() => {
     // Prices are only ever shown where the app may sell. Fetching them for a
     // sheet that will not display one is a request for nothing.
-    if (!visible || plans || !IN_APP_PURCHASE_ENABLED) return;
+    if (!visible || plans || !PLANS_REACHABLE) return;
     let active = true;
     fetchBillingPlans()
       .then((loaded) => {
@@ -217,7 +224,7 @@ export function UpgradeSheet({ visible, entitlement, onClose }: UpgradeSheetProp
         </View>
       )}
 
-      {IN_APP_PURCHASE_ENABLED && priceLine && (
+      {PLANS_REACHABLE && priceLine && (
         <View
           className="mt-5 rounded-2xl px-4 py-3"
           style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }}>
@@ -237,15 +244,15 @@ export function UpgradeSheet({ visible, entitlement, onClose }: UpgradeSheetProp
       */}
       <Pressable
         accessibilityRole="button"
-        onPress={IN_APP_PURCHASE_ENABLED ? openPlans : onClose}
+        onPress={PLANS_REACHABLE ? openPlans : onClose}
         className="mt-6 h-13 items-center justify-center rounded-2xl"
         style={{ backgroundColor: colors.accent, minHeight: 52 }}>
         <ThemedText className="text-sm font-black" style={{ color: 'white' }}>
-          {IN_APP_PURCHASE_ENABLED ? 'See plans' : 'Got it'}
+          {PLANS_REACHABLE ? 'See plans' : 'Got it'}
         </ThemedText>
       </Pressable>
 
-      {IN_APP_PURCHASE_ENABLED ? (
+      {PLANS_REACHABLE ? (
         <Pressable
           accessibilityRole="button"
           onPress={onClose}

@@ -16,3 +16,23 @@
  * StoreKit for iOS). It must not be flipped to re-expose the web checkout.
  */
 export const IN_APP_PURCHASE_ENABLED = false;
+
+/**
+ * Whether the app may open the hosted checkout page in a browser tab.
+ *
+ * **True, and separate from `IN_APP_PURCHASE_ENABLED` on purpose.** No purchase
+ * happens inside the app: the tap opens a browser, the payment is taken on a
+ * web page by Razorpay, and the app only ever reflects the entitlement the
+ * webhook grants. That is a different thing from an in-app purchase flow,
+ * which stays off.
+ *
+ * Linking out like this is steering, which Google Play restricts in most
+ * markets. India is the exception: following the 2022 CCI order Google no
+ * longer enforces anti-steering against apps distributed in India, which is
+ * the whole market Finnri ships to.
+ *
+ * **If Finnri is ever distributed outside India, this must become a
+ * region check rather than a constant.** Confirm the current Play terms in
+ * the Console before each submission; this area has changed repeatedly.
+ */
+export const CHECKOUT_LINK_ENABLED = true;

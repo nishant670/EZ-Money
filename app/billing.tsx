@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
@@ -13,7 +14,7 @@ import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
-import { IN_APP_PURCHASE_ENABLED } from '@/lib/purchase-policy';
+import { CHECKOUT_LINK_ENABLED, IN_APP_PURCHASE_ENABLED } from '@/lib/purchase-policy';
 import {
   createBillingCheckout,
   fetchBillingPlans,
@@ -47,6 +48,41 @@ const featureLabels: Record<string, string> = {
   exports: 'Exports',
   bulk_edit: 'Bulk edit',
   future_ai_advisor: 'AI advisor',
+};
+
+/**
+ * Whether the plan catalogue is worth drawing at all.
+ *
+ * True when there is any route to paying — an in-app purchase (off), or the
+ * hosted checkout page opened in a browser (on). With neither, the screen
+ * shows what the account already has and nothing else.
+ */
+const PLANS_VISIBLE = IN_APP_PURCHASE_ENABLED || CHECKOUT_LINK_ENABLED;
+
+/**
+ * How long to keep asking whether the payment landed, after the browser tab
+ * has closed.
+ *
+ * The tab closing says nothing about whether money moved — only the signed
+ * webhook does, and UPI in particular can take several seconds to settle. A
+ * changed period end is the observable proof the webhook ran.
+ */
+const ACTIVATION_POLL_INTERVAL_MS = 2000;
+const ACTIVATION_POLL_ATTEMPTS = 10;
+
+const waitForActivation = async (token: string, periodEndBefore: string | null) => {
+  for (let attempt = 0; attempt < ACTIVATION_POLL_ATTEMPTS; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, ACTIVATION_POLL_INTERVAL_MS));
+    try {
+      const latest = await fetchBillingStatus(token);
+      if (latest.current_period_end && latest.current_period_end !== periodEndBefore) {
+        return true;
+      }
+    } catch {
+      // A blip mid-poll is not an answer either way; keep asking.
+    }
+  }
+  return false;
 };
 
 const formatCount = (value?: number | null) => (value ?? 0).toLocaleString('en-IN');
@@ -91,7 +127,7 @@ export default function BillingScreen() {
       // otherwise costs a request on every visit to a screen that will not
       // show a single price.
       const [planList, billingStatus] = await Promise.all([
-        IN_APP_PURCHASE_ENABLED ? fetchBillingPlans() : Promise.resolve([]),
+        PLANS_VISIBLE ? fetchBillingPlans() : Promise.resolve([]),
         token ? fetchBillingStatus(token) : Promise.resolve(null),
       ]);
       setPlans(planList);
@@ -148,8 +184,46 @@ export default function BillingScreen() {
     }
 
     setBusyPlan(plan.code);
+    const periodEndBefore = status?.current_period_end ?? null;
     try {
-      await createBillingCheckout(token, plan.code);
+      const order = await createBillingCheckout(token, plan.code);
+      if (!order.checkout_url) {
+        // The server has no web origin configured, so there is nowhere to send
+        // anyone. Saying so beats opening a broken tab.
+        void dialog.alert({
+          title: 'Checkout not ready',
+          message: 'Payments are not switched on yet. Please try again later.',
+          tone: 'danger',
+        });
+        return;
+      }
+
+      // The payment is taken on a web page, never inside the app. This
+      // resolves when the tab closes, which is the earliest moment worth
+      // asking the server whether anything happened.
+      await WebBrowser.openBrowserAsync(order.checkout_url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+        dismissButtonStyle: 'done',
+      });
+
+      const activated = await waitForActivation(token, periodEndBefore);
+      await loadBilling();
+      void dialog.alert(
+        activated
+          ? {
+              title: 'You are on ' + plan.name,
+              message: 'Your credits are available now.',
+              tone: 'success',
+            }
+          : {
+              // Not a failure. A UPI collect request can settle minutes after
+              // the tab has closed, and telling someone it failed is how they
+              // end up paying twice.
+              title: 'Confirming your payment',
+              message:
+                'Your bank is still confirming it. Your plan appears here on its own once it lands — you do not need to pay again.',
+            }
+      );
     } catch (error) {
       void dialog.alert({
         title: 'Checkout not ready',
@@ -303,7 +377,7 @@ export default function BillingScreen() {
           </Card>
         ) : null}
 
-        {IN_APP_PURCHASE_ENABLED ? (
+        {PLANS_VISIBLE ? (
           <>
           <View style={{ gap: theme.spacing.sm }}>
             <ThemedText
@@ -319,6 +393,12 @@ export default function BillingScreen() {
               Every plan includes manual tracking. Credits are only used when Finnri AI processes text
               or voice capture.
             </ThemedText>
+            {CHECKOUT_LINK_ENABLED && !IN_APP_PURCHASE_ENABLED ? (
+              <ThemedText variant="caption" style={{ color: `${colors.text}99` }}>
+                Payment opens in your browser and is handled by Razorpay. Your plan appears here as
+                soon as it clears.
+              </ThemedText>
+            ) : null}
           </View>
 
           {isLoading ? (
@@ -342,7 +422,10 @@ export default function BillingScreen() {
                       ? 'Request quote'
                       : `${status?.lifetime_eligibility.paid_months_completed ?? 0}/${plan.requires_prior_paid_months} months`
                     : plan.checkout_enabled
-                      ? 'Subscribe'
+                      // Names what the tap does. The payment is taken on a web
+                      // page, and a button saying "Subscribe" that opens a
+                      // browser is a small dishonesty people notice.
+                      ? 'Continue to payment'
                       : 'Notify me';
               return (
                 <PlanCard
