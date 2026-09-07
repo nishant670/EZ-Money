@@ -13,7 +13,7 @@ import Animated, {
   SlideInLeft,
   SlideInRight,
   SlideOutLeft,
-  SlideOutRight
+  SlideOutRight,
 } from 'react-native-reanimated';
 
 import {
@@ -23,7 +23,7 @@ import {
   AuthScreen1,
   AuthScreen2,
   AuthScreen4,
-  AuthSecuritySetupScreen
+  AuthSecuritySetupScreen,
 } from '@/components/auth';
 import type { ClaimTokenResult } from '@/components/auth/AuthOTPVerificationScreen';
 import {
@@ -56,8 +56,7 @@ const googleDiscovery = {
 
 // Read from the app config so it cannot drift from the package name Google has
 // registered against the Android OAuth client; a mismatch fails the whole flow.
-const GOOGLE_ANDROID_REDIRECT_SCHEME =
-  Constants.expoConfig?.android?.package ?? 'com.finnri.app';
+const GOOGLE_ANDROID_REDIRECT_SCHEME = Constants.expoConfig?.android?.package ?? 'com.finnri.app';
 
 /**
  * The custom scheme an iOS OAuth client redirects to.
@@ -94,7 +93,7 @@ const googleClientIdForPlatform = () => {
 
 export default function AuthFlow() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; inviteToken?: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const { user, setAuth } = useAuthStore();
@@ -173,8 +172,15 @@ export default function AuthFlow() {
 
   const finish = useCallback(() => {
     void clearAuthProgress();
+    const inviteToken = Array.isArray(params.inviteToken)
+      ? params.inviteToken[0]
+      : params.inviteToken;
+    if (inviteToken) {
+      router.replace({ pathname: '/invite/split/[token]', params: { token: inviteToken } });
+      return;
+    }
     router.replace('/(tabs)');
-  }, [router]);
+  }, [params.inviteToken, router]);
 
   /**
    * Kept in a ref so the Back subscription can read the current handler without
@@ -224,7 +230,9 @@ export default function AuthFlow() {
 
   const handleGoogleContinue = async () => {
     if (Constants.appOwnership === 'expo') {
-      setIdentifyError('Google sign-in requires a Finnri development build. Expo Go cannot complete Google OAuth redirects.');
+      setIdentifyError(
+        'Google sign-in requires a Finnri development build. Expo Go cannot complete Google OAuth redirects.'
+      );
       return;
     }
 
@@ -246,16 +254,18 @@ export default function AuthFlow() {
     //
     // Resolved before the spinner starts: every bail-out below it would
     // otherwise leave the button spinning with nothing on its way back.
-    const nativeRedirectScheme = Platform.OS === 'ios'
-      ? reversedIOSClientScheme(googleClientId)
-      : GOOGLE_ANDROID_REDIRECT_SCHEME;
+    const nativeRedirectScheme =
+      Platform.OS === 'ios'
+        ? reversedIOSClientScheme(googleClientId)
+        : GOOGLE_ANDROID_REDIRECT_SCHEME;
     if (Platform.OS !== 'web' && !nativeRedirectScheme) {
       setIdentifyError('Google sign-in is not set up correctly on this build.');
       return;
     }
-    const redirectUri = Platform.OS === 'web'
-      ? AuthSession.makeRedirectUri({ path: 'auth/google' })
-      : `${nativeRedirectScheme}:/oauth2redirect`;
+    const redirectUri =
+      Platform.OS === 'web'
+        ? AuthSession.makeRedirectUri({ path: 'auth/google' })
+        : `${nativeRedirectScheme}:/oauth2redirect`;
 
     setIdentifyError(null);
     setGuestError(null);
@@ -602,9 +612,7 @@ export default function AuthFlow() {
           />
         );
       case 'signup-done':
-        return (
-          <AuthScreen4 onContinue={finish} />
-        );
+        return <AuthScreen4 onContinue={finish} />;
       default:
         return null;
     }
@@ -625,7 +633,11 @@ export default function AuthFlow() {
   // Rendering the Welcome screen for a frame and then swapping it for a restored
   // step would read as a glitch, so nothing renders until the restore settles.
   if (!hasRestoredProgress) {
-    return <OnboardingScreenWrapper><View style={styles.container} /></OnboardingScreenWrapper>;
+    return (
+      <OnboardingScreenWrapper>
+        <View style={styles.container} />
+      </OnboardingScreenWrapper>
+    );
   }
 
   return (
@@ -635,8 +647,7 @@ export default function AuthFlow() {
           key={step}
           entering={enteringAnimation}
           exiting={exitingAnimation}
-          style={styles.screenContainer}
-        >
+          style={styles.screenContainer}>
           {renderScreen()}
         </Animated.View>
       </View>
@@ -717,12 +728,12 @@ function ExistingAccountPrompt({
       <View style={styles.promptCard}>
         <Text style={[styles.promptTitle, { color: theme.text }]}>Account already exists</Text>
         <Text style={[styles.promptBody, { color: theme.text, opacity: 0.65 }]}>
-          {identifier} is already registered. Sign in with that account to continue, or use a different email or mobile number.
+          {identifier} is already registered. Sign in with that account to continue, or use a
+          different email or mobile number.
         </Text>
         <TouchableOpacity
           style={[styles.promptPrimaryButton, { backgroundColor: theme.accent }]}
-          onPress={onContinue}
-        >
+          onPress={onContinue}>
           <Text style={styles.promptPrimaryText}>Sign in to this account</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.promptSecondaryButton} onPress={onDifferent}>

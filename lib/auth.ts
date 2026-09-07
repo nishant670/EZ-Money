@@ -35,7 +35,8 @@ export const EMAIL_LOGIN_ENABLED = false;
  */
 export const PHONE_IDENTIFIER_ENABLED = false;
 
-const AUTH_NETWORK_ERROR_MESSAGE = 'Could not connect to Finnri. Check your connection and try again.';
+const AUTH_NETWORK_ERROR_MESSAGE =
+  'Could not connect to Finnri. Check your connection and try again.';
 
 const authErrorMessages: Record<string, string> = {
   failed_lookup_guest: 'Could not continue as guest right now. Please try again.',
@@ -50,7 +51,8 @@ const authErrorMessages: Record<string, string> = {
   // told a user nothing about whether waiting would help.
   otp_send_failed: 'We could not send your code just now. Please try again in a moment.',
   otp_resend_too_soon: 'Your code is on its way. Give it a moment before asking for another.',
-  otp_channel_unavailable: 'Codes by SMS are not available yet. Please sign in with an email address instead.',
+  otp_channel_unavailable:
+    'Codes by SMS are not available yet. Please sign in with an email address instead.',
   otp_sign_in_disabled: 'Sign in with Google, or keep going as a guest.',
   invalid_phone: 'That does not look like a valid phone number.',
   identifier_required: 'Enter an email address to continue.',
@@ -74,13 +76,11 @@ export class AuthOtpSendError extends Error {
   }
 }
 
-export const getFriendlyAuthErrorMessage = (
-  error: unknown,
-  fallback: string,
-) => getFriendlyErrorMessage(error, fallback).replace(
-  'Could not connect to Finnri. Check your internet connection and make sure the app is online.',
-  AUTH_NETWORK_ERROR_MESSAGE,
-);
+export const getFriendlyAuthErrorMessage = (error: unknown, fallback: string) =>
+  getFriendlyErrorMessage(error, fallback).replace(
+    'Could not connect to Finnri. Check your internet connection and make sure the app is online.',
+    AUTH_NETWORK_ERROR_MESSAGE
+  );
 
 const readAuthErrorPayload = async (response: Response, fallback: string) => {
   try {
@@ -141,9 +141,7 @@ type AuthResponse = {
   };
 };
 
-export const guestCheckin = async (
-  payload: GuestCheckinPayload,
-): Promise<AuthResponse> => {
+export const guestCheckin = async (payload: GuestCheckinPayload): Promise<AuthResponse> => {
   const response = await fetch(`${API_BASE_URL}/v1/auth/guest`, {
     method: 'POST',
     headers: {
@@ -153,7 +151,12 @@ export const guestCheckin = async (
   });
 
   if (!response.ok) {
-    throw new Error(await readAuthErrorPayload(response, 'Could not continue as guest right now. Please try again.'));
+    throw new Error(
+      await readAuthErrorPayload(
+        response,
+        'Could not continue as guest right now. Please try again.'
+      )
+    );
   }
 
   return response.json();
@@ -192,7 +195,7 @@ export type LoginPayload = {
 
 const readAuthError = async (response: Response, fallback: string) => {
   try {
-    const payload = await response.json() as {
+    const payload = (await response.json()) as {
       error?: string;
       attempts_remaining?: number;
       locked_until?: string;
@@ -249,7 +252,9 @@ export const loginWithGoogle = async (payload: GoogleLoginPayload): Promise<Auth
   });
 
   if (!response.ok) {
-    throw new Error(await readAuthErrorPayload(response, 'Unable to sign in with Google right now.'));
+    throw new Error(
+      await readAuthErrorPayload(response, 'Unable to sign in with Google right now.')
+    );
   }
 
   return response.json();
@@ -290,7 +295,9 @@ export type UpdateProfilePayload = {
   claim_token?: string;
 };
 
-export const updateProfile = async (payload: UpdateProfilePayload): Promise<{ user: AuthResponse['user'] }> => {
+export const updateProfile = async (
+  payload: UpdateProfilePayload
+): Promise<{ user: AuthResponse['user'] }> => {
   const response = await fetch(`${API_BASE_URL}/v1/user`, {
     method: 'PUT',
     headers: {
@@ -322,8 +329,34 @@ export const deleteUserAccount = async (token: string): Promise<void> => {
   });
 
   if (!response.ok) {
-    throw new Error(await readAuthErrorPayload(response, 'Unable to delete your account right now.'));
+    throw new Error(
+      await readAuthErrorPayload(response, 'Unable to delete your account right now.')
+    );
   }
+};
+
+export const logoutSession = async (token: string): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/v1/auth/logout`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok && response.status !== 401) {
+    throw new Error(await readAuthErrorPayload(response, 'Unable to end this session right now.'));
+  }
+};
+
+export const revokeAllSessions = async (token: string): Promise<number> => {
+  const response = await fetch(`${API_BASE_URL}/v1/auth/sessions/revoke-all`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readAuthErrorPayload(response, 'Unable to sign out your devices right now.')
+    );
+  }
+  const payload = (await response.json()) as { revoked?: number };
+  return payload.revoked ?? 0;
 };
 
 export type OtpSendResponse = {
@@ -352,19 +385,22 @@ export const authOtpSend = async (identifier: string): Promise<OtpSendResponse> 
     }
     const code = payload.error ?? 'otp_send_failed';
     const retryAfterHeader = Number.parseInt(response.headers.get('Retry-After') ?? '', 10);
-    const retryAfter = payload.retry_after_seconds
-      ?? (Number.isFinite(retryAfterHeader) ? retryAfterHeader : null);
+    const retryAfter =
+      payload.retry_after_seconds ?? (Number.isFinite(retryAfterHeader) ? retryAfterHeader : null);
     throw new AuthOtpSendError(
       authErrorMessages[code] ?? 'We could not send your code just now. Please try again.',
       code,
-      retryAfter,
+      retryAfter
     );
   }
 
   return response.json();
 };
 
-export const authOtpVerify = async (identifier: string, otp: string): Promise<{ claim_token: string }> => {
+export const authOtpVerify = async (
+  identifier: string,
+  otp: string
+): Promise<{ claim_token: string }> => {
   const response = await fetch(`${API_BASE_URL}/v1/auth/otp/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

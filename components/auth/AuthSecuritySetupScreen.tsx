@@ -31,7 +31,6 @@ export const AuthSecuritySetupScreen = ({
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const [biometricsEnabled, setBiometricsEnabled] = React.useState(false);
-  const [isBiometricsVerified, setIsBiometricsVerified] = React.useState(false);
   const [isCheckingBiometrics, setIsCheckingBiometrics] = React.useState(false);
   const [pinConfigured, setPinConfigured] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
@@ -44,7 +43,6 @@ export const AuthSecuritySetupScreen = ({
     setLocalError(null);
     if (!nextValue) {
       setBiometricsEnabled(false);
-      setIsBiometricsVerified(false);
       return;
     }
 
@@ -63,14 +61,12 @@ export const AuthSecuritySetupScreen = ({
       if (!hasHardware) {
         setLocalError('Biometrics not available on this device.');
         setBiometricsEnabled(false);
-        setIsBiometricsVerified(false);
         return;
       }
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
       if (!isEnrolled) {
         setLocalError('No biometrics enrolled. Set up Face ID or Touch ID first.');
         setBiometricsEnabled(false);
-        setIsBiometricsVerified(false);
         return;
       }
       const result = await LocalAuthentication.authenticateAsync({
@@ -80,16 +76,13 @@ export const AuthSecuritySetupScreen = ({
       });
       if (result.success) {
         setBiometricsEnabled(true);
-        setIsBiometricsVerified(true);
       } else {
         setLocalError('Biometric verification failed.');
         setBiometricsEnabled(false);
-        setIsBiometricsVerified(false);
       }
     } catch (error) {
       setLocalError(getFriendlyErrorMessage(error, 'Unable to verify biometrics.'));
       setBiometricsEnabled(false);
-      setIsBiometricsVerified(false);
     } finally {
       setIsCheckingBiometrics(false);
     }

@@ -2,7 +2,7 @@
  * Whether the app itself may sell anything.
  *
  * **False, deliberately.** Finnri collects payment through Razorpay web
- * checkout on finnri.com, which is why the fee case in
+ * checkout on Finnri's configured web origin, which is why the fee case in
  * `docs/PLANS_AND_CREDITS_PRICING_PLAN.md` was made: UPI carries no MDR where
  * Play Billing takes 15%.
  *

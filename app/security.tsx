@@ -2,13 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import React from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Modal, Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -20,7 +14,7 @@ import { KeyboardAvoidingScreen } from '@/components/ui/KeyboardAvoidingScreen';
 import { Colors, Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { deleteUserAccount, getFriendlyAuthErrorMessage } from '@/lib/auth';
+import { deleteUserAccount, getFriendlyAuthErrorMessage, revokeAllSessions } from '@/lib/auth';
 import { deleteLocalSecurityPin, hasLocalSecurityPin } from '@/lib/security';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
@@ -36,6 +30,7 @@ export default function SecurityScreen() {
   const [showDeleteAccount, setShowDeleteAccount] = React.useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = React.useState('');
   const [isDeletingAccount, setIsDeletingAccount] = React.useState(false);
+  const [isRevokingSessions, setIsRevokingSessions] = React.useState(false);
 
   const backgroundColor = colorScheme === 'light' ? '#FDFBFF' : theme.background;
   const cardColor = colorScheme === 'light' ? '#FFFFFF' : '#1E1E1E';
@@ -134,6 +129,33 @@ export default function SecurityScreen() {
       });
     } finally {
       setIsDeletingAccount(false);
+    }
+  };
+
+  const handleRevokeAllSessions = async () => {
+    if (!token || isRevokingSessions) return;
+    const confirmed = await dialog.confirm({
+      title: 'Sign out everywhere?',
+      message:
+        'Every Finnri session, including this device, will be signed out. You can sign in again at any time.',
+      confirmLabel: 'Sign out all devices',
+      destructive: true,
+      iconName: 'logout-variant',
+    });
+    if (!confirmed) return;
+    setIsRevokingSessions(true);
+    try {
+      await revokeAllSessions(token);
+      clearAuth();
+      router.replace('/auth');
+    } catch (error) {
+      void dialog.alert({
+        title: 'Could not sign out devices',
+        message: getFriendlyAuthErrorMessage(error, 'Unable to sign out all devices right now.'),
+        tone: 'danger',
+      });
+    } finally {
+      setIsRevokingSessions(false);
     }
   };
 
@@ -356,40 +378,80 @@ export default function SecurityScreen() {
               style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
               ACCOUNT
             </TText>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Delete Finnri account"
-              onPress={() => setShowDeleteAccount(true)}
-              className="rounded-[32px] flex-row items-center p-5 justify-between"
-              style={{
-                backgroundColor: cardColor,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.03,
-                shadowRadius: 10,
-                elevation: 2,
-              }}>
-              <View className="flex-row items-center flex-1">
-                <View
-                  className="w-12 h-12 rounded-full items-center justify-center mr-4"
-                  style={{ backgroundColor: colorScheme === 'light' ? '#FFF0EC' : '#3A2424' }}>
-                  <MaterialCommunityIcons name="delete-outline" size={22} color="#D32F2F" />
+            <View className="rounded-[32px] overflow-hidden" style={{ backgroundColor: cardColor }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sign out of all devices"
+                accessibilityHint="Revokes every Finnri login session, including this device"
+                disabled={isRevokingSessions}
+                onPress={() => void handleRevokeAllSessions()}
+                className="flex-row items-center p-5 justify-between border-b"
+                style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+                <View className="flex-row items-center flex-1">
+                  <View
+                    className="w-12 h-12 rounded-full items-center justify-center mr-4"
+                    style={{ backgroundColor: theme.secondary }}>
+                    {isRevokingSessions ? (
+                      <ActivityIndicator color={theme.accent} />
+                    ) : (
+                      <MaterialCommunityIcons
+                        name="logout-variant"
+                        size={22}
+                        color={theme.accent}
+                      />
+                    )}
+                  </View>
+                  <View className="flex-1">
+                    <TText
+                      className="text-base font-black"
+                      style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                      Sign out all devices
+                    </TText>
+                    <TText
+                      className="text-xs opacity-60 font-medium"
+                      style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                      Use this if a phone or browser is lost
+                    </TText>
+                  </View>
                 </View>
-                <View className="flex-1">
-                  <TText
-                    className="text-base font-black"
-                    style={{ fontFamily: Fonts.title, color: '#D32F2F' }}>
-                    Delete Finnri account
-                  </TText>
-                  <TText
-                    className="text-xs opacity-60 font-medium"
-                    style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
-                    Permanently remove your profile and data
-                  </TText>
+                <MaterialCommunityIcons name="chevron-right" size={24} color="#D1D5DB" />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Delete Finnri account"
+                accessibilityHint="Permanently deletes your Finnri account and data after confirmation"
+                onPress={() => setShowDeleteAccount(true)}
+                className="flex-row items-center p-5 justify-between"
+                style={{
+                  backgroundColor: cardColor,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.03,
+                  shadowRadius: 10,
+                  elevation: 2,
+                }}>
+                <View className="flex-row items-center flex-1">
+                  <View
+                    className="w-12 h-12 rounded-full items-center justify-center mr-4"
+                    style={{ backgroundColor: colorScheme === 'light' ? '#FFF0EC' : '#3A2424' }}>
+                    <MaterialCommunityIcons name="delete-outline" size={22} color="#D32F2F" />
+                  </View>
+                  <View className="flex-1">
+                    <TText
+                      className="text-base font-black"
+                      style={{ fontFamily: Fonts.title, color: '#D32F2F' }}>
+                      Delete Finnri account
+                    </TText>
+                    <TText
+                      className="text-xs opacity-60 font-medium"
+                      style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                      Permanently remove your profile and data
+                    </TText>
+                  </View>
                 </View>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={24} color="#D1D5DB" />
-            </Pressable>
+                <MaterialCommunityIcons name="chevron-right" size={24} color="#D1D5DB" />
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -462,7 +524,8 @@ export default function SecurityScreen() {
               className="h-14 rounded-2xl px-4 text-base font-black"
               style={{
                 backgroundColor: colorScheme === 'light' ? '#FFF8F6' : 'rgba(255,255,255,0.06)',
-                borderColor: deleteConfirmation && deleteConfirmation !== 'DELETE' ? '#D32F2F' : '#F3D7D1',
+                borderColor:
+                  deleteConfirmation && deleteConfirmation !== 'DELETE' ? '#D32F2F' : '#F3D7D1',
                 borderWidth: 1,
                 color: colorScheme === 'light' ? '#1A1A1A' : '#FFFFFF',
                 fontFamily: Fonts.body,
@@ -480,9 +543,7 @@ export default function SecurityScreen() {
                   borderWidth: 1,
                   minHeight: 52,
                 }}>
-                <TText
-                  className="font-black"
-                  style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                <TText className="font-black" style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
                   Cancel
                 </TText>
               </Pressable>

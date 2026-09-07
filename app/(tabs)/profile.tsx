@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import { useFocusEffect, useRouter, useScrollToTop } from 'expo-router';
 import { cssInterop } from 'nativewind';
 import { useCallback, useRef, useState } from 'react';
-import { Image, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/navigation/AppHeader';
@@ -17,6 +17,7 @@ import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
 import { userDisplayName } from '@/lib/display-name';
 import { clearGuestUpgradeSnooze } from '@/lib/guest-upgrade';
 import { getMonogram } from '@/lib/monogram';
+import { logoutSession } from '@/lib/auth';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
@@ -39,10 +40,18 @@ export default function ProfileScreen() {
   const { user, token, clearAuth } = useAuthStore();
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [isBillingLoading, setIsBillingLoading] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    if (token) {
+      // A connection failure must not trap the person in the account. Clear
+      // the device either way; the server call revokes the token when online.
+      await logoutSession(token).catch(() => undefined);
+    }
     clearAuth();
     // The next session on this device starts as a guest again, and it deserves
     // to be asked about backing its data up rather than inheriting a snooze the
@@ -326,15 +335,22 @@ export default function ProfileScreen() {
             belongs. A guest sees the sign-in invitation up top instead. */}
           {isGuest ? null : (
             <Pressable
-              onPress={handleLogout}
+              accessibilityRole="button"
+              accessibilityLabel="Log out of Finnri"
+              disabled={isLoggingOut}
+              onPress={() => void handleLogout()}
               className="flex-row items-center justify-center h-16 rounded-[24px] mt-2 mb-2"
               style={{ backgroundColor: '#FFF5F2' }}>
-              <MaterialCommunityIcons
-                name={getMoodIconName('logout', iconStyle) as any}
-                size={20}
-                color="#D32F2F"
-                style={{ marginRight: 10 }}
-              />
+              {isLoggingOut ? (
+                <ActivityIndicator size="small" color="#D32F2F" style={{ marginRight: 10 }} />
+              ) : (
+                <MaterialCommunityIcons
+                  name={getMoodIconName('logout', iconStyle) as any}
+                  size={20}
+                  color="#D32F2F"
+                  style={{ marginRight: 10 }}
+                />
+              )}
               <TText
                 className="text-base font-bold"
                 style={{ color: '#D32F2F', fontFamily: Fonts.title }}>
