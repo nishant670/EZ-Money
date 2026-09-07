@@ -1,7 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { LayoutChangeEvent, Pressable, View } from 'react-native';
-import { useState } from 'react';
 import Svg, { Rect } from 'react-native-svg';
 
 import { ThemedText } from '@/components/themed-text';
@@ -52,7 +51,7 @@ export function OverviewBand({
   const theme = themeTokens.colors;
   const [width, setWidth] = useState(0);
 
-  const months = overview.recent_months ?? [];
+  const months = useMemo(() => overview.recent_months ?? [], [overview.recent_months]);
   const ceiling = useMemo(
     () => Math.max(1, ...months.map((month) => month.spent)),
     [months]

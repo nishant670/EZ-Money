@@ -124,7 +124,28 @@ export const fetchAIUsage = async (
   return response.json();
 };
 
-export const createBillingCheckout = async (token: string, planCode: string) => {
+export type BillingCheckoutOrder = {
+  provider: string;
+  order_id: string;
+  key_id: string;
+  amount_minor: number;
+  currency: string;
+  plan_code: string;
+  plan_name: string;
+  payment_id: number;
+  /**
+   * The hosted page that takes the payment. Built by the server, not the app,
+   * so the web origin lives in one place and a staging build cannot send
+   * somebody to production's checkout. Absent when no origin is configured.
+   */
+  checkout_url?: string;
+  success_url?: string;
+};
+
+export const createBillingCheckout = async (
+  token: string,
+  planCode: string
+): Promise<BillingCheckoutOrder> => {
   const response = await fetch(`${API_BASE_URL}/v1/billing/checkout`, {
     method: 'POST',
     headers: {

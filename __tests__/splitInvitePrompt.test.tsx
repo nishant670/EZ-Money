@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { SplitInvitePrompt } from '@/components/split/SplitInvitePrompt';
 import { AppDialogProvider } from '@/components/ui/AppDialogProvider';
@@ -62,9 +62,7 @@ describe('split invite prompt', () => {
 
     const screen = await renderPrompt();
     const acceptButton = await screen.findByText('Accept');
-    await act(async () => {
-      fireEvent.press(acceptButton);
-    });
+    await fireEvent.press(acceptButton);
 
     expect(accept).toHaveBeenCalledWith('auth-token', 'token-2');
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/split'));
@@ -76,9 +74,7 @@ describe('split invite prompt', () => {
 
     const screen = await renderPrompt();
     const laterButton = await screen.findByText('Check later');
-    await act(async () => {
-      fireEvent.press(laterButton);
-    });
+    await fireEvent.press(laterButton);
 
     expect(accept).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
@@ -91,17 +87,15 @@ describe('split invite prompt', () => {
 
     const first = await renderPrompt();
     const laterButton = await first.findByText('Check later');
-    await act(async () => {
-      fireEvent.press(laterButton);
-    });
-    first.unmount();
+    await fireEvent.press(laterButton);
+    await first.unmount();
 
     // A second open in the same session — the invite is still pending server
     // side, but the user has already said "later".
     const second = await renderPrompt();
     await waitFor(() => expect(fetchPending).toHaveBeenCalledTimes(2));
     expect(second.queryByText('Join Trip?')).toBeNull();
-    second.unmount();
+    await second.unmount();
   });
 
   it('asks about one group at a time', async () => {

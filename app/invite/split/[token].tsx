@@ -81,7 +81,7 @@ export default function SplitInviteScreen() {
   };
 
   const goToAuth = () => {
-    router.replace('/auth');
+    router.replace({ pathname: '/auth', params: { inviteToken } });
   };
 
   return (

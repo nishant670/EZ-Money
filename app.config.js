@@ -18,10 +18,23 @@
  */
 const isPlayStoreBundle = process.env.EAS_BUILD_PROFILE === 'production';
 
+/**
+ * Sentry's config plugin adds a source-map upload step to the native build,
+ * which needs an org, a project and an auth token. Adding it unconditionally
+ * would make every build depend on credentials that do not exist yet, so it is
+ * added only once a DSN is configured. Until then the native build is exactly
+ * what it was before crash reporting was introduced.
+ *
+ * Read inside the export rather than at module scope so it reflects the
+ * environment the config is evaluated in, not the one at require time.
+ */
+const crashReportingEnabled = () => Boolean(process.env.EXPO_PUBLIC_SENTRY_DSN);
+
 module.exports = ({ config }) => ({
   ...config,
   plugins: [
     ...config.plugins,
+    ...(crashReportingEnabled() ? ['@sentry/react-native'] : []),
     [
       'expo-build-properties',
       {

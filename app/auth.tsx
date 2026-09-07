@@ -13,7 +13,7 @@ import Animated, {
   SlideInLeft,
   SlideInRight,
   SlideOutLeft,
-  SlideOutRight
+  SlideOutRight,
 } from 'react-native-reanimated';
 
 import {
@@ -23,10 +23,11 @@ import {
   AuthScreen1,
   AuthScreen2,
   AuthScreen4,
-  AuthSecuritySetupScreen
+  AuthSecuritySetupScreen,
 } from '@/components/auth';
 import type { ClaimTokenResult } from '@/components/auth/AuthOTPVerificationScreen';
 import {
+  EMAIL_LOGIN_ENABLED,
   authOtpSend,
   getFriendlyAuthErrorMessage,
   guestCheckin,
@@ -55,17 +56,54 @@ const googleDiscovery = {
 
 // Read from the app config so it cannot drift from the package name Google has
 // registered against the Android OAuth client; a mismatch fails the whole flow.
-const GOOGLE_NATIVE_REDIRECT_SCHEME =
-  Constants.expoConfig?.android?.package ?? 'com.finnri.app';
+const GOOGLE_ANDROID_REDIRECT_SCHEME = Constants.expoConfig?.android?.package ?? 'com.finnri.app';
+
+/**
+ * The custom scheme an iOS OAuth client redirects to.
+ *
+ * Google does not use the bundle identifier here the way Android uses the
+ * package name — it uses the client id reversed, so
+ * `123-abc.apps.googleusercontent.com` becomes `com.googleusercontent.apps.123-abc`.
+ * Deriving it from the client id keeps the two from drifting apart.
+ */
+export const reversedIOSClientScheme = (clientId: string) => {
+  const suffix = '.apps.googleusercontent.com';
+  if (!clientId.endsWith(suffix)) return null;
+  return `com.googleusercontent.apps.${clientId.slice(0, -suffix.length)}`;
+};
+
+/**
+ * The OAuth client for the platform actually running.
+ *
+ * Never falls back across platforms. Google rejects an Android client
+ * presented from iOS, and the old chain did exactly that — `_ANDROID_` is set,
+ * so an iOS build would have picked it up and failed inside Google's consent
+ * screen rather than saying plainly that iOS has no client yet.
+ *
+ * `_MOBILE_` is honoured as a deliberate cross-platform override; `_ANDROID_`
+ * and `_IOS_` are each only ever used on their own platform.
+ */
+const googleClientIdForPlatform = () => {
+  const shared = process.env.EXPO_PUBLIC_GOOGLE_MOBILE_CLIENT_ID;
+  if (shared) return shared;
+  if (Platform.OS === 'ios') return process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+  if (Platform.OS === 'android') return process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+  return process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+};
 
 export default function AuthFlow() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; inviteToken?: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const { user, setAuth } = useAuthStore();
   const isGuestLinking = params.mode === 'link' && !!user?.is_guest;
-  const [step, setStep] = useState<AuthStep>(() => (isGuestLinking ? 'identifier' : 'welcome'));
+  // A guest linking used to land straight on the identifier form. With email
+  // sign-in off there is no form to land on, so they get Welcome in its
+  // "save your workspace" dress, which offers the Google button they need.
+  const [step, setStep] = useState<AuthStep>(() =>
+    isGuestLinking && EMAIL_LOGIN_ENABLED ? 'identifier' : 'welcome'
+  );
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [identifier, setIdentifier] = useState('');
   const [claimToken, setClaimToken] = useState<string | null>(null);
@@ -134,8 +172,15 @@ export default function AuthFlow() {
 
   const finish = useCallback(() => {
     void clearAuthProgress();
+    const inviteToken = Array.isArray(params.inviteToken)
+      ? params.inviteToken[0]
+      : params.inviteToken;
+    if (inviteToken) {
+      router.replace({ pathname: '/invite/split/[token]', params: { token: inviteToken } });
+      return;
+    }
     router.replace('/(tabs)');
-  }, [router]);
+  }, [params.inviteToken, router]);
 
   /**
    * Kept in a ref so the Back subscription can read the current handler without
@@ -185,31 +230,47 @@ export default function AuthFlow() {
 
   const handleGoogleContinue = async () => {
     if (Constants.appOwnership === 'expo') {
-      setIdentifyError('Google sign-in requires a Finnri development build. Expo Go cannot complete Google OAuth redirects.');
+      setIdentifyError(
+        'Google sign-in requires a Finnri development build. Expo Go cannot complete Google OAuth redirects.'
+      );
       return;
     }
 
-    const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_MOBILE_CLIENT_ID
-      ?? process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
-      ?? process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
-      ?? process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+    const googleClientId = googleClientIdForPlatform();
     if (!googleClientId) {
-      setIdentifyError('Google sign-in is not configured yet.');
+      setIdentifyError(
+        Platform.OS === 'ios'
+          ? 'Google sign-in is not set up for iOS yet.'
+          : 'Google sign-in is not configured yet.'
+      );
       return;
     }
 
-    setIdentifyError(null);
-    setGuestError(null);
-    setIsGoogleChecking(true);
-    const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     // Google's Android clients only accept a redirect whose scheme is the
     // package name, with a single slash: "com.finnri.app:/oauth2redirect".
     // makeRedirectUri emits "scheme://path", and Google rejects that double
     // slash, so this one is spelled out rather than generated. The app's own
     // "ezmoney" scheme stays registered for split-group invite links.
-    const redirectUri = Platform.OS === 'web'
-      ? AuthSession.makeRedirectUri({ path: 'auth/google' })
-      : `${GOOGLE_NATIVE_REDIRECT_SCHEME}:/oauth2redirect`;
+    //
+    // Resolved before the spinner starts: every bail-out below it would
+    // otherwise leave the button spinning with nothing on its way back.
+    const nativeRedirectScheme =
+      Platform.OS === 'ios'
+        ? reversedIOSClientScheme(googleClientId)
+        : GOOGLE_ANDROID_REDIRECT_SCHEME;
+    if (Platform.OS !== 'web' && !nativeRedirectScheme) {
+      setIdentifyError('Google sign-in is not set up correctly on this build.');
+      return;
+    }
+    const redirectUri =
+      Platform.OS === 'web'
+        ? AuthSession.makeRedirectUri({ path: 'auth/google' })
+        : `${nativeRedirectScheme}:/oauth2redirect`;
+
+    setIdentifyError(null);
+    setGuestError(null);
+    setIsGoogleChecking(true);
+    const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
     try {
       const request = await AuthSession.loadAsync(
@@ -432,8 +493,11 @@ export default function AuthFlow() {
       case 'welcome':
         return (
           <AuthScreen1
+            mode={isGuestLinking ? 'link' : 'welcome'}
             onGoogle={handleGoogleContinue}
-            onGuest={handleGuestContinue}
+            // A guest who is already signed in as a guest needs no check-in —
+            // the button means "never mind", so it just leaves.
+            onGuest={isGuestLinking ? finish : handleGuestContinue}
             onIdentifier={() => {
               setGuestError(null);
               changeStep('identifier', 'forward');
@@ -548,9 +612,7 @@ export default function AuthFlow() {
           />
         );
       case 'signup-done':
-        return (
-          <AuthScreen4 onContinue={finish} />
-        );
+        return <AuthScreen4 onContinue={finish} />;
       default:
         return null;
     }
@@ -571,7 +633,11 @@ export default function AuthFlow() {
   // Rendering the Welcome screen for a frame and then swapping it for a restored
   // step would read as a glitch, so nothing renders until the restore settles.
   if (!hasRestoredProgress) {
-    return <OnboardingScreenWrapper><View style={styles.container} /></OnboardingScreenWrapper>;
+    return (
+      <OnboardingScreenWrapper>
+        <View style={styles.container} />
+      </OnboardingScreenWrapper>
+    );
   }
 
   return (
@@ -581,8 +647,7 @@ export default function AuthFlow() {
           key={step}
           entering={enteringAnimation}
           exiting={exitingAnimation}
-          style={styles.screenContainer}
-        >
+          style={styles.screenContainer}>
           {renderScreen()}
         </Animated.View>
       </View>
@@ -663,12 +728,12 @@ function ExistingAccountPrompt({
       <View style={styles.promptCard}>
         <Text style={[styles.promptTitle, { color: theme.text }]}>Account already exists</Text>
         <Text style={[styles.promptBody, { color: theme.text, opacity: 0.65 }]}>
-          {identifier} is already registered. Sign in with that account to continue, or use a different email or mobile number.
+          {identifier} is already registered. Sign in with that account to continue, or use a
+          different email or mobile number.
         </Text>
         <TouchableOpacity
           style={[styles.promptPrimaryButton, { backgroundColor: theme.accent }]}
-          onPress={onContinue}
-        >
+          onPress={onContinue}>
           <Text style={styles.promptPrimaryText}>Sign in to this account</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.promptSecondaryButton} onPress={onDifferent}>

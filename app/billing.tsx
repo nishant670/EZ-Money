@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
@@ -13,6 +14,7 @@ import { Fonts } from '@/constants/theme';
 import { useAuthStore } from '@/hooks/use-auth-store';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
+import { CHECKOUT_LINK_ENABLED, IN_APP_PURCHASE_ENABLED } from '@/lib/purchase-policy';
 import {
   createBillingCheckout,
   fetchBillingPlans,
@@ -46,6 +48,41 @@ const featureLabels: Record<string, string> = {
   exports: 'Exports',
   bulk_edit: 'Bulk edit',
   future_ai_advisor: 'AI advisor',
+};
+
+/**
+ * Whether the plan catalogue is worth drawing at all.
+ *
+ * True when there is any route to paying — an in-app purchase (off), or the
+ * hosted checkout page opened in a browser (on). With neither, the screen
+ * shows what the account already has and nothing else.
+ */
+const PLANS_VISIBLE = IN_APP_PURCHASE_ENABLED || CHECKOUT_LINK_ENABLED;
+
+/**
+ * How long to keep asking whether the payment landed, after the browser tab
+ * has closed.
+ *
+ * The tab closing says nothing about whether money moved — only the signed
+ * webhook does, and UPI in particular can take several seconds to settle. A
+ * changed period end is the observable proof the webhook ran.
+ */
+const ACTIVATION_POLL_INTERVAL_MS = 2000;
+const ACTIVATION_POLL_ATTEMPTS = 10;
+
+const waitForActivation = async (token: string, periodEndBefore: string | null) => {
+  for (let attempt = 0; attempt < ACTIVATION_POLL_ATTEMPTS; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, ACTIVATION_POLL_INTERVAL_MS));
+    try {
+      const latest = await fetchBillingStatus(token);
+      if (latest.current_period_end && latest.current_period_end !== periodEndBefore) {
+        return true;
+      }
+    } catch {
+      // A blip mid-poll is not an answer either way; keep asking.
+    }
+  }
+  return false;
 };
 
 const formatCount = (value?: number | null) => (value ?? 0).toLocaleString('en-IN');
@@ -86,8 +123,11 @@ export default function BillingScreen() {
   const loadBilling = useCallback(async () => {
     setIsLoading(true);
     try {
+      // The catalogue is only rendered where the app may sell. Fetching it
+      // otherwise costs a request on every visit to a screen that will not
+      // show a single price.
       const [planList, billingStatus] = await Promise.all([
-        fetchBillingPlans(),
+        PLANS_VISIBLE ? fetchBillingPlans() : Promise.resolve([]),
         token ? fetchBillingStatus(token) : Promise.resolve(null),
       ]);
       setPlans(planList);
@@ -144,8 +184,46 @@ export default function BillingScreen() {
     }
 
     setBusyPlan(plan.code);
+    const periodEndBefore = status?.current_period_end ?? null;
     try {
-      await createBillingCheckout(token, plan.code);
+      const order = await createBillingCheckout(token, plan.code);
+      if (!order.checkout_url) {
+        // The server has no web origin configured, so there is nowhere to send
+        // anyone. Saying so beats opening a broken tab.
+        void dialog.alert({
+          title: 'Checkout not ready',
+          message: 'Payments are not switched on yet. Please try again later.',
+          tone: 'danger',
+        });
+        return;
+      }
+
+      // The payment is taken on a web page, never inside the app. This
+      // resolves when the tab closes, which is the earliest moment worth
+      // asking the server whether anything happened.
+      await WebBrowser.openBrowserAsync(order.checkout_url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+        dismissButtonStyle: 'done',
+      });
+
+      const activated = await waitForActivation(token, periodEndBefore);
+      await loadBilling();
+      void dialog.alert(
+        activated
+          ? {
+              title: 'You are on ' + plan.name,
+              message: 'Your credits are available now.',
+              tone: 'success',
+            }
+          : {
+              // Not a failure. A UPI collect request can settle minutes after
+              // the tab has closed, and telling someone it failed is how they
+              // end up paying twice.
+              title: 'Confirming your payment',
+              message:
+                'Your bank is still confirming it. Your plan appears here on its own once it lands — you do not need to pay again.',
+            }
+      );
     } catch (error) {
       void dialog.alert({
         title: 'Checkout not ready',
@@ -289,69 +367,98 @@ export default function BillingScreen() {
               <MaterialCommunityIcons name="account-arrow-up-outline" size={22} color="#2F80ED" />
               <View style={{ flex: 1 }}>
                 <ThemedText style={{ color: colors.text, fontFamily: Fonts.title, fontWeight: '800' }}>
-                  Create an account before subscribing
+                  Create an account to keep your plan
                 </ThemedText>
                 <ThemedText style={{ color: `${colors.text}99` }}>
-                  Paid plans are tied to your profile, not a temporary guest device.
+                  A plan is tied to your profile, not a temporary guest device.
                 </ThemedText>
               </View>
             </View>
           </Card>
         ) : null}
 
-        <View style={{ gap: theme.spacing.sm }}>
-          <ThemedText
-            style={{
-              color: colors.text,
-              fontFamily: Fonts.title,
-              fontSize: 18,
-              fontWeight: '900',
-            }}>
-            Choose your AI budget
-          </ThemedText>
-          <ThemedText style={{ color: `${colors.text}99` }}>
-            Every plan includes manual tracking. Credits are only used when Finnri AI processes text
-            or voice capture.
-          </ThemedText>
-        </View>
+        {PLANS_VISIBLE ? (
+          <>
+          <View style={{ gap: theme.spacing.sm }}>
+            <ThemedText
+              style={{
+                color: colors.text,
+                fontFamily: Fonts.title,
+                fontSize: 18,
+                fontWeight: '900',
+              }}>
+              Choose your AI budget
+            </ThemedText>
+            <ThemedText style={{ color: `${colors.text}99` }}>
+              Every plan includes manual tracking. Credits are only used when Finnri AI processes text
+              or voice capture.
+            </ThemedText>
+            {CHECKOUT_LINK_ENABLED && !IN_APP_PURCHASE_ENABLED ? (
+              <ThemedText variant="caption" style={{ color: `${colors.text}99` }}>
+                Payment opens in your browser and is handled by Razorpay. Your plan appears here as
+                soon as it clears.
+              </ThemedText>
+            ) : null}
+          </View>
 
-        {isLoading ? (
-          <SkeletonFrame label="Loading plans" testID="billing-skeleton">
-            <SkeletonCards count={3} lines={3} radius={22} />
-          </SkeletonFrame>
+          {isLoading ? (
+            <SkeletonFrame label="Loading plans" testID="billing-skeleton">
+              <SkeletonCards count={3} lines={3} radius={22} />
+            </SkeletonFrame>
+          ) : (
+            plans.map((plan, index) => {
+              const isLifetime = plan.billing_interval === 'lifetime_quote';
+              const lifetimeEligible = status?.lifetime_eligibility.eligible ?? false;
+              const isCurrent = status?.plan?.code === plan.code;
+              const isRecommended = plan.code === recommendedPlanCode;
+              const disabled = busyPlan !== null || (isLifetime && !lifetimeEligible);
+              const accent = planAccents[index % planAccents.length];
+              const actionLabel = isGuest
+                ? 'Create account'
+                : isCurrent
+                  ? 'Current plan'
+                  : isLifetime
+                    ? lifetimeEligible
+                      ? 'Request quote'
+                      : `${status?.lifetime_eligibility.paid_months_completed ?? 0}/${plan.requires_prior_paid_months} months`
+                    : plan.checkout_enabled
+                      // Names what the tap does. The payment is taken on a web
+                      // page, and a button saying "Subscribe" that opens a
+                      // browser is a small dishonesty people notice.
+                      ? 'Continue to payment'
+                      : 'Notify me';
+              return (
+                <PlanCard
+                  key={plan.code}
+                  plan={plan}
+                  accent={accent}
+                  actionLabel={actionLabel}
+                  busy={busyPlan === plan.code}
+                  disabled={disabled || isCurrent}
+                  isCurrent={isCurrent}
+                  isRecommended={isRecommended}
+                  onPress={() => void handlePlanPress(plan)}
+                />
+              );
+            })
+          )}
+          </>
         ) : (
-          plans.map((plan, index) => {
-            const isLifetime = plan.billing_interval === 'lifetime_quote';
-            const lifetimeEligible = status?.lifetime_eligibility.eligible ?? false;
-            const isCurrent = status?.plan?.code === plan.code;
-            const isRecommended = plan.code === recommendedPlanCode;
-            const disabled = busyPlan !== null || (isLifetime && !lifetimeEligible);
-            const accent = planAccents[index % planAccents.length];
-            const actionLabel = isGuest
-              ? 'Create account'
-              : isCurrent
-                ? 'Current plan'
-                : isLifetime
-                  ? lifetimeEligible
-                    ? 'Request quote'
-                    : `${status?.lifetime_eligibility.paid_months_completed ?? 0}/${plan.requires_prior_paid_months} months`
-                  : plan.checkout_enabled
-                    ? 'Subscribe'
-                    : 'Notify me';
-            return (
-              <PlanCard
-                key={plan.code}
-                plan={plan}
-                accent={accent}
-                actionLabel={actionLabel}
-                busy={busyPlan === plan.code}
-                disabled={disabled || isCurrent}
-                isCurrent={isCurrent}
-                isRecommended={isRecommended}
-                onPress={() => void handlePlanPress(plan)}
-              />
-            );
-          })
+          <Card compact style={{ padding: theme.spacing.lg, gap: theme.spacing.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+              <MaterialCommunityIcons name="information-outline" size={22} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <ThemedText
+                  style={{ color: colors.text, fontFamily: Fonts.title, fontWeight: '800' }}>
+                  Managed on your account
+                </ThemedText>
+                <ThemedText style={{ color: `${colors.text}99` }}>
+                  Plan changes are not available in this version of the app. Everything above is
+                  what your account has right now.
+                </ThemedText>
+              </View>
+            </View>
+          </Card>
         )}
       </ScrollView>
     </SafeAreaView>

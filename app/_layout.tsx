@@ -21,12 +21,17 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMotion } from '@/hooks/use-motion';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { installApiSessionGuard } from '@/lib/api-session';
+import { initCrashReporting } from '@/lib/crash-reporting';
 import { monthFromActionURL } from '@/lib/monthly-review';
 import { hasCompletedOnboarding } from '@/lib/onboarding';
 
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+
+// Before anything else that can throw. A crash during startup is the one this
+// app most needs to hear about and the one a late init would miss.
+initCrashReporting();
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
