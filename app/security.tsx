@@ -180,12 +180,12 @@ export default function SecurityScreen() {
 
           <TText
             className="text-2xl font-black mb-2"
-            style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+            style={{ fontFamily: Fonts.title, color: theme.text }}>
             Security & Privacy
           </TText>
           <TText
             className="text-sm opacity-50 font-medium"
-            style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+            style={{ fontFamily: Fonts.body, color: theme.text }}>
             {"You're in control of your data adventure!"}
           </TText>
         </View>
@@ -195,7 +195,7 @@ export default function SecurityScreen() {
           <View>
             <TText
               className="text-xs font-black tracking-widest opacity-40 mb-4 px-2"
-              style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+              style={{ fontFamily: Fonts.body, color: theme.text }}>
               APP ACCESS
             </TText>
             <View
@@ -220,12 +220,12 @@ export default function SecurityScreen() {
                   <View>
                     <TText
                       className="text-base font-black"
-                      style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                      style={{ fontFamily: Fonts.title, color: theme.text }}>
                       Enable Lock
                     </TText>
                     <TText
                       className="text-xs opacity-50 font-medium"
-                      style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                      style={{ fontFamily: Fonts.body, color: theme.text }}>
                       Require PIN to open Finnri
                     </TText>
                   </View>
@@ -258,12 +258,12 @@ export default function SecurityScreen() {
                   <View>
                     <TText
                       className="text-base font-black"
-                      style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                      style={{ fontFamily: Fonts.title, color: theme.text }}>
                       Change PIN
                     </TText>
                     <TText
                       className="text-xs opacity-50 font-medium"
-                      style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                      style={{ fontFamily: Fonts.body, color: theme.text }}>
                       Update your 4-digit code
                     </TText>
                   </View>
@@ -277,7 +277,7 @@ export default function SecurityScreen() {
           <View>
             <TText
               className="text-xs font-black tracking-widest opacity-40 mb-4 px-2"
-              style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+              style={{ fontFamily: Fonts.body, color: theme.text }}>
               BIOMETRICS
             </TText>
             <View
@@ -299,12 +299,12 @@ export default function SecurityScreen() {
                 <View>
                   <TText
                     className="text-base font-black"
-                    style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                    style={{ fontFamily: Fonts.title, color: theme.text }}>
                     Unlock with Face ID
                   </TText>
                   <TText
                     className="text-xs opacity-50 font-medium"
-                    style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                    style={{ fontFamily: Fonts.body, color: theme.text }}>
                     Quick and secure access
                   </TText>
                 </View>
@@ -330,7 +330,7 @@ export default function SecurityScreen() {
           <View>
             <TText
               className="text-xs font-black tracking-widest opacity-40 mb-4 px-2"
-              style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+              style={{ fontFamily: Fonts.body, color: theme.text }}>
               PRIVACY
             </TText>
             <View
@@ -352,12 +352,12 @@ export default function SecurityScreen() {
                 <View>
                   <TText
                     className="text-base font-black"
-                    style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                    style={{ fontFamily: Fonts.title, color: theme.text }}>
                     Stealth Mode
                   </TText>
                   <TText
                     className="text-xs opacity-50 font-medium"
-                    style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                    style={{ fontFamily: Fonts.body, color: theme.text }}>
                     Hide balances on home screen
                   </TText>
                 </View>
@@ -375,7 +375,7 @@ export default function SecurityScreen() {
           <View>
             <TText
               className="text-xs font-black tracking-widest opacity-40 mb-4 px-2"
-              style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+              style={{ fontFamily: Fonts.body, color: theme.text }}>
               ACCOUNT
             </TText>
             <View className="rounded-[32px] overflow-hidden" style={{ backgroundColor: cardColor }}>
@@ -404,12 +404,12 @@ export default function SecurityScreen() {
                   <View className="flex-1">
                     <TText
                       className="text-base font-black"
-                      style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                      style={{ fontFamily: Fonts.title, color: theme.text }}>
                       Sign out all devices
                     </TText>
                     <TText
                       className="text-xs opacity-60 font-medium"
-                      style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                      style={{ fontFamily: Fonts.body, color: theme.text }}>
                       Use this if a phone or browser is lost
                     </TText>
                   </View>
@@ -444,7 +444,7 @@ export default function SecurityScreen() {
                     </TText>
                     <TText
                       className="text-xs opacity-60 font-medium"
-                      style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+                      style={{ fontFamily: Fonts.body, color: theme.text }}>
                       Permanently remove your profile and data
                     </TText>
                   </View>
@@ -458,7 +458,7 @@ export default function SecurityScreen() {
         {/* Footer */}
         <TText
           className="text-center text-[10px] font-black tracking-widest opacity-20 mt-16 uppercase px-10"
-          style={{ fontFamily: Fonts.body, color: '#1A1A1A' }}>
+          style={{ fontFamily: Fonts.body, color: theme.text }}>
           YOUR PRIVACY IS OUR PRIORITY
         </TText>
       </KeyboardAvoidingScreen>
@@ -498,7 +498,7 @@ export default function SecurityScreen() {
             </View>
             <TText
               className="text-xl font-black text-center"
-              style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+              style={{ fontFamily: Fonts.title, color: theme.text }}>
               Delete your account?
             </TText>
             <TText
@@ -543,7 +543,7 @@ export default function SecurityScreen() {
                   borderWidth: 1,
                   minHeight: 52,
                 }}>
-                <TText className="font-black" style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+                <TText className="font-black" style={{ fontFamily: Fonts.title, color: theme.text }}>
                   Cancel
                 </TText>
               </Pressable>

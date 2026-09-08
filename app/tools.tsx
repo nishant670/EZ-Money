@@ -350,7 +350,10 @@ export default function ToolsScreen() {
                       <ThemedText className="text-xs font-bold" style={{ color: theme.accent }}>
                         Maturity value
                       </ThemedText>
-                      <ThemedText className="mt-1 text-3xl font-black">
+                      <ThemedText
+                        className="mt-1 text-3xl font-black"
+                        numberOfLines={1}
+                        adjustsFontSizeToFit>
                         {formatMoney(sipResult.maturityValue)}
                       </ThemedText>
                     </View>
@@ -529,7 +532,10 @@ export default function ToolsScreen() {
                   <ThemedText className="text-xs font-bold" style={{ color: theme.accent }}>
                     Monthly EMI
                   </ThemedText>
-                  <ThemedText className="mt-1 text-3xl font-black">
+                  <ThemedText
+                    className="mt-1 text-3xl font-black"
+                    numberOfLines={1}
+                    adjustsFontSizeToFit>
                     {formatMoney(result.monthly_emi)}
                   </ThemedText>
                 </View>

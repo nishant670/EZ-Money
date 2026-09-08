@@ -522,6 +522,8 @@ export default function TransactionDetailsScreen() {
             style={amountTravel.style}>
             <ThemedText
               className="text-4xl font-black mb-2 tracking-tight"
+              numberOfLines={1}
+              adjustsFontSizeToFit
               style={{ color: theme.text }}>
               {formatMoney(amountValue, { sign: 'never' })}
             </ThemedText>

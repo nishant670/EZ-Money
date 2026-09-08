@@ -554,9 +554,9 @@ export default function ManageAccountScreen() {
     title: string
   ) => (
     <AnimatedBottomSheet visible={visible} onClose={onClose}>
-      <View style={styles.modalContent}>
+      <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
         <View style={styles.modalHeader}>
-          <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+          <ThemedText style={[styles.modalTitle, { color: theme.text }]}>{title}</ThemedText>
           <TouchableOpacity onPress={onClose}>
             <MaterialCommunityIcons name="close" size={24} color={theme.text} />
           </TouchableOpacity>
@@ -570,7 +570,7 @@ export default function ManageAccountScreen() {
                 onSelect(item);
                 onClose();
               }}>
-              <ThemedText style={styles.modalItemText}>{item}</ThemedText>
+              <ThemedText style={[styles.modalItemText, { color: theme.text }]}>{item}</ThemedText>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -591,7 +591,7 @@ export default function ManageAccountScreen() {
         contentContainerStyle={styles.scrollContent}>
         <View style={styles.stepIntro}>
           <ThemedText style={styles.stepEyebrow}>Account basics</ThemedText>
-          <ThemedText style={styles.stepTitle}>
+          <ThemedText style={[styles.stepTitle, { color: theme.text }]}>
             {isEditing ? 'Update this account' : 'Add a payment source'}
           </ThemedText>
           <ThemedText style={styles.stepDescription}>
@@ -600,7 +600,7 @@ export default function ManageAccountScreen() {
         </View>
 
         {/* Account Type Selection */}
-        <ThemedText style={styles.sectionTitle}>What kind of account is this?</ThemedText>
+        <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>What kind of account is this?</ThemedText>
         <View style={styles.gridContainer}>
           {typeOptions.map((option) => {
             const isSelected = selectedType === option.key;
@@ -611,7 +611,8 @@ export default function ManageAccountScreen() {
                 style={[
                   styles.gridItem,
                   isSelected ? styles.gridItemSelected : styles.gridItemUnselected,
-                  isSelected && { borderColor: theme.accent, backgroundColor: theme.card },
+                  { backgroundColor: theme.card },
+                  isSelected && { borderColor: theme.accent },
                 ]}>
                 <View style={[styles.gridIconContainer, { backgroundColor: option.bgColor }]}>
                   <MaterialCommunityIcons name={option.icon} size={24} color={option.color} />
@@ -620,7 +621,7 @@ export default function ManageAccountScreen() {
                   <ThemedText
                     style={[
                       styles.gridLabel,
-                      isSelected ? styles.textSelected : styles.textUnselected,
+                      { color: isSelected ? theme.text : theme.muted },
                     ]}>
                     {option.label}
                   </ThemedText>
@@ -632,8 +633,8 @@ export default function ManageAccountScreen() {
         {typeError ? <ThemedText style={styles.errorText}>{typeError}</ThemedText> : null}
 
         {/* Name Input */}
-        <ThemedText style={styles.sectionTitle}>What should we call it?</ThemedText>
-        <View style={styles.inputContainer}>
+        <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>What should we call it?</ThemedText>
+        <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
           <MaterialCommunityIcons
             name="tag-outline"
             size={24}
@@ -644,20 +645,20 @@ export default function ManageAccountScreen() {
             value={name}
             onChangeText={setName}
             placeholder="My Spending Account"
-            placeholderTextColor="#AAB7C6"
-            style={styles.textInput}
+            placeholderTextColor={theme.muted}
+            style={[styles.textInput, { color: theme.text }]}
           />
         </View>
 
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => setIsDefault((current) => !current)}
-          style={styles.defaultCard}>
+          style={[styles.defaultCard, { backgroundColor: theme.card }]}>
           <View style={styles.defaultIcon}>
             <MaterialCommunityIcons name="star-outline" size={22} color={theme.accent} />
           </View>
           <View style={styles.defaultCopy}>
-            <ThemedText style={styles.defaultTitle}>Use as default account</ThemedText>
+            <ThemedText style={[styles.defaultTitle, { color: theme.text }]}>Use as default account</ThemedText>
             <ThemedText style={styles.defaultDescription}>
               Finnri will preselect it when a transaction matches this payment type.
             </ThemedText>
@@ -665,6 +666,7 @@ export default function ManageAccountScreen() {
           <View
             style={[
               styles.defaultToggle,
+              { backgroundColor: theme.card, borderColor: theme.border },
               isDefault && { backgroundColor: theme.accent, borderColor: theme.accent },
             ]}>
             {isDefault && <MaterialCommunityIcons name="check" size={16} color="white" />}
@@ -672,7 +674,7 @@ export default function ManageAccountScreen() {
         </TouchableOpacity>
 
         {/* Color Picker */}
-        <ThemedText style={styles.sectionTitle}>Choose account color</ThemedText>
+        <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>Choose account color</ThemedText>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -696,7 +698,7 @@ export default function ManageAccountScreen() {
       </KeyboardAvoidingScreen>
 
       {/* Footer Step 1 */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: theme.background }]}>
         {saveError ? (
           <View style={styles.errorContainer}>
             <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
@@ -741,9 +743,9 @@ export default function ManageAccountScreen() {
             contentContainerStyle={styles.scrollContent}>
             {/* Mascot & Message Step 2 */}
             <View style={styles.mascotSection}>
-              <View style={[styles.bubbleContainer, { backgroundColor: '#F4F1FE' }]}>
-                <ThemedText style={styles.bubbleText}>{detailCopy.message}</ThemedText>
-                <View style={[styles.bubbleTriangle, { backgroundColor: '#F4F1FE' }]} />
+              <View style={[styles.bubbleContainer, { backgroundColor: theme.secondary }]}>
+                <ThemedText style={[styles.bubbleText, { color: theme.text }]}>{detailCopy.message}</ThemedText>
+                <View style={[styles.bubbleTriangle, { backgroundColor: theme.secondary }]} />
               </View>
               <View style={styles.mascotRowCenter}>
                 <View
@@ -762,7 +764,7 @@ export default function ManageAccountScreen() {
 
             <ThemedText style={styles.sectionHeaderLabel}>VISUALS</ThemedText>
 
-            <ThemedText style={styles.labelSmall}>{detailCopy.providerLabel}</ThemedText>
+            <ThemedText style={[styles.labelSmall, { color: theme.text }]}>{detailCopy.providerLabel}</ThemedText>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -775,6 +777,7 @@ export default function ManageAccountScreen() {
                     onPress={() => selectProvider(provider)}
                     style={[
                       styles.providerChip,
+                      { backgroundColor: theme.card },
                       isActive && { borderColor: theme.accent, backgroundColor: '#F4F1FE' },
                     ]}>
                     <MaterialCommunityIcons
@@ -791,7 +794,7 @@ export default function ManageAccountScreen() {
               })}
             </ScrollView>
             <View style={styles.searchWrapper}>
-              <View style={styles.dropdownContainer}>
+              <View style={[styles.dropdownContainer, { backgroundColor: theme.card }]}>
                 <MaterialCommunityIcons
                   name="credit-card-outline"
                   size={24}
@@ -799,7 +802,7 @@ export default function ManageAccountScreen() {
                   style={styles.inputIcon}
                 />
                 <TextInput
-                  style={styles.textInputSmall}
+                  style={[styles.textInputSmall, { color: theme.text }]}
                   value={issuerQuery}
                   onChangeText={(text) => {
                     setIssuerQuery(text);
@@ -808,13 +811,13 @@ export default function ManageAccountScreen() {
                   }}
                   onFocus={() => setShowIssuerResults(true)}
                   placeholder={detailCopy.providerPlaceholder}
-                  placeholderTextColor="#AAB7C6"
+                  placeholderTextColor={theme.muted}
                 />
                 <MaterialCommunityIcons name="chevron-down" size={24} color="#AAB7C6" />
               </View>
 
               {showIssuerResults && filteredIssuers.length > 0 && (
-                <View style={styles.resultsList}>
+                <View style={[styles.resultsList, { backgroundColor: theme.card }]}>
                   {filteredIssuers.map((item) => (
                     <TouchableOpacity
                       key={item.id}
@@ -828,15 +831,15 @@ export default function ManageAccountScreen() {
                         color={theme.accent}
                         style={{ marginRight: 10 }}
                       />
-                      <ThemedText style={styles.resultItemText}>{item.name}</ThemedText>
+                      <ThemedText style={[styles.resultItemText, { color: theme.text }]}>{item.name}</ThemedText>
                     </TouchableOpacity>
                   ))}
                 </View>
               )}
             </View>
 
-            <ThemedText style={styles.labelSmall}>{detailCopy.identifierLabel}</ThemedText>
-            <View style={styles.inputContainerSmall}>
+            <ThemedText style={[styles.labelSmall, { color: theme.text }]}>{detailCopy.identifierLabel}</ThemedText>
+            <View style={[styles.inputContainerSmall, { backgroundColor: theme.card }]}>
               <MaterialCommunityIcons
                 name={detailCopy.identifierIcon ?? 'numeric-4-box-outline'}
                 size={24}
@@ -847,9 +850,9 @@ export default function ManageAccountScreen() {
                 value={last4}
                 onChangeText={updateIdentifier}
                 placeholder={detailCopy.identifierPlaceholder}
-                placeholderTextColor="#AAB7C6"
+                placeholderTextColor={theme.muted}
                 keyboardType="number-pad"
-                style={styles.textInputSmall}
+                style={[styles.textInputSmall, { color: theme.text }]}
               />
             </View>
 
@@ -857,8 +860,8 @@ export default function ManageAccountScreen() {
 
             <ThemedText style={styles.sectionHeaderLabel}>ALERTS & LIMITS</ThemedText>
 
-            <ThemedText style={styles.labelSmall}>Credit limit</ThemedText>
-            <View style={styles.inputContainerSmall}>
+            <ThemedText style={[styles.labelSmall, { color: theme.text }]}>Credit limit</ThemedText>
+            <View style={[styles.inputContainerSmall, { backgroundColor: theme.card }]}>
               <MaterialCommunityIcons
                 name="currency-inr"
                 size={24}
@@ -869,17 +872,17 @@ export default function ManageAccountScreen() {
                 value={creditLimit}
                 onChangeText={(val) => setCreditLimit(val.replace(/[^0-9]/g, ''))}
                 placeholder="1,00,000"
-                placeholderTextColor="#AAB7C6"
+                placeholderTextColor={theme.muted}
                 keyboardType="number-pad"
-                style={styles.textInputSmall}
+                style={[styles.textInputSmall, { color: theme.text }]}
               />
             </View>
 
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <ThemedText style={styles.labelSmall}>Due Day</ThemedText>
+                <ThemedText style={[styles.labelSmall, { color: theme.text }]}>Due Day</ThemedText>
                 <TouchableOpacity
-                  style={styles.dropdownContainerSmall}
+                  style={[styles.dropdownContainerSmall, { backgroundColor: theme.card }]}
                   onPress={() => setShowDayModal(true)}>
                   <MaterialCommunityIcons
                     name="calendar-outline"
@@ -887,7 +890,7 @@ export default function ManageAccountScreen() {
                     color={theme.accent}
                     style={styles.inputIcon}
                   />
-                  <ThemedText style={[styles.dropdownTextSmall, !dueDay && { color: '#AAB7C6' }]}>
+                  <ThemedText style={[styles.dropdownTextSmall, { color: theme.text }, !dueDay && { color: '#AAB7C6' }]}>
                     {dueDay || 'Day'}
                   </ThemedText>
                   <MaterialCommunityIcons name="chevron-down" size={20} color="#AAB7C6" />
@@ -895,9 +898,9 @@ export default function ManageAccountScreen() {
               </View>
               <View style={{ width: 16 }} />
               <View style={{ flex: 1 }}>
-                <ThemedText style={styles.labelSmall}>Fee Month</ThemedText>
+                <ThemedText style={[styles.labelSmall, { color: theme.text }]}>Fee Month</ThemedText>
                 <TouchableOpacity
-                  style={styles.dropdownContainerSmall}
+                  style={[styles.dropdownContainerSmall, { backgroundColor: theme.card }]}
                   onPress={() => setShowMonthModal(true)}>
                   <MaterialCommunityIcons
                     name="calendar-refresh-outline"
@@ -905,7 +908,7 @@ export default function ManageAccountScreen() {
                     color={theme.accent}
                     style={styles.inputIcon}
                   />
-                  <ThemedText style={[styles.dropdownTextSmall, !feeMonth && { color: '#AAB7C6' }]}>
+                  <ThemedText style={[styles.dropdownTextSmall, { color: theme.text }, !feeMonth && { color: '#AAB7C6' }]}>
                     {feeMonth || 'Month'}
                   </ThemedText>
                   <MaterialCommunityIcons name="chevron-down" size={20} color="#AAB7C6" />
@@ -925,8 +928,8 @@ export default function ManageAccountScreen() {
                 style={styles.inputIcon}
               />
               <View style={{ flex: 1 }}>
-                <ThemedText style={styles.dropdownTextSmall}>Due reminder</ThemedText>
-                <ThemedText style={[styles.labelSmall, { marginTop: 2, marginBottom: 0 }]}>
+                <ThemedText style={[styles.dropdownTextSmall, { color: theme.text }]}>Due reminder</ThemedText>
+                <ThemedText style={[styles.labelSmall, { color: theme.text }, { marginTop: 2, marginBottom: 0 }]}>
                   {reminderEnabled ? 'Enabled for this card' : 'Off for this card'}
                 </ThemedText>
               </View>
@@ -939,8 +942,8 @@ export default function ManageAccountScreen() {
 
             {reminderEnabled && (
               <>
-                <ThemedText style={styles.labelSmall}>Remind me this many days before</ThemedText>
-                <View style={styles.inputContainerSmall}>
+                <ThemedText style={[styles.labelSmall, { color: theme.text }]}>Remind me this many days before</ThemedText>
+                <View style={[styles.inputContainerSmall, { backgroundColor: theme.card }]}>
                   <MaterialCommunityIcons
                     name="calendar-clock-outline"
                     size={24}
@@ -953,9 +956,9 @@ export default function ManageAccountScreen() {
                       setReminderDaysBefore(value.replace(/[^0-9]/g, '').slice(0, 2))
                     }
                     placeholder="3"
-                    placeholderTextColor="#AAB7C6"
+                    placeholderTextColor={theme.muted}
                     keyboardType="number-pad"
-                    style={styles.textInputSmall}
+                    style={[styles.textInputSmall, { color: theme.text }]}
                   />
                 </View>
               </>
@@ -963,7 +966,7 @@ export default function ManageAccountScreen() {
           </KeyboardAvoidingScreen>
 
           {/* Footer Step 2 */}
-          <View style={styles.footer}>
+          <View style={[styles.footer, { backgroundColor: theme.background }]}>
             {saveError ? (
               <View style={styles.errorContainer}>
                 <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
@@ -1020,15 +1023,15 @@ export default function ManageAccountScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}>
           <View style={styles.mascotSection}>
-            <View style={styles.bubbleContainer}>
-              <ThemedText style={styles.bubbleText}>{detailCopy.message}</ThemedText>
-              <View style={styles.bubbleTriangle} />
+            <View style={[styles.bubbleContainer, { backgroundColor: theme.secondary }]}>
+              <ThemedText style={[styles.bubbleText, { color: theme.text }]}>{detailCopy.message}</ThemedText>
+              <View style={[styles.bubbleTriangle, { backgroundColor: theme.secondary }]} />
             </View>
           </View>
 
           {detailCopy.providerLabel && (
             <>
-              <ThemedText style={styles.sectionTitle}>{detailCopy.providerLabel}</ThemedText>
+              <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>{detailCopy.providerLabel}</ThemedText>
               {providerOptions.length > 0 && (
                 <ScrollView
                   horizontal
@@ -1042,6 +1045,8 @@ export default function ManageAccountScreen() {
                         onPress={() => selectProvider(provider)}
                         style={[
                           styles.providerChip,
+                          { backgroundColor: theme.card },
+                      { backgroundColor: theme.card },
                           isActive && { borderColor: theme.accent, backgroundColor: '#F4F1FE' },
                         ]}>
                         <MaterialCommunityIcons
@@ -1059,7 +1064,7 @@ export default function ManageAccountScreen() {
                 </ScrollView>
               )}
               <View style={styles.searchWrapper}>
-                <View style={styles.dropdownContainer}>
+                <View style={[styles.dropdownContainer, { backgroundColor: theme.card }]}>
                   <MaterialCommunityIcons
                     name={
                       selectedType === 'upi'
@@ -1073,7 +1078,7 @@ export default function ManageAccountScreen() {
                     style={styles.inputIcon}
                   />
                   <TextInput
-                    style={styles.textInputSmall}
+                    style={[styles.textInputSmall, { color: theme.text }]}
                     value={issuerQuery}
                     onChangeText={(text) => {
                       setIssuerQuery(text);
@@ -1082,12 +1087,12 @@ export default function ManageAccountScreen() {
                     }}
                     onFocus={() => setShowIssuerResults(true)}
                     placeholder={detailCopy.providerPlaceholder}
-                    placeholderTextColor="#AAB7C6"
+                    placeholderTextColor={theme.muted}
                   />
                 </View>
 
                 {showIssuerResults && filteredIssuers.length > 0 && (
-                  <View style={styles.resultsList}>
+                  <View style={[styles.resultsList, { backgroundColor: theme.card }]}>
                     {filteredIssuers.map((item) => (
                       <TouchableOpacity
                         key={item.id}
@@ -1099,7 +1104,7 @@ export default function ManageAccountScreen() {
                           color={theme.accent}
                           style={{ marginRight: 10 }}
                         />
-                        <ThemedText style={styles.resultItemText}>{item.name}</ThemedText>
+                        <ThemedText style={[styles.resultItemText, { color: theme.text }]}>{item.name}</ThemedText>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1112,9 +1117,9 @@ export default function ManageAccountScreen() {
               balance", "Initial balance", "Linked balance" and "Wallet balance"
               across five account types — five words for the number Finnri now
               runs a real balance forward from. */}
-          <ThemedText style={styles.sectionTitle}>{detailCopy.balanceLabel}</ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>{detailCopy.balanceLabel}</ThemedText>
           <ThemedText style={styles.fieldHint}>{detailCopy.balanceHint}</ThemedText>
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
             <MaterialCommunityIcons
               name="scale-balance"
               size={24}
@@ -1125,16 +1130,16 @@ export default function ManageAccountScreen() {
               value={balance}
               onChangeText={(value) => setBalance(value.replace(/[^0-9.]/g, ''))}
               placeholder="0.00"
-              placeholderTextColor="#AAB7C6"
+              placeholderTextColor={theme.muted}
               keyboardType="decimal-pad"
-              style={styles.textInput}
+              style={[styles.textInput, { color: theme.text }]}
             />
           </View>
 
           {detailCopy.identifierLabel && (
             <>
-              <ThemedText style={styles.sectionTitle}>{detailCopy.identifierLabel}</ThemedText>
-              <View style={styles.inputContainer}>
+              <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>{detailCopy.identifierLabel}</ThemedText>
+              <View style={[styles.inputContainer, { backgroundColor: theme.card }]}>
                 <MaterialCommunityIcons
                   name={detailCopy.identifierIcon ?? 'card-text-outline'}
                   size={24}
@@ -1145,21 +1150,21 @@ export default function ManageAccountScreen() {
                   value={last4}
                   onChangeText={updateIdentifier}
                   placeholder={detailCopy.identifierPlaceholder}
-                  placeholderTextColor="#AAB7C6"
+                  placeholderTextColor={theme.muted}
                   keyboardType={
                     selectedType === 'bank' || selectedType === 'debit_card'
                       ? 'number-pad'
                       : 'default'
                   }
                   autoCapitalize="none"
-                  style={styles.textInput}
+                  style={[styles.textInput, { color: theme.text }]}
                 />
               </View>
             </>
           )}
         </KeyboardAvoidingScreen>
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { backgroundColor: theme.background }]}>
           {saveError ? (
             <View style={styles.errorContainer}>
               <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
@@ -1202,11 +1207,11 @@ export default function ManageAccountScreen() {
       <>
         <ScreenHeader subtitle="ACCOUNT ADDED" onBack={() => router.back()} />
         <View style={styles.successContent}>
-          <View style={styles.successCard}>
+          <View style={[styles.successCard, { backgroundColor: theme.card }]}>
             <View style={[styles.successIcon, { backgroundColor: visual.bgColor }]}>
               <MaterialCommunityIcons name={visual.icon} size={34} color={visual.color} />
             </View>
-            <ThemedText style={styles.successTitle} numberOfLines={2}>
+            <ThemedText style={[styles.successTitle, { color: theme.text }]} numberOfLines={2}>
               {accountName}
             </ThemedText>
             <ThemedText style={styles.successMessage}>
@@ -1215,7 +1220,7 @@ export default function ManageAccountScreen() {
             </ThemedText>
           </View>
         </View>
-        <View style={styles.footer}>
+        <View style={[styles.footer, { backgroundColor: theme.background }]}>
           {saveError ? (
             <View style={styles.errorContainer}>
               <MaterialCommunityIcons name="alert-circle-outline" size={18} color="#D32F2F" />
@@ -1244,7 +1249,7 @@ export default function ManageAccountScreen() {
                     params: { id: String(createdAccount.id), focus: 'details' },
                   })
                 }
-                style={[styles.fullWidthButton, styles.secondaryFullWidthButton]}>
+                style={[styles.fullWidthButton, styles.secondaryFullWidthButton, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <ThemedText style={styles.secondaryFullWidthText}>
                   Complete {missingSetupCount} detail{missingSetupCount > 1 ? 's' : ''}
                 </ThemedText>
@@ -1259,7 +1264,7 @@ export default function ManageAccountScreen() {
               <TouchableOpacity
                 onPress={handleSetCreatedDefault}
                 disabled={isSaving}
-                style={[styles.fullWidthButton, styles.secondaryFullWidthButton]}>
+                style={[styles.fullWidthButton, styles.secondaryFullWidthButton, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 {isSaving ? (
                   <ActivityIndicator color={theme.accent} />
                 ) : (
@@ -1278,7 +1283,7 @@ export default function ManageAccountScreen() {
             )}
             <TouchableOpacity
               onPress={resetNewAccountForm}
-              style={[styles.fullWidthButton, styles.secondaryFullWidthButton]}>
+              style={[styles.fullWidthButton, styles.secondaryFullWidthButton, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <ThemedText style={styles.secondaryFullWidthText}>Add another account</ThemedText>
               <MaterialCommunityIcons name="plus" size={20} color={theme.accent} />
             </TouchableOpacity>
@@ -1365,7 +1370,6 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     fontFamily: Fonts.title,
     fontWeight: '900',
-    color: '#1A1A1A',
     textAlign: 'center',
     marginBottom: 12,
     paddingBottom: 2,
@@ -1397,7 +1401,6 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontFamily: Fonts.title,
     fontWeight: '900',
-    color: '#1A1A1A',
     marginBottom: 8,
   },
   stepDescription: {
@@ -1421,7 +1424,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.title,
     fontWeight: '900',
     textAlign: 'center',
-    color: '#1A1A1A',
   },
   bubbleTriangle: {
     position: 'absolute',
@@ -1461,7 +1463,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.title,
     fontWeight: '900',
     marginBottom: 16,
-    color: '#2D3436',
   },
   fieldHint: {
     fontSize: 12,
@@ -1474,7 +1475,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '900',
-    color: '#2D3436',
     marginBottom: 10,
   },
   gridContainer: {
@@ -1523,12 +1523,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: Fonts.title,
     fontWeight: '900',
-  },
-  textSelected: {
-    color: '#1A1A1A',
-  },
-  textUnselected: {
-    color: '#BDBDBD',
   },
   inputContainer: {
     flexDirection: 'row',
@@ -1604,7 +1598,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '600',
-    color: '#1A1A1A',
   },
   inputIcon: {
     marginRight: 12,
@@ -1614,14 +1607,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Fonts.title,
     fontWeight: 'bold',
-    color: '#1A1A1A',
   },
   textInputSmall: {
     flex: 1,
     fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: 'bold',
-    color: '#1A1A1A',
   },
   row: {
     flexDirection: 'row',
@@ -1647,7 +1638,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '900',
-    color: '#1A1A1A',
   },
   providerChips: {
     gap: 10,
@@ -1728,7 +1718,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '900',
-    color: '#1A1A1A',
   },
   defaultDescription: {
     marginTop: 4,
@@ -1868,7 +1857,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Fonts.title,
     fontWeight: '900',
-    color: '#1A1A1A',
   },
   modalList: {
     paddingHorizontal: 24,
@@ -1882,6 +1870,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Fonts.title,
     fontWeight: '600',
-    color: '#1A1A1A',
   },
 });

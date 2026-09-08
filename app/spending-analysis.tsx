@@ -156,7 +156,11 @@ export default function SpendingAnalysisScreen() {
           <ThemedText tone="muted" className="mb-1 text-[11px] font-black uppercase tracking-widest">
             Total Spending
           </ThemedText>
-          <ThemedText className="text-4xl font-black" style={{ color: theme.text }}>
+          <ThemedText
+            className="text-4xl font-black"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            style={{ color: theme.text }}>
             {formatMoney(dashboard.summary.total_spent)}
           </ThemedText>
         </View>

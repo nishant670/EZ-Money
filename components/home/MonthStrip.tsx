@@ -98,6 +98,8 @@ export function MonthStrip({ dashboard, loading, onPress }: MonthStripProps) {
             from the two other screens that had each arrived at it separately. */}
         <ThemedText
           className="mt-1 text-[30px]"
+          numberOfLines={1}
+          adjustsFontSizeToFit
           style={{ fontFamily: Fonts.title, color: theme.text }}>
           {formatMoney(summary.total_spent)}
         </ThemedText>
