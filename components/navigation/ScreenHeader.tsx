@@ -43,7 +43,7 @@ export function ScreenHeader({
         {title && (
           <ThemedText
             className="text-base font-black"
-            style={{ fontFamily: Fonts.title, color: '#1A1A1A' }}>
+            style={{ fontFamily: Fonts.title, color: theme.colors.text }}>
             {title}
           </ThemedText>
         )}

@@ -15,7 +15,7 @@
  * destination. `expo-auth-session` still receives it — this only filters what
  * the router does with it.
  *
- * Everything else, `ezmoney://` split-group invites included, passes through
+ * Everything else, `finnri://` split-group invites included, passes through
  * untouched.
  */
 export function redirectSystemPath({ path }: { path: string; initial: boolean }) {

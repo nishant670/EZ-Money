@@ -159,7 +159,9 @@ export default function WeeklyReviewScreen() {
 
           <View className="rounded-[28px] border p-5 shadow-sm" style={{ backgroundColor: colors.card, borderColor: colors.border }}>
             <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">This period</ThemedText>
-            <ThemedText className="mt-2 text-4xl font-black">{formatMoney(dashboard.summary.total_spent)}</ThemedText>
+            <ThemedText className="mt-2 text-4xl font-black" numberOfLines={1} adjustsFontSizeToFit>
+              {formatMoney(dashboard.summary.total_spent)}
+            </ThemedText>
             <ThemedText className="mt-1 text-xs" style={{ color: muted }}>
               {dashboard.summary.transaction_count} confirmed transactions · {formatMoney(dashboard.summary.daily_average)}/day
             </ThemedText>

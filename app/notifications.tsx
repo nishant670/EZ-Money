@@ -46,10 +46,13 @@ const formatNotificationTime = (value: string) => {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 };
 
+// The app's own scheme is `finnri://`. `ezmoney://` is the pre-rename scheme,
+// still registered in app.json so links minted by an older build keep working;
+// both spellings reduce to the same router path here.
 const splitInviteTokenFromActionURL = (actionURL?: string) => {
   if (!actionURL) return null;
   const trimmed = actionURL.trim();
-  const path = trimmed.startsWith('ezmoney://') ? trimmed.replace(/^ezmoney:\/\//, '/') : trimmed;
+  const path = trimmed.replace(/^(?:finnri|ezmoney):\/\//, '/');
   const match = path.match(/^\/invite\/split\/([^/?#]+)$/);
   return match?.[1] ?? null;
 };

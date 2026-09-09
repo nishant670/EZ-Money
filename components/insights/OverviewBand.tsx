@@ -93,8 +93,12 @@ export function OverviewBand({
       </View>
 
       <View className="mt-3 flex-row items-end justify-between gap-4">
-        <View className="flex-1">
-          <ThemedText className="text-2xl" style={{ color: theme.text, fontFamily: Fonts.title }}>
+        <View className="min-w-0 flex-1">
+          <ThemedText
+            className="text-2xl"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            style={{ color: theme.text, fontFamily: Fonts.title }}>
             {formatMoney(canClaimTypical ? typical : overview.lifetime_spent)}
           </ThemedText>
           <ThemedText className="mt-1 text-xs" style={{ color: theme.muted }}>

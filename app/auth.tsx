@@ -250,7 +250,7 @@ export default function AuthFlow() {
     // package name, with a single slash: "com.finnri.app:/oauth2redirect".
     // makeRedirectUri emits "scheme://path", and Google rejects that double
     // slash, so this one is spelled out rather than generated. The app's own
-    // "ezmoney" scheme stays registered for split-group invite links.
+    // "finnri" scheme stays registered for split-group invite links.
     //
     // Resolved before the spinner starts: every bail-out below it would
     // otherwise leave the button spinning with nothing on its way back.
