@@ -147,7 +147,7 @@ class FinnriCaptureActivity : Activity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setShowWhenLocked(false)
     val captureUri = Uri.fromFile(target).toString()
     val intent = Intent(this, MainActivity::class.java).apply {
-      data = Uri.parse("ezmoney://?captureFile=${Uri.encode(captureUri)}")
+      data = Uri.parse("finnri://?captureFile=${Uri.encode(captureUri)}")
       addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
     startActivity(intent)
