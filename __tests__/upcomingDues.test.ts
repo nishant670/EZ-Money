@@ -1,5 +1,6 @@
 import type { Account } from '@/lib/accounts';
 import type { Subscription } from '@/lib/subscriptions';
+import type { RefundableEntry } from '@/lib/refundables';
 import {
   buildUpcomingDues,
   formatDueLabel,
@@ -184,12 +185,36 @@ describe('buildUpcomingDues', () => {
 
     expect(totalUpcomingAmount(dues)).toBe(499);
   });
+
+  it('shows pending refunds by expected date without mixing them into money due out', () => {
+    const refund = {
+      id: 23,
+      title: 'Security deposit',
+      refundable_amount: '5000.00',
+      refund_expected_on: '2026-08-14',
+      refund_status: 'pending',
+    } as RefundableEntry;
+    const dues = buildUpcomingDues({
+      subscriptions: [subscription({ amount: 499 })],
+      accounts: [],
+      refundables: [refund],
+      today,
+    });
+
+    expect(dues.map((due) => due.key)).toEqual(['refund-23', 'subscription-1']);
+    expect(dues[0]).toEqual(expect.objectContaining({ kind: 'refund', amount: 5000 }));
+    expect(totalUpcomingAmount(dues)).toBe(499);
+  });
 });
 
 describe('formatDueLabel', () => {
   const label = (nextDue: string) =>
     formatDueLabel(
-      buildUpcomingDues({ subscriptions: [subscription({ next_due_date: nextDue })], accounts: [], today })[0]
+      buildUpcomingDues({
+        subscriptions: [subscription({ next_due_date: nextDue })],
+        accounts: [],
+        today,
+      })[0]
     );
 
   it('reads in days near the date and in dates further out', () => {

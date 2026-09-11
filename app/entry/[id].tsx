@@ -3,13 +3,7 @@ import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  BackHandler,
-  Pressable,
-  ScrollView,
-  View,
-  TouchableOpacity,
-} from 'react-native';
+import { BackHandler, Pressable, ScrollView, View, TouchableOpacity } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -54,6 +48,7 @@ import {
 } from '@/lib/transactions';
 import { formatTime, toApiTime } from '@/lib/datetime';
 import { formatMoney, toAmountInputValue } from '@/lib/money';
+import { refundReminderAtNineAM, updateRefundStatus } from '@/lib/refundables';
 
 export default function TransactionDetailsScreen() {
   const dialog = useAppDialog();
@@ -260,7 +255,9 @@ export default function TransactionDetailsScreen() {
     try {
       const parsed = JSON.parse(params.categorySuggestions);
       return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        ? parsed.filter(
+            (item): item is string => typeof item === 'string' && item.trim().length > 0
+          )
         : [];
     } catch {
       return [];
@@ -328,6 +325,17 @@ export default function TransactionDetailsScreen() {
         notes: formData.notes,
         merchant: formData.merchant,
         tag: formData.tag,
+        ...(formData.tag === 'Refundable'
+          ? {
+              refundable_amount: formData.refundableAmount.trim(),
+              refund_expected_on: formatApiDate(parseDateLabel(formData.refundExpectedOn) as Date),
+              refund_reminder_at: formData.refundReminderEnabled
+                ? refundReminderAtNineAM(formData.refundExpectedOn)
+                : null,
+              refund_status: (displayData.refund_status ?? 'pending') as
+                'pending' | 'received' | 'written_off',
+            }
+          : {}),
       };
 
       // Date handling: EntryForm has "date" as label (e.g. 18 January 2026).
@@ -376,9 +384,10 @@ export default function TransactionDetailsScreen() {
         return;
       }
       if (formData.type === 'Expense') {
-        const notification = await fetchNewUnreadBudgetNotification(token, budgetNotificationIds).catch(
-          () => null
-        );
+        const notification = await fetchNewUnreadBudgetNotification(
+          token,
+          budgetNotificationIds
+        ).catch(() => null);
         if (notification) {
           if (
             await dialog.confirm({
@@ -408,6 +417,35 @@ export default function TransactionDetailsScreen() {
     .filter((participant) => participant.direction === 'user_owes_friend')
     .reduce((sum, participant) => sum + Number(participant.share_amount || 0), 0);
 
+  const handleRefundStatus = async (status: 'received' | 'written_off') => {
+    if (!token || !displayData.refundable_amount) return;
+    const verb = status === 'received' ? 'mark this refund received' : 'write this refund off';
+    if (
+      !(await dialog.confirm({
+        title: status === 'received' ? 'Refund received?' : 'Write off refund?',
+        message:
+          status === 'received'
+            ? 'This closes the reminder. Record the incoming money separately if it should appear in your ledger.'
+            : 'This closes the reminder and keeps the original expense unchanged.',
+        confirmLabel: status === 'received' ? 'Mark received' : 'Write off',
+        cancelLabel: 'Cancel',
+      }))
+    ) {
+      return;
+    }
+    try {
+      const updated = await updateRefundStatus(token, params.id, status);
+      setTransaction((current: any) => ({ ...current, ...updated }));
+      notifyTransactionsChanged();
+    } catch (error) {
+      await dialog.alert({
+        title: 'Refund not updated',
+        message: error instanceof Error ? error.message : `Could not ${verb}.`,
+        tone: 'danger',
+      });
+    }
+  };
+
   // Prepare initial form data for Modal
   const editInitialData: EntryForm = {
     title: displayData.title || '',
@@ -436,6 +474,16 @@ export default function TransactionDetailsScreen() {
       shareAmount: toAmountInputValue(participant.share_amount),
       direction: participant.direction,
     })),
+    refundableAmount:
+      displayData.refundable_amount != null
+        ? toAmountInputValue(displayData.refundable_amount)
+        : '',
+    refundExpectedOn: displayData.refund_expected_on
+      ? normalizeDateLabel(displayData.refund_expected_on)
+      : '',
+    refundReminderEnabled: Boolean(displayData.refund_reminder_at),
+    emiTenureMonths: '',
+    emiRatePct: '',
     subscriptionEnabled: false,
     subscriptionName: '',
     subscriptionMerchant: '',
@@ -553,7 +601,9 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name="calendar-blank" size={24} color={theme.accent} />
             </View>
             <View>
-              <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest mb-1">
+              <ThemedText
+                tone="muted"
+                className="text-[10px] uppercase font-black tracking-widest mb-1">
                 DATE &amp; TIME
               </ThemedText>
               <ThemedText className="text-base font-black">
@@ -575,7 +625,9 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name={icon as any} size={24} color={iconColor} />
             </View>
             <View>
-              <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest mb-1">
+              <ThemedText
+                tone="muted"
+                className="text-[10px] uppercase font-black tracking-widest mb-1">
                 CATEGORY
               </ThemedText>
               <ThemedText className="text-base font-black">
@@ -682,7 +734,9 @@ export default function TransactionDetailsScreen() {
               <MaterialCommunityIcons name="comment-text-outline" size={24} color={theme.accent} />
             </View>
             <View className="flex-1">
-              <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest mb-1">
+              <ThemedText
+                tone="muted"
+                className="text-[10px] uppercase font-black tracking-widest mb-1">
                 NOTES
               </ThemedText>
               {/* The quotation marks belong to the user's own words. Wrapping
@@ -715,7 +769,9 @@ export default function TransactionDetailsScreen() {
                   />
                 </View>
                 <View>
-                  <ThemedText tone="muted" className="text-[10px] uppercase font-black tracking-widest">
+                  <ThemedText
+                    tone="muted"
+                    className="text-[10px] uppercase font-black tracking-widest">
                     SPLIT WITH
                   </ThemedText>
                   <ThemedText className="text-base font-black">
@@ -771,7 +827,9 @@ export default function TransactionDetailsScreen() {
         {/* PAPER TRAIL */}
         {receiptUrl ? (
           <View className="mb-8">
-            <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-[2px] mb-4 ml-6">
+            <ThemedText
+              tone="muted"
+              className="text-[10px] font-black uppercase tracking-[2px] mb-4 ml-6">
               THE PAPER TRAIL
             </ThemedText>
             {isPdfAttachment(receiptUrl) ? (
@@ -780,8 +838,7 @@ export default function TransactionDetailsScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Open receipt PDF"
                 className="rounded-[32px] p-6 flex-row items-center justify-between border"
-                style={{ backgroundColor: theme.card, borderColor: theme.border }}
-              >
+                style={{ backgroundColor: theme.card, borderColor: theme.border }}>
                 <View className="flex-row items-center gap-4">
                   <View className="h-14 w-14 rounded-full items-center justify-center bg-rose-50">
                     <MaterialCommunityIcons name="file-pdf-box" size={28} color="#E11D48" />
@@ -790,7 +847,9 @@ export default function TransactionDetailsScreen() {
                     <ThemedText className="text-base font-black" style={{ color: theme.text }}>
                       Receipt PDF
                     </ThemedText>
-                    <ThemedText tone="muted" className="text-xs font-bold">Tap to open</ThemedText>
+                    <ThemedText tone="muted" className="text-xs font-bold">
+                      Tap to open
+                    </ThemedText>
                   </View>
                 </View>
                 <MaterialCommunityIcons name="open-in-new" size={22} color={theme.accent} />
@@ -801,8 +860,7 @@ export default function TransactionDetailsScreen() {
                 accessibilityRole="imagebutton"
                 accessibilityLabel="Open receipt image"
                 className="rounded-[32px] overflow-hidden border"
-                style={{ borderColor: theme.border }}
-              >
+                style={{ borderColor: theme.border }}>
                 <Image
                   source={{ uri: receiptUrl }}
                   style={{ width: '100%', height: 220 }}
@@ -815,13 +873,51 @@ export default function TransactionDetailsScreen() {
         ) : null}
 
         {/* ACTIONS */}
+        {displayData.refundable_amount && displayData.refund_status === 'pending' ? (
+          <View
+            className="mb-6 rounded-[28px] border p-5"
+            style={{ backgroundColor: theme.card, borderColor: theme.accent }}>
+            <ThemedText className="text-base font-black" style={{ color: theme.text }}>
+              {formatMoney(Number(displayData.refundable_amount))} expected back
+            </ThemedText>
+            <ThemedText tone="muted" className="mt-1 text-xs">
+              Expected{' '}
+              {displayData.refund_expected_on
+                ? normalizeDateLabel(displayData.refund_expected_on)
+                : 'date not set'}
+            </ThemedText>
+            <View className="mt-4 flex-row gap-3">
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void handleRefundStatus('received')}
+                className="flex-1 items-center rounded-full py-3"
+                style={{ backgroundColor: theme.accent }}>
+                <ThemedText tone="onAccent" className="text-xs font-black">
+                  Mark received
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void handleRefundStatus('written_off')}
+                className="flex-1 items-center rounded-full border py-3"
+                style={{ borderColor: theme.border }}>
+                <ThemedText className="text-xs font-black" style={{ color: theme.text }}>
+                  Write off
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         <Pressable
           onPress={handleEdit}
           className="w-full py-5 rounded-full items-center justify-center shadow-xl mb-6 active:opacity-90"
           style={{ backgroundColor: theme.accent }}>
           <View className="flex-row items-center gap-3">
             <MaterialCommunityIcons name="pencil-outline" size={24} color="#FFF" />
-            <ThemedText tone="onAccent" className="font-black text-lg">Edit</ThemedText>
+            <ThemedText tone="onAccent" className="font-black text-lg">
+              Edit
+            </ThemedText>
           </View>
         </Pressable>
 
@@ -842,6 +938,7 @@ export default function TransactionDetailsScreen() {
         accounts={accounts}
         splitFriends={splitFriends}
         splitGroups={splitGroups}
+        authToken={token}
         onManageAccounts={() => router.push('/money?segment=accounts')}
         initialFocus={params.reviewFocus || undefined}
         categorySuggestions={categorySuggestions}
@@ -878,8 +975,8 @@ export default function TransactionDetailsScreen() {
               Delete this transaction?
             </ThemedText>
             <ThemedText tone="muted" className="mt-2 text-center text-sm font-semibold leading-5">
-              It will leave this screen now, with 5 seconds to Undo. After that it is removed
-              from your activity, insights, and any split linked to it.
+              It will leave this screen now, with 5 seconds to Undo. After that it is removed from
+              your activity, insights, and any split linked to it.
             </ThemedText>
           </View>
 
@@ -888,7 +985,9 @@ export default function TransactionDetailsScreen() {
             style={{ backgroundColor: theme.secondary, borderColor: theme.border }}>
             <View className="flex-row items-center justify-between gap-4">
               <View className="flex-1">
-                <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
+                <ThemedText
+                  tone="muted"
+                  className="text-[10px] font-black uppercase tracking-widest">
                   Transaction
                 </ThemedText>
                 <ThemedText
@@ -912,7 +1011,9 @@ export default function TransactionDetailsScreen() {
               style={{ backgroundColor: '#FF6B6B' }}>
               <View className="flex-row items-center gap-2">
                 <MaterialCommunityIcons name="trash-can-outline" size={19} color="#FFFFFF" />
-                <ThemedText tone="onAccent" className="text-base font-black">Delete</ThemedText>
+                <ThemedText tone="onAccent" className="text-base font-black">
+                  Delete
+                </ThemedText>
               </View>
             </Pressable>
 

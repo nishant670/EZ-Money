@@ -1,6 +1,7 @@
 import type { Account } from '@/lib/accounts';
 import { normalizeAccountType } from '@/lib/accounts';
 import type { Subscription } from '@/lib/subscriptions';
+import type { RefundableEntry } from '@/lib/refundables';
 
 /**
  * What money leaves the account next, from every source that knows a date.
@@ -10,7 +11,7 @@ import type { Subscription } from '@/lib/subscriptions';
  * on Subscriptions, a card statement on Accounts — so nobody could answer
  * "what is due this week" without visiting both and doing the merge by hand.
  */
-export type UpcomingDueKind = 'subscription' | 'card';
+export type UpcomingDueKind = 'subscription' | 'card' | 'refund';
 
 export type UpcomingDueState = 'overdue' | 'today' | 'soon' | 'scheduled';
 
@@ -79,6 +80,7 @@ export const nextCardDueDate = (dueDay: number, today: Date): Date | null => {
 export type BuildUpcomingDuesOptions = {
   subscriptions: Subscription[];
   accounts: Account[];
+  refundables?: RefundableEntry[];
   today?: Date;
   /** How far ahead to look. Anything already overdue is listed regardless. */
   horizonDays?: number;
@@ -87,6 +89,7 @@ export type BuildUpcomingDuesOptions = {
 export const buildUpcomingDues = ({
   subscriptions,
   accounts,
+  refundables = [],
   today = new Date(),
   horizonDays = 30,
 }: BuildUpcomingDuesOptions): UpcomingDue[] => {
@@ -141,6 +144,26 @@ export const buildUpcomingDues = ({
     });
   }
 
+  for (const entry of refundables) {
+    if (entry.refund_status !== 'pending') continue;
+    const dueDate = parseApiDate(entry.refund_expected_on);
+    if (!dueDate) continue;
+    const daysUntil = daysBetween(base, dueDate);
+    if (daysUntil > horizonDays) continue;
+    const amount = Number(entry.refundable_amount);
+    dues.push({
+      key: `refund-${entry.id}`,
+      kind: 'refund',
+      sourceID: Number(entry.id),
+      title: entry.title?.trim() || entry.merchant?.trim() || 'Expected refund',
+      subtitle: 'Expected back',
+      amount: Number.isFinite(amount) && amount > 0 ? amount : null,
+      dueDate: toApiDate(dueDate),
+      daysUntil,
+      state: stateFor(daysUntil),
+    });
+  }
+
   return dues.sort((a, b) =>
     a.daysUntil === b.daysUntil ? a.title.localeCompare(b.title) : a.daysUntil - b.daysUntil
   );
@@ -148,7 +171,7 @@ export const buildUpcomingDues = ({
 
 /** What the panel header states — only figures it can back. */
 export const totalUpcomingAmount = (dues: UpcomingDue[]) =>
-  dues.reduce((sum, due) => sum + (due.amount ?? 0), 0);
+  dues.reduce((sum, due) => sum + (due.kind === 'refund' ? 0 : (due.amount ?? 0)), 0);
 
 export const formatDueLabel = (due: UpcomingDue) => {
   if (due.daysUntil === 0) return 'Due today';

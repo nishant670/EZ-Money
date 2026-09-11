@@ -27,6 +27,10 @@ export type ApiEntry = {
   source?: string;
   source_text?: string;
   attachment?: string | null;
+  refundable_amount?: number | string | null;
+  refund_expected_on?: string | null;
+  refund_reminder_at?: string | null;
+  refund_status?: 'pending' | 'received' | 'written_off' | null;
   created_at?: string;
   createdAt?: string;
   updated_at?: string;
@@ -178,7 +182,9 @@ const deriveSectionMeta = (value?: string | null) => {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   if (resolved) {
     const entryDay = new Date(resolved.getFullYear(), resolved.getMonth(), resolved.getDate());
-    const diffDays = Math.round((todayStart.getTime() - entryDay.getTime()) / (24 * 60 * 60 * 1000));
+    const diffDays = Math.round(
+      (todayStart.getTime() - entryDay.getTime()) / (24 * 60 * 60 * 1000)
+    );
     if (diffDays === 0) {
       return { section: 'Today', timestamp: entryDay.getTime() };
     }
@@ -234,17 +240,21 @@ export const mapEntryToTransaction = (entry: ApiEntry): Transaction => {
   const normalizedType: 'income' | 'expense' = type === 'income' ? 'income' : 'expense';
   const signedAmount = normalizedType === 'income' ? Math.abs(amountValue) : -Math.abs(amountValue);
   const label =
-    entry.title?.trim() || entry.merchant?.trim() || entry.category?.trim() || entry.notes?.trim() || entry.mode || 'Transaction';
+    entry.title?.trim() ||
+    entry.merchant?.trim() ||
+    entry.category?.trim() ||
+    entry.notes?.trim() ||
+    entry.mode ||
+    'Transaction';
   // Rows written before the taxonomy was unified can still carry legacy names,
   // so resolve through the canonical list rather than special-casing one value.
   const rawCategory = entry.category ?? (normalizedType === 'income' ? 'Income' : 'Expense');
   const category = resolveCategory(rawCategory) ?? rawCategory;
-  const dateSource =
-    entry.date ?? entry.created_at ?? entry.createdAt ?? entry.updated_at ?? null;
+  const dateSource = entry.date ?? entry.created_at ?? entry.createdAt ?? entry.updated_at ?? null;
   const formattedDate = dateSource ? normalizeDateLabel(dateSource) : null;
   const timeLabel = normalizeTimeLabel(entry.time, entry.created_at ?? entry.createdAt ?? null);
   const { section, timestamp } = deriveSectionMeta(dateSource);
-  const normalizedTag = entry.tag ? toTitleCase(entry.tag) ?? entry.tag : null;
+  const normalizedTag = entry.tag ? (toTitleCase(entry.tag) ?? entry.tag) : null;
 
   return {
     id: entry.id ? String(entry.id) : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
@@ -291,7 +301,7 @@ const resolveApiBaseUrl = () => {
   if (!__DEV__) {
     throw new Error(
       'EXPO_PUBLIC_API_URL is missing from this release build. Set it in the ' +
-        'EAS build profile (or .env for a local release build) and rebuild.',
+        'EAS build profile (or .env for a local release build) and rebuild.'
     );
   }
 
@@ -305,10 +315,7 @@ const resolveApiBaseUrl = () => {
 
   const manifest = Constants.manifest as { hostUri?: string; debuggerHost?: string } | null;
   const hostUri =
-    Constants.expoConfig?.hostUri ??
-    manifest?.hostUri ??
-    manifest?.debuggerHost ??
-    null;
+    Constants.expoConfig?.hostUri ?? manifest?.hostUri ?? manifest?.debuggerHost ?? null;
 
   if (hostUri) {
     const host = hostUri.split(':')[0];
@@ -321,7 +328,7 @@ const resolveApiBaseUrl = () => {
       warnFallback(
         `[api] EXPO_PUBLIC_API_URL is unset; falling back to http://${host}:8080 ` +
           '(the machine serving Metro). This build reaches the API on that ' +
-          'network only. Set EXPO_PUBLIC_API_URL in .env or the EAS profile.',
+          'network only. Set EXPO_PUBLIC_API_URL in .env or the EAS profile.'
       );
       return `http://${host}:8080`;
     }
@@ -329,7 +336,7 @@ const resolveApiBaseUrl = () => {
 
   warnFallback(
     '[api] EXPO_PUBLIC_API_URL is unset and no Metro host is known; falling ' +
-      'back to http://127.0.0.1:8080, which reaches nothing from a handset.',
+      'back to http://127.0.0.1:8080, which reaches nothing from a handset.'
   );
   return 'http://127.0.0.1:8080';
 };
@@ -438,7 +445,7 @@ export const groupTransactionsBySection = (transactions: Transaction[]) => {
           ? Number.MAX_SAFE_INTEGER
           : title === 'Yesterday'
             ? Number.MAX_SAFE_INTEGER - 1
-            : data[0]?.occurredAt ?? 0,
+            : (data[0]?.occurredAt ?? 0),
     }))
     .sort((a, b) => (b.sortValue ?? 0) - (a.sortValue ?? 0))
     .map(({ sortValue, ...rest }) => rest);

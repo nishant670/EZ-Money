@@ -13,6 +13,7 @@ import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { fetchAccounts, type Account } from '@/lib/accounts';
 import { formatMoney } from '@/lib/money';
 import { fetchSubscriptions, type Subscription } from '@/lib/subscriptions';
+import { fetchRefundables, type RefundableEntry } from '@/lib/refundables';
 import {
   buildUpcomingDues,
   formatDueLabel,
@@ -51,24 +52,28 @@ export function UpcomingPanel({
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [refundables, setRefundables] = useState<RefundableEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!token) {
       setSubscriptions([]);
       setAccounts([]);
+      setRefundables([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     // Either source failing should not blank the other — a card due date is
     // still worth showing when the subscriptions call times out.
-    const [loadedSubscriptions, loadedAccounts] = await Promise.all([
+    const [loadedSubscriptions, loadedAccounts, loadedRefundables] = await Promise.all([
       fetchSubscriptions(token).catch(() => [] as Subscription[]),
       fetchAccounts(token).catch(() => [] as Account[]),
+      fetchRefundables(token).catch(() => [] as RefundableEntry[]),
     ]);
     setSubscriptions(loadedSubscriptions);
     setAccounts(loadedAccounts);
+    setRefundables(loadedRefundables);
     setLoading(false);
   }, [token]);
 
@@ -77,16 +82,25 @@ export function UpcomingPanel({
       if (prefetchedAccounts !== undefined && prefetchedSubscriptions !== undefined) {
         setAccounts(prefetchedAccounts);
         setSubscriptions(prefetchedSubscriptions);
-        setLoading(false);
+        if (!token) {
+          setRefundables([]);
+          setLoading(false);
+          return;
+        }
+        setLoading(true);
+        void fetchRefundables(token)
+          .then(setRefundables)
+          .catch(() => setRefundables([]))
+          .finally(() => setLoading(false));
         return;
       }
       void load();
-    }, [load, prefetchedAccounts, prefetchedSubscriptions])
+    }, [load, prefetchedAccounts, prefetchedSubscriptions, token])
   );
 
   const dues = useMemo(
-    () => buildUpcomingDues({ subscriptions, accounts, horizonDays: HORIZON_DAYS }),
-    [subscriptions, accounts]
+    () => buildUpcomingDues({ subscriptions, accounts, refundables, horizonDays: HORIZON_DAYS }),
+    [subscriptions, accounts, refundables]
   );
 
   const overdue = useMemo(() => dues.filter((due) => due.state === 'overdue'), [dues]);
@@ -96,10 +110,15 @@ export function UpcomingPanel({
   );
   const later = useMemo(() => dues.filter((due) => due.state === 'scheduled'), [dues]);
   const total = useMemo(() => totalUpcomingAmount(dues), [dues]);
+  const refundCount = dues.filter((due) => due.kind === 'refund').length;
 
   const openDue = (due: UpcomingDue) => {
     if (due.kind === 'card') {
       router.push({ pathname: '/accounts/[id]', params: { id: String(due.sourceID) } });
+      return;
+    }
+    if (due.kind === 'refund') {
+      router.push({ pathname: '/entry/[id]', params: { id: String(due.sourceID) } });
       return;
     }
     onSelectSegment('subscriptions');
@@ -113,7 +132,7 @@ export function UpcomingPanel({
             ? 'Checking renewals and card due dates'
             : dues.length === 0
               ? `Nothing due in the next ${HORIZON_DAYS} days`
-              : `${formatMoney(total)} across ${dues.length} payment${dues.length === 1 ? '' : 's'}`
+              : `${formatMoney(total)} due out${refundCount > 0 ? ` · ${refundCount} refund${refundCount === 1 ? '' : 's'} expected` : ''}`
         }
         colors={colors}
       />
@@ -131,7 +150,7 @@ export function UpcomingPanel({
           <StateView
             icon="calendar-check"
             title="Nothing due yet"
-            message="Renewals and credit card due dates land here once Finnri knows about them. Add a subscription or a due date to a card and this fills itself in."
+            message="Renewals, credit card due dates, and money expected back land here once Finnri knows about them."
             actionLabel="Add a subscription"
             onAction={() => onSelectSegment('subscriptions')}
           />
@@ -197,7 +216,13 @@ function DueGroup({ title, tone, dues, muted, onPress }: DueGroupProps) {
               className="mr-4 h-11 w-11 items-center justify-center rounded-full"
               style={{ backgroundColor: `${tone}1F` }}>
               <MaterialCommunityIcons
-                name={due.kind === 'card' ? 'credit-card-clock-outline' : 'calendar-sync-outline'}
+                name={
+                  due.kind === 'card'
+                    ? 'credit-card-clock-outline'
+                    : due.kind === 'refund'
+                      ? 'cash-refund'
+                      : 'calendar-sync-outline'
+                }
                 size={21}
                 color={tone}
               />

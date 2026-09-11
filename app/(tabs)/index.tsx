@@ -9,13 +9,7 @@ import {
 import { File } from 'expo-file-system';
 import { useRouter, useFocusEffect, useLocalSearchParams, useScrollToTop } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Animated as RNAnimated,
-  Easing,
-  Pressable,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Animated as RNAnimated, Easing, Pressable, View } from 'react-native';
 import Animated, {
   useAnimatedRef,
   useAnimatedScrollHandler,
@@ -107,6 +101,8 @@ import {
   type SplitGroup,
 } from '@/lib/splits';
 import { resolveSplitDraft } from '@/lib/split-draft';
+import { createCardEMIPlan } from '@/lib/emi-plans';
+import { refundReminderAtNineAM } from '@/lib/refundables';
 import { fetchDashboard, type DashboardResponse } from '@/lib/insights';
 import {
   confirmSubscriptionOccurrence,
@@ -267,6 +263,11 @@ export default function HomeScreen() {
       splitGroupId: null,
       splitGroupName: '',
       splitParticipants: [],
+      refundableAmount: '',
+      refundExpectedOn: '',
+      refundReminderEnabled: true,
+      emiTenureMonths: '',
+      emiRatePct: '',
       subscriptionEnabled: false,
       subscriptionName: '',
       subscriptionMerchant: '',
@@ -287,8 +288,9 @@ export default function HomeScreen() {
   // The parser's hints are kept instead of the suggestion they produce, so the
   // prompt is re-derived against the current accounts. Once the hinted account
   // exists — including one just created from the prompt itself — it stops asking.
-  const [accountSuggestionHint, setAccountSuggestionHint] =
-    useState<AccountSuggestionHint | null>(null);
+  const [accountSuggestionHint, setAccountSuggestionHint] = useState<AccountSuggestionHint | null>(
+    null
+  );
   /**
    * The suggestion the user carried to the setup screen, with how many accounts
    * of that type existed when they left. It is the fallback for a setup saved
@@ -832,7 +834,6 @@ export default function HomeScreen() {
     router.setParams({ captureFile: '' });
   }, [captureFile, router, scrollRef]);
 
-
   /**
    * Tapping the collapsed pill puts the card back and the cursor in it.
    *
@@ -1013,10 +1014,45 @@ export default function HomeScreen() {
             title: formData.title.trim() || 'Untitled Transaction',
             time: toApiTime(formData.time) ?? undefined,
             attachment: attachmentUrl,
+            ...(formData.tag === 'Refundable'
+              ? {
+                  refundable_amount: formData.refundableAmount.trim(),
+                  refund_expected_on: formatApiDate(
+                    parseDateLabel(formData.refundExpectedOn) as Date
+                  ),
+                  refund_reminder_at: formData.refundReminderEnabled
+                    ? refundReminderAtNineAM(formData.refundExpectedOn)
+                    : null,
+                  refund_status: 'pending' as const,
+                }
+              : {}),
             ...(splitPayload ? { split: splitPayload } : {}),
           },
           createIdempotencyKey.current
         );
+        let convertedToEMI = false;
+        if (
+          formData.tag === 'EMI' &&
+          resolvedAccount &&
+          normalizeAccountType(resolvedAccount.type) === 'credit_card'
+        ) {
+          const sourceEntryID = Number(createdEntry.id);
+          if (!Number.isInteger(sourceEntryID) || sourceEntryID <= 0) {
+            throw new Error('The saved purchase could not be linked to its EMI plan.');
+          }
+          await createCardEMIPlan(token, resolvedAccount.id, {
+            title: formData.title.trim() || 'EMI purchase',
+            merchant: formData.merchant.trim(),
+            category: formData.category,
+            principal: Number(formData.amount.replace(/,/g, '')),
+            annual_rate_pct: Number(formData.emiRatePct || 0),
+            tenure_months: Number(formData.emiTenureMonths),
+            purchased_on: parsedDate ? formatApiDate(parsedDate) : formData.date,
+            source_entry_id: sourceEntryID,
+            notes: formData.notes.trim(),
+          });
+          convertedToEMI = true;
+        }
         if (formData.subscriptionEnabled && formData.subscriptionBillingInterval) {
           await createSubscription(token, {
             name: formData.subscriptionName.trim(),
@@ -1039,13 +1075,21 @@ export default function HomeScreen() {
             account_id: resolvedAccount?.id ?? null,
           });
         }
-        const createdTransaction = mapEntryToTransaction(createdEntry);
-        setTransactions((current) => [
-          createdTransaction,
-          ...current.filter((transaction) => transaction.id !== createdTransaction.id),
-        ]);
-        setSaveConfirmation(formData.subscriptionEnabled ? 'Saved with subscription' : 'Saved');
-        setNewTransactionId(createdTransaction.id);
+        if (convertedToEMI) {
+          setTransactions((current) =>
+            current.filter((transaction) => transaction.id !== String(createdEntry.id))
+          );
+          setSaveConfirmation('EMI plan created');
+          setNewTransactionId(null);
+        } else {
+          const createdTransaction = mapEntryToTransaction(createdEntry);
+          setTransactions((current) => [
+            createdTransaction,
+            ...current.filter((transaction) => transaction.id !== createdTransaction.id),
+          ]);
+          setSaveConfirmation(formData.subscriptionEnabled ? 'Saved with subscription' : 'Saved');
+          setNewTransactionId(createdTransaction.id);
+        }
 
         createIdempotencyKey.current = null;
         setForm(createBlankForm());
@@ -1054,7 +1098,7 @@ export default function HomeScreen() {
         setAccountSuggestionHint(null);
         setIsEditOpen(false);
         notifyTransactionsChanged();
-        if (formData.type === 'Expense') {
+        if (formData.type === 'Expense' && !convertedToEMI) {
           void showNewBudgetAlert(budgetNotificationIds);
         }
         void fetchSplitOptions();
@@ -1167,6 +1211,7 @@ export default function HomeScreen() {
           accountHint: data.account_hint,
           cardNetwork: data.card_network,
         });
+        const splitDraft = resolveSplitDraft(data, splitFriends, splitGroups);
         setAiReview({
           confidence: data.confidence,
           needsConfirmation: data.needs_confirmation,
@@ -1175,7 +1220,10 @@ export default function HomeScreen() {
             : Array.from(
                 new Set([...(data.missing_fields ?? []), 'title', 'mode', 'category', 'tag'])
               ),
-          clarifications: data.clarifications,
+          clarifications: [
+            ...(data.clarifications ?? []),
+            ...(splitDraft.splitDefaultWarning ? [splitDraft.splitDefaultWarning] : []),
+          ],
           smartSortingDisabled: !smartSorting,
           // What the AI worked from, so the review sheet can show it back. A
           // wrong field is usually a misheard word, and the phrase is the only
@@ -1191,7 +1239,6 @@ export default function HomeScreen() {
               : normalizeDateLabel(data.date, formatDateLabel(new Date()));
           const tagValue = data.tag ?? data.tags?.[0] ?? '';
           const newType = missing.has('type') ? '' : (toTitleCase(data.type) ?? '');
-          const splitDraft = resolveSplitDraft(data, splitFriends, splitGroups);
           const subscriptionCandidate = data.subscription_candidate;
           const subscriptionInterval = isBillingInterval(subscriptionCandidate?.billing_interval)
             ? subscriptionCandidate.billing_interval
@@ -1220,6 +1267,12 @@ export default function HomeScreen() {
             splitGroupId: splitDraft.splitGroupId,
             splitGroupName: splitDraft.splitGroupName,
             splitParticipants: splitDraft.splitParticipants,
+            refundableAmount:
+              data.refundable_amount != null ? toAmountInputValue(data.refundable_amount) : '',
+            refundExpectedOn: data.refund_expected_on ?? '',
+            refundReminderEnabled: true,
+            emiTenureMonths: data.emi_tenure_months != null ? String(data.emi_tenure_months) : '',
+            emiRatePct: data.emi_rate_pct != null ? String(data.emi_rate_pct) : '',
             subscriptionEnabled: Boolean(subscriptionCandidate),
             subscriptionName: subscriptionCandidate?.name ?? data.merchant ?? data.title ?? '',
             subscriptionMerchant: subscriptionCandidate?.merchant ?? data.merchant ?? '',
@@ -1518,7 +1571,10 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
           onLayout={(event) => setViewportHeight(Math.round(event.nativeEvent.layout.height))}
           contentContainerStyle={{
-            paddingTop: pinnedTopHeight + captureExpandedHeight,
+            // Every card below can be the first feed item. Keep the breathing
+            // room on the container instead of relying on a previous sibling's
+            // bottom margin (the low-credit card exposed that assumption).
+            paddingTop: pinnedTopHeight + captureExpandedHeight + themeTokens.spacing.md,
             paddingBottom:
               keyboardInset > 0
                 ? keyboardInset + 24
@@ -1569,7 +1625,9 @@ export default function HomeScreen() {
                           )
                         );
                       }}>
-                      <ThemedText tone="onAccent" className="text-xs font-black">Confirm</ThemedText>
+                      <ThemedText tone="onAccent" className="text-xs font-black">
+                        Confirm
+                      </ThemedText>
                     </Pressable>
                     <Pressable
                       className="rounded-xl border px-4 py-2"
@@ -1691,9 +1749,12 @@ export default function HomeScreen() {
                       className="rounded-xl px-4 py-2"
                       style={{ backgroundColor: themeTokens.colors.accent }}
                       onPress={() => {
-                        const accountID = accountSetupNudge.action_url?.match(/^\/accounts\/(\d+)$/)?.[1];
+                        const accountID =
+                          accountSetupNudge.action_url?.match(/^\/accounts\/(\d+)$/)?.[1];
                         if (!accountID || !token) return;
-                        void markNotificationRead(token, accountSetupNudge.id).catch(() => undefined);
+                        void markNotificationRead(token, accountSetupNudge.id).catch(
+                          () => undefined
+                        );
                         setAccountSetupNudge(null);
                         router.push({ pathname: '/accounts/[id]', params: { id: accountID } });
                       }}>
@@ -1863,7 +1924,9 @@ export default function HomeScreen() {
           }}
           pointerEvents="none">
           <MaterialCommunityIcons name="check" size={15} color="white" />
-          <ThemedText tone="onAccent" className="text-xs font-bold">{saveConfirmation}</ThemedText>
+          <ThemedText tone="onAccent" className="text-xs font-bold">
+            {saveConfirmation}
+          </ThemedText>
         </RNAnimated.View>
       )}
 
@@ -1883,6 +1946,7 @@ export default function HomeScreen() {
         splitFriends={splitFriends}
         splitGroups={splitGroups}
         recentEntries={transactions}
+        authToken={token}
         accountSuggestion={accountSuggestion}
         onSetupSuggestedAccount={(suggestion) => {
           pendingSuggestionSetup.current = {
@@ -1916,7 +1980,10 @@ export default function HomeScreen() {
             identifier: suggestion.identifier ?? base.identifier,
             auto_created: true,
           });
-          setAccounts((current) => [saved, ...current.filter((account) => account.id !== saved.id)]);
+          setAccounts((current) => [
+            saved,
+            ...current.filter((account) => account.id !== saved.id),
+          ]);
           setAccountSuggestionHint(null);
           return saved;
         }}

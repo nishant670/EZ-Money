@@ -79,8 +79,8 @@ describe('the vocabulary for destructive and structural actions', () => {
     // this proves the screen the report came from says the right ones.
     const detail = readFileSync(join(process.cwd(), 'app', 'entry', '[id].tsx'), 'utf8');
 
-    expect(detail).toContain('>Edit</ThemedText>');
-    expect(detail).toContain('>Delete</ThemedText>');
+    expect(detail).toMatch(/>\s*Edit\s*<\/ThemedText>/);
+    expect(detail).toMatch(/>\s*Delete\s*<\/ThemedText>/);
     expect(detail).toContain('Delete this transaction?');
     // Deletion is now delayed globally, so the confirmation must describe the
     // real safety window instead of claiming it is immediately final.

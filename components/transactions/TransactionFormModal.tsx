@@ -27,6 +27,7 @@ import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Shimmer } from '@/components/ui/Shimmer';
 import { useMotion } from '@/hooks/use-motion';
+import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { ThemedDeleteDialog } from '@/components/ui/ThemedConfirmDialog';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { CURRENCY_SYMBOL, DEFAULT_CURRENCY } from '@/constants/Currency';
@@ -38,10 +39,12 @@ import {
   getAccountsForPaymentMode,
   getAutoAccountPayloadForPaymentMode,
   getPreferredAccountForPaymentMode,
+  normalizeAccountType,
 } from '@/lib/accounts';
+import { calculateEMI, type EMICalculation } from '@/lib/emi';
 import { formatTime, uses24HourClock } from '@/lib/datetime';
 import { haptics } from '@/lib/haptics';
-import { toAmountInputValue, toKeypadValue } from '@/lib/money';
+import { formatMoney, toAmount, toAmountInputValue, toKeypadValue } from '@/lib/money';
 import { ATTACHMENT_PICKER_TYPES, isLocalAttachmentUri } from '@/lib/uploads';
 import type { SplitFriend, SplitGroup } from '@/lib/splits';
 import type { BillingInterval } from '@/lib/subscriptions';
@@ -110,6 +113,11 @@ export type EntryForm = {
   splitGroupId: number | null;
   splitGroupName: string;
   splitParticipants: SplitParticipantForm[];
+  refundableAmount: string;
+  refundExpectedOn: string;
+  refundReminderEnabled: boolean;
+  emiTenureMonths: string;
+  emiRatePct: string;
   subscriptionEnabled: boolean;
   subscriptionName: string;
   subscriptionMerchant: string;
@@ -171,6 +179,8 @@ interface TransactionFormModalProps {
    * path does not run.
    */
   recentEntries?: Transaction[];
+  /** Used only for the server-authoritative EMI schedule preview. */
+  authToken?: string | null;
 }
 
 const emptyAccounts: Account[] = [];
@@ -198,6 +208,11 @@ const fieldLabels: Record<keyof EntryForm, string> = {
   splitGroupId: 'Split group',
   splitGroupName: 'Split group',
   splitParticipants: 'Split shares',
+  refundableAmount: 'Refundable amount',
+  refundExpectedOn: 'Expected refund date',
+  refundReminderEnabled: 'Refund reminder',
+  emiTenureMonths: 'EMI tenure',
+  emiRatePct: 'EMI interest rate',
   subscriptionEnabled: 'Subscription',
   subscriptionName: 'Subscription name',
   subscriptionMerchant: 'Subscription merchant',
@@ -238,7 +253,18 @@ const subscriptionIntervalOptions: BillingInterval[] = [
   'quarterly',
   'yearly',
 ];
-const tagOptions = ['Investment', 'Lending', 'EMI', 'Subscription', 'General'];
+const tagOptions = ['Investment', 'Lending', 'EMI', 'Refundable', 'Subscription', 'General'];
+const emiTenureOptions = [3, 6, 9, 12, 18, 24];
+
+const nextMonthClamped = (value: string) => {
+  const purchased = parseDateLabel(value);
+  if (!purchased) return '';
+  const targetYear =
+    purchased.getMonth() === 11 ? purchased.getFullYear() + 1 : purchased.getFullYear();
+  const targetMonth = (purchased.getMonth() + 1) % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return formatDateLabel(new Date(targetYear, targetMonth, Math.min(purchased.getDate(), lastDay)));
+};
 
 const splitParticipantDivisor = (participantCount: number) => participantCount + 1;
 
@@ -388,6 +414,7 @@ export function TransactionFormModal({
   initialFocus,
   categorySuggestions = [],
   recentEntries = emptyRecentEntries,
+  authToken,
 }: TransactionFormModalProps) {
   const themeTokens = useThemeTokens();
   const theme = themeTokens.colors;
@@ -432,6 +459,10 @@ export function TransactionFormModal({
   /** Horizontal nudge for the validation shake. */
   const shakeAnim = useSharedValue(0);
   const [showModal, setShowModal] = useState(visible);
+  // iOS's KeyboardAvoidingView already reserves the keyboard. Android modal
+  // windows are not reliably resized, so their inset belongs at the end of the
+  // scroll content—not inside the mid-list split section.
+  const keyboardInset = useKeyboardInset(showModal && Platform.OS === 'android');
   const resolveEntryFormAccount = useCallback(
     (nextForm: EntryForm): EntryForm => {
       if (mode === 'quick-prompt') {
@@ -478,6 +509,11 @@ export function TransactionFormModal({
       splitGroupId: null,
       splitGroupName: '',
       splitParticipants: [],
+      refundableAmount: '',
+      refundExpectedOn: '',
+      refundReminderEnabled: true,
+      emiTenureMonths: '',
+      emiRatePct: '',
       subscriptionEnabled: false,
       subscriptionName: '',
       subscriptionMerchant: '',
@@ -527,6 +563,10 @@ export function TransactionFormModal({
   const [isModePickerVisible, setIsModePickerVisible] = useState(false);
   const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
   const [isAccountPickerVisible, setIsAccountPickerVisible] = useState(false);
+  const [isRefundDatePickerVisible, setIsRefundDatePickerVisible] = useState(false);
+  const [emiCalculation, setEmiCalculation] = useState<EMICalculation | null>(null);
+  const [emiCalculationError, setEmiCalculationError] = useState<string | null>(null);
+  const [isCalculatingEMI, setIsCalculatingEMI] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -550,6 +590,61 @@ export function TransactionFormModal({
     () => getAccountsForPaymentMode(accounts, form.mode),
     [accounts, form.mode]
   );
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === form.accountId) ?? null,
+    [accounts, form.accountId]
+  );
+  const isEMICreditCard =
+    !isEdit && form.tag === 'EMI' && normalizeAccountType(selectedAccount?.type) === 'credit_card';
+  const emiFirstInstallment = useMemo(() => nextMonthClamped(form.date), [form.date]);
+
+  useEffect(() => {
+    const amount = Number(form.amount.replace(/,/g, ''));
+    const tenure = Number(form.emiTenureMonths);
+    const rate = Number(form.emiRatePct || 0);
+    if (
+      !visible ||
+      !authToken ||
+      !isEMICreditCard ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isInteger(tenure) ||
+      tenure <= 0 ||
+      !Number.isFinite(rate) ||
+      rate < 0
+    ) {
+      setEmiCalculation(null);
+      setEmiCalculationError(null);
+      setIsCalculatingEMI(false);
+      return;
+    }
+    let cancelled = false;
+    setIsCalculatingEMI(true);
+    setEmiCalculationError(null);
+    const timer = setTimeout(() => {
+      void calculateEMI(authToken, {
+        principal_amount: amount,
+        annual_interest_rate_percent: rate,
+        tenure_months: tenure,
+      })
+        .then((result) => {
+          if (!cancelled) setEmiCalculation(result);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setEmiCalculation(null);
+            setEmiCalculationError('Could not calculate the EMI schedule.');
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setIsCalculatingEMI(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [authToken, form.amount, form.emiRatePct, form.emiTenureMonths, isEMICreditCard, visible]);
   const paymentLanguage = getPaymentLanguage(form.type);
   const modeOptions = useMemo(
     () =>
@@ -603,7 +698,10 @@ export function TransactionFormModal({
       } catch (error) {
         haptics.rejected();
         setAutoCreateAccountError(
-          getFriendlyErrorMessage(error, 'Could not create the account. You can still save without it.')
+          getFriendlyErrorMessage(
+            error,
+            'Could not create the account. You can still save without it.'
+          )
         );
       } finally {
         setAutoCreatingAccount(false);
@@ -655,9 +753,9 @@ export function TransactionFormModal({
   }, [aiReview]);
   const hasReviewMetadata = Boolean(
     aiReview?.confidence ||
-      aiReview?.needsConfirmation ||
-      aiReview?.missingFields ||
-      aiReview?.clarifications
+    aiReview?.needsConfirmation ||
+    aiReview?.missingFields ||
+    aiReview?.clarifications
   );
   const categoryNeedsReview = reviewFields.includes('category');
   const accountNeedsReview = reviewFields.includes('account') || reviewFields.includes('accountId');
@@ -906,6 +1004,11 @@ export function TransactionFormModal({
       splitGroupId: null,
       splitGroupName: '',
       splitParticipants: [],
+      refundableAmount: '',
+      refundExpectedOn: '',
+      refundReminderEnabled: true,
+      emiTenureMonths: '',
+      emiRatePct: '',
       subscriptionEnabled: false,
       subscriptionName: '',
       subscriptionMerchant: '',
@@ -1128,10 +1231,41 @@ export function TransactionFormModal({
       rejectSave(`Please provide ${fieldLabels[missingField]}.`);
       return;
     }
-    const amountValue = Number(form.amount);
+    const amountValue = Number(form.amount.replace(/,/g, ''));
     if (!Number.isFinite(amountValue) || amountValue <= 0) {
       rejectSave('Please enter a valid amount.');
       return;
+    }
+    if (form.tag === 'Refundable') {
+      const refundableAmount = Number(form.refundableAmount.replace(/,/g, ''));
+      if (!Number.isFinite(refundableAmount) || refundableAmount <= 0) {
+        rejectSave('Please enter how much is refundable.');
+        return;
+      }
+      if (refundableAmount > amountValue) {
+        rejectSave('Refundable amount cannot exceed the transaction amount.');
+        return;
+      }
+      if (!parseDateLabel(form.refundExpectedOn)) {
+        rejectSave('Please choose when the refund is expected.');
+        return;
+      }
+    }
+    if (isEMICreditCard) {
+      const tenure = Number(form.emiTenureMonths);
+      const rate = Number(form.emiRatePct || 0);
+      if (!Number.isInteger(tenure) || tenure < 1 || tenure > 360) {
+        rejectSave('Please choose an EMI tenure.');
+        return;
+      }
+      if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+        rejectSave('EMI interest rate must be between 0 and 100%.');
+        return;
+      }
+      if (!emiCalculation || isCalculatingEMI) {
+        rejectSave('Wait for the EMI schedule before saving.');
+        return;
+      }
     }
     if (form.splitEnabled) {
       if (form.type !== 'Expense') {
@@ -1219,7 +1353,7 @@ export function TransactionFormModal({
   };
 
   const addSplitParticipant = () => {
-    const amountValue = Number(form.amount || 0);
+    const amountValue = toAmount(form.amount);
     const nextCount = form.splitParticipants.length + 1;
     const defaultShare = equalShareAmount(amountValue, nextCount);
     setForm((prev) => ({
@@ -1249,7 +1383,7 @@ export function TransactionFormModal({
    */
   const rebalanceSplitParticipants = (
     participants: SplitParticipantForm[],
-    amountValue = Number(form.amount || 0)
+    amountValue = toAmount(form.amount)
   ) => {
     if (participants.length === 0) return participants;
     const sharePercent = equalSharePercent(participants.length);
@@ -1263,14 +1397,14 @@ export function TransactionFormModal({
       if (base.length === 0) return prev;
       return {
         ...prev,
-        splitParticipants: rebalanceSplitParticipants(base, Number(prev.amount || 0)),
+        splitParticipants: rebalanceSplitParticipants(base, toAmount(prev.amount)),
       };
     });
     // With no amount there is nothing to write into the amount fields, and a
     // button that leaves the screen exactly as it found it reads as broken.
     // The percentages are the half of the answer that exists either way, so
     // the view moves to where the result is.
-    if (!(Number(form.amount || 0) > 0)) {
+    if (!(toAmount(form.amount) > 0)) {
       setSplitShareMode('percentage');
     }
   };
@@ -1289,7 +1423,7 @@ export function TransactionFormModal({
       ...prev,
       splitParticipants: rebalanceSplitParticipants(
         prev.splitParticipants.filter((_, participantIndex) => participantIndex !== index),
-        Number(prev.amount || 0)
+        toAmount(prev.amount)
       ),
     }));
   };
@@ -1331,7 +1465,9 @@ export function TransactionFormModal({
   const renderReceiptField = (withSectionLabel: boolean) => (
     <View>
       {withSectionLabel && (
-        <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
+        <ThemedText
+          tone="muted"
+          className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
           Receipt
         </ThemedText>
       )}
@@ -1666,18 +1802,24 @@ export function TransactionFormModal({
           accessibilityRole="button"
           onPress={requestClose}
           className="w-full py-4 items-center justify-center active:opacity-50">
-          <ThemedText tone="muted" className="font-bold">Cancel</ThemedText>
+          <ThemedText tone="muted" className="font-bold">
+            Cancel
+          </ThemedText>
         </Pressable>
       )}
       {onDelete && (
         <Pressable
           onPress={onDelete}
           className="w-full py-4 items-center justify-center active:opacity-50">
-          <ThemedText tone="negative" className="font-bold">Delete prompt</ThemedText>
+          <ThemedText tone="negative" className="font-bold">
+            Delete prompt
+          </ThemedText>
         </Pressable>
       )}
       {formError && (
-        <ThemedText tone="negative" className="text-center text-xs mt-2">{formError}</ThemedText>
+        <ThemedText tone="negative" className="text-center text-xs mt-2">
+          {formError}
+        </ThemedText>
       )}
     </View>
   );
@@ -1723,15 +1865,19 @@ export function TransactionFormModal({
                 // view, so it has to take the space that is left rather than a
                 // fixed share of the sheet.
                 style={fastEntry || draftReview ? { flex: 1 } : { maxHeight: '90%' }}
-                contentContainerStyle={
-                  isKeypadVisible
-                    ? // Capture is a short screen in a tall sheet. Growing the
-                      // content to fill it lets the amount block centre itself
-                      // in what is left, instead of stacking at the top with a
-                      // third of the panel empty beneath it.
-                      { paddingBottom: 12, flexGrow: 1 }
-                    : { paddingBottom: fastEntry || draftReview ? 12 : 28 }
-                }>
+                contentContainerStyle={{
+                  paddingBottom:
+                    keyboardInset > 0
+                      ? keyboardInset + 24
+                      : isKeypadVisible || fastEntry || draftReview
+                        ? 12
+                        : 28,
+                  // Capture is a short screen in a tall sheet. Growing the
+                  // content to fill it lets the amount block centre itself in
+                  // what is left, instead of stacking at the top with a third
+                  // of the panel empty beneath it.
+                  ...(isKeypadVisible ? { flexGrow: 1 } : null),
+                }}>
                 <View className={fastEntry ? 'items-center px-5 mb-2' : 'items-center px-5 mb-6'}>
                   <ThemedText
                     className={
@@ -1784,7 +1930,9 @@ export function TransactionFormModal({
                           size={13}
                           color="#9CA3AF"
                         />
-                        <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
+                        <ThemedText
+                          tone="muted"
+                          className="text-[10px] font-black uppercase tracking-widest">
                           {aiReview.inputSource === 'text' ? 'You typed' : 'You said'}
                         </ThemedText>
                       </View>
@@ -1806,7 +1954,9 @@ export function TransactionFormModal({
                             size={18}
                             color="#D97706"
                           />
-                          <ThemedText tone="warning" className="ml-2 text-[11px] font-black uppercase tracking-widest">
+                          <ThemedText
+                            tone="warning"
+                            className="ml-2 text-[11px] font-black uppercase tracking-widest">
                             AI draft
                           </ThemedText>
                         </View>
@@ -1898,7 +2048,9 @@ export function TransactionFormModal({
 
                       {draftFlaggedFields.length > 0 && (
                         <View className="mb-4 gap-3">
-                          <ThemedText tone="warning" className="mb-1 text-[11px] font-black uppercase tracking-widest italic">
+                          <ThemedText
+                            tone="warning"
+                            className="mb-1 text-[11px] font-black uppercase tracking-widest italic">
                             {draftPendingCount > 0 ? 'Check these first' : 'You checked these'}
                           </ThemedText>
                           {draftFlaggedFields.map((field, fieldIndex) => (
@@ -1933,7 +2085,9 @@ export function TransactionFormModal({
                             </Pressable>
                             <Pressable
                               disabled={autoCreatingAccount}
-                              onPress={() => void handleAutoCreateSuggestedAccount(visibleAccountSuggestion)}
+                              onPress={() =>
+                                void handleAutoCreateSuggestedAccount(visibleAccountSuggestion)
+                              }
                               className="rounded-full px-3 py-2">
                               <ThemedText tone="muted" className="text-xs font-black">
                                 {autoCreatingAccount ? 'Creating…' : 'Create one for me'}
@@ -1964,7 +2118,9 @@ export function TransactionFormModal({
                                 color="#10B981"
                               />
                               <View className="flex-1">
-                                <ThemedText tone="muted" className="text-[10px] font-bold uppercase">
+                                <ThemedText
+                                  tone="muted"
+                                  className="text-[10px] font-bold uppercase">
                                   {draftConfidentCount > 0
                                     ? `${draftConfidentCount} field${draftConfidentCount === 1 ? '' : 's'} the AI is sure about`
                                     : 'Everything else'}
@@ -1999,7 +2155,9 @@ export function TransactionFormModal({
                     <View className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
                       <View className="flex-row items-center">
                         <MaterialCommunityIcons name="playlist-check" size={18} color="#D97706" />
-                        <ThemedText tone="warning" className="ml-2 text-[11px] font-black uppercase tracking-widest">
+                        <ThemedText
+                          tone="warning"
+                          className="ml-2 text-[11px] font-black uppercase tracking-widest">
                           Review cleanup
                         </ThemedText>
                       </View>
@@ -2017,7 +2175,9 @@ export function TransactionFormModal({
                       list instead, where it sits with the rest of the draft. */}
                   {!draftReview && (
                     <View className="mb-4">
-                      <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-2 italic">
+                      <ThemedText
+                        tone="muted"
+                        className="text-[10px] font-black uppercase tracking-widest mb-2 italic">
                         Transaction Type
                       </ThemedText>
                       <View className="flex-row bg-gray-100 dark:bg-gray-800 rounded-[22px] p-1 relative overflow-hidden">
@@ -2296,9 +2456,7 @@ export function TransactionFormModal({
                         }}>
                         {accountNeedsReview && (
                           <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
-                            <ThemedText className="text-[8px] font-black">
-                              Check this
-                            </ThemedText>
+                            <ThemedText className="text-[8px] font-black">Check this</ThemedText>
                           </View>
                         )}
                         <View className="flex-row items-center gap-3 flex-1 pr-2">
@@ -2360,7 +2518,9 @@ export function TransactionFormModal({
                                 <Pressable
                                   accessibilityRole="button"
                                   disabled={autoCreatingAccount}
-                                  onPress={() => void handleAutoCreateSuggestedAccount(visibleAccountSuggestion)}
+                                  onPress={() =>
+                                    void handleAutoCreateSuggestedAccount(visibleAccountSuggestion)
+                                  }
                                   className="rounded-full px-3 py-2">
                                   <ThemedText tone="muted" className="text-xs font-black">
                                     {autoCreatingAccount ? 'Creating…' : 'Create one for me'}
@@ -2395,6 +2555,288 @@ export function TransactionFormModal({
                       onUpdateParticipant={updateSplitParticipant}
                       onRemoveParticipant={removeSplitParticipant}
                     />
+                  )}
+
+                {mode !== 'quick-prompt' && (showFullForm || draftReview) && form.tag === 'EMI' && (
+                  <View className="px-5 mb-6">
+                    <View
+                      className="rounded-[24px] border p-4"
+                      style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                      <View className="flex-row items-start gap-3">
+                        <View
+                          className="h-10 w-10 items-center justify-center rounded-2xl"
+                          style={{ backgroundColor: accentSurface }}>
+                          <MaterialCommunityIcons
+                            name="calendar-month-outline"
+                            size={20}
+                            color={accent}
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <ThemedText className="text-sm font-black" style={{ color: theme.text }}>
+                            EMI schedule
+                          </ThemedText>
+                          <ThemedText tone="muted" className="mt-1 text-xs">
+                            {isEMICreditCard
+                              ? `Convert this purchase on ${selectedAccount?.name ?? 'the selected card'}.`
+                              : isEdit
+                                ? 'Existing entries keep EMI as a label. Create a new credit-card transaction to build an instalment schedule.'
+                                : 'EMI is only a label until you choose a credit-card account. Non-card entries are saved without an instalment schedule.'}
+                          </ThemedText>
+                        </View>
+                      </View>
+
+                      {isEMICreditCard ? (
+                        <View className="mt-4 gap-4">
+                          <View>
+                            <ThemedText
+                              tone="muted"
+                              className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                              Tenure
+                            </ThemedText>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                              <View className="flex-row gap-2">
+                                {emiTenureOptions.map((months) => (
+                                  <Pressable
+                                    key={months}
+                                    accessibilityRole="button"
+                                    accessibilityState={{
+                                      selected: form.emiTenureMonths === String(months),
+                                    }}
+                                    onPress={() =>
+                                      setForm((previous) => ({
+                                        ...previous,
+                                        emiTenureMonths: String(months),
+                                      }))
+                                    }
+                                    className="rounded-full border px-4 py-2"
+                                    style={{
+                                      borderColor:
+                                        form.emiTenureMonths === String(months)
+                                          ? accent
+                                          : theme.border,
+                                      backgroundColor:
+                                        form.emiTenureMonths === String(months)
+                                          ? accent
+                                          : theme.card,
+                                    }}>
+                                    <ThemedText
+                                      className="text-xs font-black"
+                                      style={{
+                                        color:
+                                          form.emiTenureMonths === String(months)
+                                            ? '#FFFFFF'
+                                            : theme.text,
+                                      }}>
+                                      {months} mo
+                                    </ThemedText>
+                                  </Pressable>
+                                ))}
+                              </View>
+                            </ScrollView>
+                          </View>
+                          <View className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
+                            <ThemedText
+                              tone="muted"
+                              className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                              Annual interest rate
+                            </ThemedText>
+                            <TextInput
+                              value={form.emiRatePct}
+                              onChangeText={(text) =>
+                                setForm((previous) => ({ ...previous, emiRatePct: text }))
+                              }
+                              placeholder="0 for no-cost EMI"
+                              placeholderTextColor={detailInputPlaceholderColor}
+                              keyboardType="decimal-pad"
+                              className="p-0 text-sm font-bold"
+                              style={{ color: theme.text }}
+                            />
+                          </View>
+                          <View
+                            className="rounded-2xl p-4"
+                            style={{ backgroundColor: theme.secondary }}>
+                            {isCalculatingEMI ? (
+                              <View className="flex-row items-center gap-2">
+                                <ActivityIndicator size="small" color={accent} />
+                                <ThemedText tone="muted" className="text-xs">
+                                  Calculating schedule…
+                                </ThemedText>
+                              </View>
+                            ) : emiCalculation ? (
+                              <>
+                                <ThemedText
+                                  className="text-base font-black"
+                                  style={{ color: theme.text }}>
+                                  {formatMoney(emiCalculation.principal_amount)} ÷{' '}
+                                  {emiCalculation.tenure_months} ={' '}
+                                  {formatMoney(emiCalculation.monthly_emi)}/mo
+                                </ThemedText>
+                                <ThemedText tone="muted" className="mt-1 text-xs">
+                                  First instalment{' '}
+                                  {emiFirstInstallment || 'one month after purchase'}
+                                  {emiCalculation.total_interest > 0
+                                    ? ` · ${formatMoney(emiCalculation.total_interest)} total interest`
+                                    : ' · No-cost EMI'}
+                                </ThemedText>
+                              </>
+                            ) : (
+                              <ThemedText
+                                tone={emiCalculationError ? 'negative' : 'muted'}
+                                className="text-xs">
+                                {emiCalculationError ??
+                                  'Choose a tenure to preview the monthly schedule.'}
+                              </ThemedText>
+                            )}
+                          </View>
+                          <View className="rounded-2xl bg-amber-50 p-3 dark:bg-amber-900/20">
+                            <ThemedText tone="warning" className="text-xs font-bold">
+                              Saving replaces this purchase entry with the EMI plan. Only each
+                              monthly instalment will appear as spending, so the purchase is not
+                              counted twice.
+                            </ThemedText>
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                )}
+
+                {mode !== 'quick-prompt' &&
+                  (showFullForm || draftReview) &&
+                  form.tag === 'Refundable' && (
+                    <View className="px-5 mb-6">
+                      <View
+                        className="rounded-[24px] border p-4"
+                        style={{ backgroundColor: theme.card, borderColor: theme.border }}>
+                        <View className="flex-row items-center gap-3">
+                          <View
+                            className="h-10 w-10 items-center justify-center rounded-2xl"
+                            style={{ backgroundColor: accentSurface }}>
+                            <MaterialCommunityIcons name="cash-refund" size={20} color={accent} />
+                          </View>
+                          <View className="flex-1">
+                            <ThemedText
+                              className="text-sm font-black"
+                              style={{ color: theme.text }}>
+                              Refund tracking
+                            </ThemedText>
+                            <ThemedText tone="muted" className="text-xs">
+                              Track the part of this payment expected back.
+                            </ThemedText>
+                          </View>
+                        </View>
+                        <View className="mt-4 gap-3">
+                          <View className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
+                            <ThemedText
+                              tone="muted"
+                              className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                              How much is refundable?
+                            </ThemedText>
+                            <TextInput
+                              value={form.refundableAmount}
+                              onChangeText={(text) =>
+                                setForm((previous) => ({ ...previous, refundableAmount: text }))
+                              }
+                              placeholder="5,000"
+                              placeholderTextColor={detailInputPlaceholderColor}
+                              keyboardType="decimal-pad"
+                              className="p-0 text-sm font-bold"
+                              style={{ color: theme.text }}
+                            />
+                          </View>
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => {
+                              const current = parseDateLabel(form.refundExpectedOn) ?? new Date();
+                              if (Platform.OS === 'android') {
+                                DateTimePickerAndroid.open({
+                                  value: current,
+                                  mode: 'date',
+                                  onValueChange: (_event, selected) => {
+                                    if (selected)
+                                      setForm((previous) => ({
+                                        ...previous,
+                                        refundExpectedOn: formatDateLabel(selected),
+                                      }));
+                                  },
+                                  onDismiss: () => undefined,
+                                });
+                              } else {
+                                setIsRefundDatePickerVisible(true);
+                              }
+                            }}
+                            className="flex-row items-center justify-between rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
+                            <View>
+                              <ThemedText
+                                tone="muted"
+                                className="text-[10px] font-black uppercase tracking-widest">
+                                Expected back
+                              </ThemedText>
+                              <ThemedText
+                                className="mt-1 text-sm font-bold"
+                                style={{ color: theme.text }}>
+                                {form.refundExpectedOn || 'Choose a date'}
+                              </ThemedText>
+                            </View>
+                            <MaterialCommunityIcons
+                              name="calendar-outline"
+                              size={20}
+                              color={accent}
+                            />
+                          </Pressable>
+                          {isRefundDatePickerVisible && Platform.OS !== 'android' ? (
+                            <DateTimePicker
+                              value={parseDateLabel(form.refundExpectedOn) ?? new Date()}
+                              mode="date"
+                              display="inline"
+                              onChange={(_event, selected) => {
+                                if (selected)
+                                  setForm((previous) => ({
+                                    ...previous,
+                                    refundExpectedOn: formatDateLabel(selected),
+                                  }));
+                                setIsRefundDatePickerVisible(false);
+                              }}
+                            />
+                          ) : null}
+                          <View
+                            className="flex-row items-center justify-between rounded-2xl border p-3"
+                            style={{ borderColor: theme.border }}>
+                            <View className="flex-1 pr-3">
+                              <ThemedText
+                                className="text-sm font-black"
+                                style={{ color: theme.text }}>
+                                Remind me
+                              </ThemedText>
+                              <ThemedText tone="muted" className="text-xs">
+                                Notify me on the expected date.
+                              </ThemedText>
+                            </View>
+                            <Pressable
+                              accessibilityRole="switch"
+                              accessibilityState={{ checked: form.refundReminderEnabled }}
+                              onPress={() =>
+                                setForm((previous) => ({
+                                  ...previous,
+                                  refundReminderEnabled: !previous.refundReminderEnabled,
+                                }))
+                              }
+                              className="h-8 w-14 justify-center rounded-full px-1"
+                              style={{
+                                backgroundColor: form.refundReminderEnabled ? accent : '#E5E7EB',
+                              }}>
+                              <View
+                                className="h-6 w-6 rounded-full bg-white"
+                                style={{
+                                  alignSelf: form.refundReminderEnabled ? 'flex-end' : 'flex-start',
+                                }}
+                              />
+                            </Pressable>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
                   )}
 
                 {mode !== 'quick-prompt' &&
@@ -2513,7 +2955,9 @@ export function TransactionFormModal({
                             </View>
 
                             <View>
-                              <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                              <ThemedText
+                                tone="muted"
+                                className="mb-2 text-[10px] font-black uppercase tracking-widest">
                                 Billing interval
                               </ThemedText>
                               <View className="flex-row flex-wrap gap-2">
@@ -2573,7 +3017,9 @@ export function TransactionFormModal({
                                   onPress={handleOpenSubscriptionDatePicker}
                                   className="flex-1 flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
                                   <View className="flex-1">
-                                    <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
+                                    <ThemedText
+                                      tone="muted"
+                                      className="text-[10px] font-black uppercase tracking-widest">
                                       Next payment date
                                     </ThemedText>
                                     <ThemedText
@@ -2613,7 +3059,9 @@ export function TransactionFormModal({
                               {form.subscriptionBillingInterval !== 'daily' &&
                               form.subscriptionBillingInterval !== 'business_daily' ? (
                                 <View className="w-28 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-gray-800">
-                                  <ThemedText tone="muted" className="text-[9px] font-black uppercase tracking-wider">
+                                  <ThemedText
+                                    tone="muted"
+                                    className="text-[9px] font-black uppercase tracking-wider">
                                     Remind before
                                   </ThemedText>
                                   <TextInput
@@ -2704,7 +3152,9 @@ export function TransactionFormModal({
                                 }}
                                 className="flex-row items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
                                 <View>
-                                  <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
+                                  <ThemedText
+                                    tone="muted"
+                                    className="text-[10px] font-black uppercase tracking-widest">
                                     Cancellation reminder date
                                   </ThemedText>
                                   <ThemedText className="mt-1 text-sm font-bold">
@@ -2739,12 +3189,16 @@ export function TransactionFormModal({
 
                 {showFullForm && (
                   <View className="px-5 mb-6">
-                    <ThemedText tone="muted" className="text-[11px] font-black uppercase tracking-widest italic mb-4">
+                    <ThemedText
+                      tone="muted"
+                      className="text-[11px] font-black uppercase tracking-widest italic mb-4">
                       {categoryNeedsReview ? 'Needs Attention' : 'Category'}
                     </ThemedText>
                     {visibleCategorySuggestions.length > 0 && (
                       <View className="mb-3">
-                        <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                        <ThemedText
+                          tone="muted"
+                          className="mb-2 text-[10px] font-black uppercase tracking-widest">
                           Suggested from history
                         </ThemedText>
                         <View className="flex-row flex-wrap gap-2">
@@ -2773,9 +3227,7 @@ export function TransactionFormModal({
                     <View className="relative mb-4">
                       {categoryNeedsReview && (
                         <View className="absolute -top-3 right-4 z-10 bg-yellow-400 px-2 py-0.5 rounded-lg">
-                          <ThemedText className="text-[8px] font-black">
-                            Check this
-                          </ThemedText>
+                          <ThemedText className="text-[8px] font-black">Check this</ThemedText>
                         </View>
                       )}
                       <Pressable
@@ -2851,7 +3303,9 @@ export function TransactionFormModal({
                       <View className="mt-4 gap-4">
                         <View className="flex-row gap-4">
                           <View className="flex-1">
-                            <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
+                            <ThemedText
+                              tone="muted"
+                              className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
                               Merchant
                             </ThemedText>
                             <View
@@ -2880,7 +3334,9 @@ export function TransactionFormModal({
                         </View>
 
                         <View>
-                          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
+                          <ThemedText
+                            tone="muted"
+                            className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
                             Tags
                           </ThemedText>
                           <View className="flex-row flex-wrap gap-2">
@@ -2904,7 +3360,9 @@ export function TransactionFormModal({
                         </View>
 
                         <View>
-                          <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
+                          <ThemedText
+                            tone="muted"
+                            className="text-[10px] font-black uppercase tracking-widest mb-3 italic">
                             Notes
                           </ThemedText>
                           <TextInput
@@ -3017,7 +3475,9 @@ export function TransactionFormModal({
                   className="flex-1 items-center rounded-2xl py-3"
                   style={{ backgroundColor: accent }}
                   onPress={handleConfirmDatePicker}>
-                  <ThemedText tone="onAccent" className="font-bold">Set Date</ThemedText>
+                  <ThemedText tone="onAccent" className="font-bold">
+                    Set Date
+                  </ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -3054,7 +3514,9 @@ export function TransactionFormModal({
                   }));
                   setIsCancellationDatePickerVisible(false);
                 }}>
-                <ThemedText tone="onAccent" className="font-bold">Set reminder date</ThemedText>
+                <ThemedText tone="onAccent" className="font-bold">
+                  Set reminder date
+                </ThemedText>
               </Pressable>
             </View>
           </AnimatedBottomSheet>
@@ -3095,7 +3557,9 @@ export function TransactionFormModal({
                     }));
                     setIsSubscriptionDatePickerVisible(false);
                   }}>
-                  <ThemedText tone="onAccent" className="font-bold">Set date</ThemedText>
+                  <ThemedText tone="onAccent" className="font-bold">
+                    Set date
+                  </ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -3159,7 +3623,9 @@ export function TransactionFormModal({
             <ScrollView style={{ maxHeight: 430 }}>
               {visibleCategorySuggestions.length > 0 && (
                 <View className="mb-4 rounded-3xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-900/20">
-                  <ThemedText tone="warning" className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                  <ThemedText
+                    tone="warning"
+                    className="mb-2 text-[10px] font-black uppercase tracking-widest">
                     Suggested from history
                   </ThemedText>
                   <View className="flex-row flex-wrap gap-2">
@@ -3208,7 +3674,9 @@ export function TransactionFormModal({
                 ))}
               </View>
               <View className="mt-5 rounded-3xl border p-4" style={{ borderColor: theme.border }}>
-                <ThemedText tone="muted" className="mb-3 text-[10px] font-black uppercase tracking-widest">
+                <ThemedText
+                  tone="muted"
+                  className="mb-3 text-[10px] font-black uppercase tracking-widest">
                   Custom category
                 </ThemedText>
                 <View className="flex-row gap-3">
@@ -3286,14 +3754,18 @@ export function TransactionFormModal({
                       }}
                       className="rounded-2xl px-5 py-3"
                       style={{ backgroundColor: accent }}>
-                      <ThemedText tone="onAccent" className="font-bold">Set up account</ThemedText>
+                      <ThemedText tone="onAccent" className="font-bold">
+                        Set up account
+                      </ThemedText>
                     </Pressable>
                   ) : null}
                   {actionableAccountSuggestion && onAutoCreateSuggestedAccount ? (
                     <Pressable
                       accessibilityRole="button"
                       disabled={autoCreatingAccount}
-                      onPress={() => void handleAutoCreateSuggestedAccount(actionableAccountSuggestion)}
+                      onPress={() =>
+                        void handleAutoCreateSuggestedAccount(actionableAccountSuggestion)
+                      }
                       className="rounded-2xl border px-5 py-3"
                       style={{ borderColor: accent }}>
                       <ThemedText className="font-bold" style={{ color: accent }}>
@@ -3314,7 +3786,9 @@ export function TransactionFormModal({
                         onManageAccounts(actionableAccountSuggestion ?? undefined);
                       }}
                       className="px-3 py-2">
-                      <ThemedText tone="muted" className="text-xs font-bold">Manage accounts</ThemedText>
+                      <ThemedText tone="muted" className="text-xs font-bold">
+                        Manage accounts
+                      </ThemedText>
                     </Pressable>
                   ) : null}
                 </View>
