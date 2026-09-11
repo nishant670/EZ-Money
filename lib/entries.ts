@@ -39,6 +39,10 @@ export type EntryMutationPayload = {
   source?: 'manual' | 'text' | 'voice';
   source_text?: string;
   attachment?: string | null;
+  refundable_amount?: string | number | null;
+  refund_expected_on?: string | null;
+  refund_reminder_at?: string | null;
+  refund_status?: 'pending' | 'received' | 'written_off' | null;
   split?: {
     group_id?: number | null;
     group_name?: string;
@@ -65,7 +69,11 @@ export const fetchEntry = async (token: string, id: string | number): Promise<Ap
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) {
-    throw await readApiError(response, 'Unable to load the transaction right now.', entryFieldLabels);
+    throw await readApiError(
+      response,
+      'Unable to load the transaction right now.',
+      entryFieldLabels
+    );
   }
   return response.json();
 };
@@ -97,7 +105,11 @@ export const updateEntry = async (
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw await readApiError(response, 'Unable to update the transaction right now.', entryFieldLabels);
+    throw await readApiError(
+      response,
+      'Unable to update the transaction right now.',
+      entryFieldLabels
+    );
   }
   return response.json();
 };
@@ -132,6 +144,10 @@ export const deleteEntry = async (token: string, id: string | number): Promise<v
   // that race is the one thing that is definitely not true.
   if (response.status === 404) return;
   if (!response.ok) {
-    throw await readApiError(response, 'Unable to delete the transaction right now.', entryFieldLabels);
+    throw await readApiError(
+      response,
+      'Unable to delete the transaction right now.',
+      entryFieldLabels
+    );
   }
 };

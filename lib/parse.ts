@@ -148,6 +148,10 @@ export type ParseDraft = {
   title: string | null;
   time: string | null;
   amount: number | null;
+  refundable_amount?: number | null;
+  refund_expected_on?: string | null;
+  emi_tenure_months?: number | null;
+  emi_rate_pct?: number | null;
   currency: string | null;
   mode: string | null;
   card_network: string | null;

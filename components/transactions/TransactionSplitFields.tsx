@@ -3,10 +3,13 @@ import type { Dispatch, SetStateAction } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
 import { roundToPaise, toAmountInputValue } from '@/lib/money';
-import { buildParticipantsForGroup } from '@/lib/split-draft';
+import {
+  buildEqualParticipantsForGroup,
+  buildParticipantsForGroup,
+  resolveParticipantsForGroup,
+} from '@/lib/split-draft';
 import type { SplitFriend, SplitGroup } from '@/lib/splits';
 import type { EntryForm, SplitParticipantForm } from './TransactionFormModal';
 
@@ -14,14 +17,14 @@ export type TransactionSplitShareMode = 'amount' | 'percentage';
 
 const percentFromShare = (shareAmount: string, totalAmount: string) => {
   const share = Number(shareAmount || 0);
-  const total = Number(totalAmount || 0);
+  const total = roundToPaise(totalAmount);
   if (!Number.isFinite(share) || !Number.isFinite(total) || total <= 0) return '';
   return String(Math.round((share / total) * 10000) / 100);
 };
 
 export const shareFromPercent = (percent: string, totalAmount: string) => {
   const parsedPercent = Number(percent || 0);
-  const total = Number(totalAmount || 0);
+  const total = roundToPaise(totalAmount);
   if (!Number.isFinite(parsedPercent) || !Number.isFinite(total) || total <= 0) return '';
   return toAmountInputValue((total * parsedPercent) / 100);
 };
@@ -59,15 +62,15 @@ export function TransactionSplitFields({
   onRemoveParticipant,
 }: TransactionSplitFieldsProps) {
   const theme = useThemeTokens().colors;
-  const keyboardInset = useKeyboardInset(form.splitEnabled);
   const accent = theme.accent;
   const accentSurface = theme.secondary;
   const selectedGroup = groups.find((group) => group.id === form.splitGroupId) ?? null;
+  const selectedGroupResolution = selectedGroup
+    ? resolveParticipantsForGroup(selectedGroup, form.amount)
+    : null;
 
   return (
-    <View
-      className="px-5 mb-6"
-      style={keyboardInset > 0 ? { paddingBottom: keyboardInset + 24 } : undefined}>
+    <View className="px-5 mb-6">
       <View
         className="rounded-[24px] border p-3"
         style={{ backgroundColor: theme.card, borderColor: theme.border }}>
@@ -123,7 +126,9 @@ export function TransactionSplitFields({
           <View className="mt-5 gap-4">
             {groups.length > 0 ? (
               <View>
-                <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                <ThemedText
+                  tone="muted"
+                  className="mb-2 text-[10px] font-black uppercase tracking-widest">
                   Group
                 </ThemedText>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -155,25 +160,42 @@ export function TransactionSplitFields({
                   </View>
                 </ScrollView>
                 {selectedGroup && (selectedGroup.members?.length ?? 0) > 0 ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() =>
-                      onApplyEqualSplit(buildParticipantsForGroup(selectedGroup, form.amount))
-                    }
-                    className="mt-3 flex-row items-center justify-center gap-2 rounded-2xl border py-3"
-                    style={{ borderColor: theme.border }}>
-                    <MaterialCommunityIcons name="account-group-outline" size={18} color={accent} />
-                    <ThemedText className="text-xs font-black" style={{ color: accent }}>
-                      Split equally
-                    </ThemedText>
-                  </Pressable>
+                  <>
+                    {selectedGroupResolution?.warning ? (
+                      <View className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 dark:bg-amber-900/20">
+                        <ThemedText tone="warning" className="text-xs font-bold">
+                          {selectedGroupResolution.warning}
+                        </ThemedText>
+                      </View>
+                    ) : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() =>
+                        onApplyEqualSplit(
+                          buildEqualParticipantsForGroup(selectedGroup, form.amount)
+                        )
+                      }
+                      className="mt-3 flex-row items-center justify-center gap-2 rounded-2xl border py-3"
+                      style={{ borderColor: theme.border }}>
+                      <MaterialCommunityIcons
+                        name="account-group-outline"
+                        size={18}
+                        color={accent}
+                      />
+                      <ThemedText className="text-xs font-black" style={{ color: accent }}>
+                        Split equally
+                      </ThemedText>
+                    </Pressable>
+                  </>
                 ) : null}
               </View>
             ) : null}
 
             {form.splitGroupId === null ? (
               <View className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
-                <ThemedText tone="muted" className="mb-2 text-[10px] font-black uppercase tracking-widest">
+                <ThemedText
+                  tone="muted"
+                  className="mb-2 text-[10px] font-black uppercase tracking-widest">
                   New group name
                 </ThemedText>
                 <TextInput
@@ -220,7 +242,9 @@ export function TransactionSplitFields({
               {form.splitParticipants.map((participant, index) => (
                 <View key={index} className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
                   <View className="flex-row items-center justify-between">
-                    <ThemedText tone="muted" className="text-[10px] font-black uppercase tracking-widest">
+                    <ThemedText
+                      tone="muted"
+                      className="text-[10px] font-black uppercase tracking-widest">
                       Share {index + 1}
                     </ThemedText>
                     <Pressable onPress={() => onRemoveParticipant(index)}>

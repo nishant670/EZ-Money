@@ -63,7 +63,7 @@ describe('resolveSplitDraft', () => {
           { id: 2, user_id: 1, group_id: 4, friend_id: 12, friend: { id: 12, name: 'Meera' } },
         ],
       },
-    ] as SplitGroup[];
+    ] as unknown as SplitGroup[];
 
     const draft = resolveSplitDraft(
       baseParse({
@@ -78,9 +78,153 @@ describe('resolveSplitDraft', () => {
     expect(draft.splitGroupId).toBe(4);
     expect(draft.splitGroupName).toBe('');
     expect(draft.splitParticipants).toEqual([
-      { friendId: 11, friendName: '', shareAmount: '500.00', direction: 'friend_owes_user' },
-      { friendId: 12, friendName: '', shareAmount: '500.00', direction: 'friend_owes_user' },
+      {
+        friendId: 11,
+        friendName: '',
+        shareAmount: '500.00',
+        sharePercent: '33.33',
+        direction: 'friend_owes_user',
+      },
+      {
+        friendId: 12,
+        friendName: '',
+        shareAmount: '500.00',
+        sharePercent: '33.33',
+        direction: 'friend_owes_user',
+      },
     ]);
+  });
+
+  it('applies a member-visible 60/40 group default in the capture composer', () => {
+    const groups = [
+      {
+        id: 4,
+        name: 'Home',
+        user_id: 1,
+        archived: false,
+        viewer_role: 'member',
+        viewer_friend_id: 11,
+        viewer_slot_friends: { owner: 21 },
+        default_split: {
+          payer: 'owner',
+          tab: 'percentages',
+          participants: [
+            { slot: 'owner', weight: '60' },
+            { slot: '11', weight: '40' },
+          ],
+        },
+        members: [
+          { id: 1, user_id: 1, group_id: 4, friend_id: 11, friend: { id: 11, name: 'Me' } },
+        ],
+      },
+    ] as unknown as SplitGroup[];
+
+    const draft = resolveSplitDraft(
+      baseParse({
+        amount: 1000,
+        split_candidate: true,
+        split_candidate_details: { group_name: 'Home', participants: [] },
+      }),
+      [],
+      groups
+    );
+
+    // The owner paid and the member carries 40%, so the entry stores the one
+    // debt the member owes the owner through their local friend row.
+    expect(draft.splitParticipants).toEqual([
+      {
+        friendId: 21,
+        friendName: '',
+        shareAmount: '400.00',
+        sharePercent: '40',
+        direction: 'user_owes_friend',
+      },
+    ]);
+    expect(draft.splitDefaultWarning).toBeUndefined();
+  });
+
+  it('keeps the group ratio when the group is resolved before the amount', () => {
+    const groups = [
+      {
+        id: 4,
+        name: 'Home',
+        user_id: 1,
+        archived: false,
+        viewer_role: 'member',
+        viewer_friend_id: 11,
+        viewer_slot_friends: { owner: 21 },
+        default_split: {
+          payer: 'owner',
+          tab: 'percentages',
+          participants: [
+            { slot: 'owner', weight: '60' },
+            { slot: '11', weight: '40' },
+          ],
+        },
+        members: [
+          { id: 1, user_id: 1, group_id: 4, friend_id: 11, friend: { id: 11, name: 'Me' } },
+        ],
+      },
+    ] as unknown as SplitGroup[];
+
+    const draft = resolveSplitDraft(
+      baseParse({
+        amount: null,
+        split_candidate: true,
+        split_candidate_details: { group_name: 'Home', participants: [] },
+      }),
+      [],
+      groups
+    );
+
+    expect(draft.splitParticipants[0]).toEqual(
+      expect.objectContaining({ friendId: 21, shareAmount: '', sharePercent: '40' })
+    );
+    expect(draft.splitDefaultWarning).toBeUndefined();
+  });
+
+  it('warns before falling back when a saved group default cannot be translated', () => {
+    const groups = [
+      {
+        id: 4,
+        name: 'Home',
+        user_id: 1,
+        archived: false,
+        viewer_role: 'member',
+        viewer_friend_id: 11,
+        viewer_slot_friends: { owner: 21 },
+        default_split: {
+          payer: 'owner',
+          tab: 'equally',
+          participants: [{ slot: 'owner' }, { slot: '99' }],
+        },
+        members: [
+          { id: 1, user_id: 1, group_id: 4, friend_id: 11, friend: { id: 11, name: 'Me' } },
+          { id: 2, user_id: 1, group_id: 4, friend_id: 99, friend: { id: 99, name: 'Left' } },
+        ],
+      },
+    ] as unknown as SplitGroup[];
+
+    const draft = resolveSplitDraft(
+      baseParse({
+        amount: 1000,
+        split_candidate: true,
+        split_candidate_details: { group_name: 'Home', participants: [] },
+      }),
+      [],
+      groups
+    );
+
+    expect(draft.splitParticipants).toEqual([
+      {
+        friendId: 21,
+        friendName: '',
+        shareAmount: '500.00',
+        sharePercent: '50',
+        direction: 'friend_owes_user',
+      },
+    ]);
+    expect(draft.splitDefaultWarning).toMatch(/couldn't be applied/i);
   });
 
   it('matches a spoken group name without creating a duplicate group', () => {
@@ -110,7 +254,13 @@ describe('resolveSplitDraft', () => {
     expect(draft.splitGroupId).toBe(9);
     expect(draft.splitGroupName).toBe('');
     expect(draft.splitParticipants).toEqual([
-      { friendId: 21, friendName: '', shareAmount: '1000.00', direction: 'friend_owes_user' },
+      {
+        friendId: 21,
+        friendName: '',
+        shareAmount: '1000.00',
+        sharePercent: '50',
+        direction: 'friend_owes_user',
+      },
     ]);
   });
 
