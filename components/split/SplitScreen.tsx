@@ -102,6 +102,7 @@ import {
   describeGroupDefaultSplit,
   describeMemberInvites,
   friendSplitKey,
+  groupComposerMembers,
   groupSplitSlots,
   isDefaultSplitTab,
   selectionToDefaultSplit,
@@ -807,26 +808,22 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
       const kind = group.kind ?? 'other';
       const memberIds = (group.members ?? []).map((member) => member.friend_id);
       const groupBills = bills.filter((bill) => bill.group_id === group.id);
-      const groupBalancesByFriendId = new Map<number, number>();
-      groupBills.forEach((bill) => {
-        bill.participants?.forEach((participant) => {
-          const current = groupBalancesByFriendId.get(participant.friend_id) ?? 0;
-          const signedShare =
-            participant.direction === 'friend_owes_user'
-              ? participant.share_amount
-              : -participant.share_amount;
-          groupBalancesByFriendId.set(participant.friend_id, current + signedShare);
-        });
-      });
-      const netBalance = [...groupBalancesByFriendId.values()].reduce(
-        (sum, value) => sum + value,
-        0
+      // Both figures come from the server. Summing the group's participant
+      // rows here read every bill as if its `direction` were absolute, but a
+      // bill states the debts of whoever wrote it — so an expense a member
+      // recorded arrived inverted, and the card claimed they owed money they
+      // had actually laid out. The server is the only side that can tell, so
+      // it is asked rather than guessed at.
+      const groupBalancesByFriendId = new Map<number, number>(
+        (group.viewer_balances ?? []).map((entry) => [entry.friend_id, entry.net_balance])
       );
+      const netBalance = group.viewer_net_balance ?? 0;
       const latestBill = [...groupBills].sort((a, b) => b.date.localeCompare(a.date))[0];
-      const detailLines = memberIds
-        .map((memberId) => {
-          const friend = friendById.get(memberId);
-          const balance = groupBalancesByFriendId.get(memberId) ?? 0;
+      // Driven by the balances rather than the roster: for a member those name
+      // their own friend rows, which is the only namespace they can resolve.
+      const detailLines = [...groupBalancesByFriendId.entries()]
+        .map(([friendId, balance]) => {
+          const friend = friendById.get(friendId);
           if (!friend || balance === 0) return null;
           return balance > 0
             ? `${friend.name} owes you ${formatBalance(balance)}`
@@ -1040,8 +1037,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   );
 
   const billFriendOptions = useMemo(() => {
-    if (selectedBillGroup?.members?.length) {
-      return selectedBillGroup.members
+    // The roster in this viewer's own namespace. For a member that is their
+    // slot links, which leave out the row standing for themselves — the second
+    // copy of them that used to make a two-person split a three-way one, while
+    // the group's owner was missing from the list entirely.
+    const roster = groupComposerMembers(selectedBillGroup) ?? [];
+    if (roster.length > 0) {
+      return roster
         .map((member) => friendById.get(member.friend_id))
         .filter((friend): friend is SplitFriend => Boolean(friend));
     }
@@ -1074,6 +1076,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
                     (item.participant_count ?? item.participants?.length ?? 0) === 1 ? '' : 's'
                   }`
               : 'Settlement';
+      const baseCaption = item.notes || fallbackCaption;
+      // Only on expenses. A settlement's title already names the other person
+      // ("Priya paid you"), so repeating it here reads as a stutter.
+      const caption =
+        item.type === 'bill' && item.actor_name
+          ? `${baseCaption} · added by ${item.actor_name}`
+          : baseCaption;
       return {
         id: item.id,
         item,
@@ -1081,7 +1090,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         date: item.date,
         amount: item.amount,
         icon: getActivityIcon(item.type),
-        caption: item.notes || fallbackCaption,
+        caption,
       };
     });
   }, [activity]);
@@ -1476,7 +1485,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     const nextGroup = groups.find((group) => group.id === groupId) ?? null;
     // Only members the composer can draw a row for — see `composerMemberKeys`,
     // which is where the 150%-over-two-people bug is written up.
-    const memberKeys = composerMemberKeys(nextGroup?.members, friendById, friends);
+    const memberKeys = composerMemberKeys(groupComposerMembers(nextGroup), friendById, friends);
     setBillGroupId(groupId);
 
     /**

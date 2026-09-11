@@ -189,6 +189,40 @@ export const viewerSplitSlot = (group: SplitGroup) =>
     ? friendSplitKey(group.viewer_friend_id)
     : SPLIT_GROUP_OWNER_SLOT;
 
+/**
+ * The group's roster as friend rows the *viewer* owns.
+ *
+ * For the owner that is simply the membership list — the roster is already
+ * written in their namespace. For everybody else it is `viewer_slot_friends`,
+ * the server's translation of that roster into the viewer's own friend ids,
+ * which is the only namespace their bills can name.
+ */
+export const groupComposerMembers = (
+  group: SplitGroup | null | undefined
+): { friend_id: number }[] | undefined => {
+  // Undefined rather than empty, so "no group chosen" keeps falling through to
+  // the whole friends list the way it always has. An empty array means a group
+  // that genuinely has nobody in it.
+  if (!group) return undefined;
+  if (group.viewer_role === 'member') {
+    const slotFriends = group.viewer_slot_friends ?? {};
+    // Owner first, then the roster's own order. Reading the map's own key order
+    // would put the numeric slots ahead of 'owner', which is neither the order
+    // the group is written in nor the one every other screen shows.
+    const slots = [
+      SPLIT_GROUP_OWNER_SLOT,
+      ...(group.members ?? []).map((member) => friendSplitKey(member.friend_id)),
+    ];
+    // A slot with no translation drops out: the viewer's own row, which has
+    // none by design, and anyone who has since left the group.
+    return slots
+      .map((slot) => slotFriends[slot])
+      .filter((friendId): friendId is number => Boolean(friendId))
+      .map((friendId) => ({ friend_id: friendId }));
+  }
+  return (group.members ?? []).map((member) => ({ friend_id: member.friend_id }));
+};
+
 /** The group's roster in slot space: the owner, then every member friend row. */
 export type SplitSlotPerson = { key: string; label: string; subtitle: string };
 
@@ -249,20 +283,34 @@ export const selectionToDefaultSplit = (
 };
 
 /**
- * A shared default names people by the group owner's friend ids, but the
- * expense composer works in its author's own frame, where the only people it
- * can name are their friend rows plus themselves. For the owner every slot
- * translates; for a member the owner has no counterpart, so the caller is told
- * the default cannot be applied rather than being handed a half-mapped split.
+ * A shared default names people by the group owner's friend ids, but the expense
+ * composer works in its author's own frame, where the only people it can name
+ * are their own friend rows plus themselves.
+ *
+ * For the owner every slot translates directly. For a member it goes through
+ * `viewer_slot_friends` — the roster rendered in their namespace — which is
+ * what lets the owner's slot translate at all. Before those links existed the
+ * owner had no counterpart in a member's frame, so every default containing the
+ * owner (which is nearly all of them) was refused and silently replaced with an
+ * equal split: a group set to 60/40 divided 50/50 on the member's phone.
+ *
+ * A slot that still cannot be mapped — somebody who has left the group — is
+ * reported as unmappable rather than handed back as a half-applied split.
  */
 export const defaultSplitToComposerKeys = (
   group: SplitGroup,
   value: SplitGroupDefaultSplit
 ): { payerKey: string; participantKeys: string[]; weights: SplitWeights } | null => {
   const selfSlot = viewerSplitSlot(group);
+  const isMember = group.viewer_role === 'member';
+  const slotFriends = group.viewer_slot_friends ?? {};
   const memberSlots = new Set((group.members ?? []).map((member) => friendSplitKey(member.friend_id)));
   const toComposerKey = (slot: string) => {
     if (slot === selfSlot) return CURRENT_USER_KEY;
+    if (isMember) {
+      const friendId = slotFriends[slot];
+      return friendId ? friendSplitKey(friendId) : null;
+    }
     if (memberSlots.has(slot)) return slot;
     return null;
   };

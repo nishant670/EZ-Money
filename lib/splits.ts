@@ -77,6 +77,12 @@ export type SplitGroupMemberInvite = {
   status: 'notified' | 'invite_created' | 'no_contact';
 };
 
+export type SplitGroupFriendBalance = {
+  friend_id: number;
+  /** Positive means they owe the caller. */
+  net_balance: number;
+};
+
 export type SplitGroup = {
   id: number;
   user_id: number;
@@ -95,6 +101,29 @@ export type SplitGroup = {
   owner_name?: string;
   /** Which member friend row is the caller. Absent for the group's owner. */
   viewer_friend_id?: number | null;
+  /**
+   * The group's roster translated into the caller's *own* friend rows, keyed by
+   * slot — 'owner', or an owner-side friend id as text.
+   *
+   * Sent only to members. A group's roster is written in the owner's namespace
+   * and a composer can only name rows its author owns, so without this a member
+   * could name nobody in the group but themselves. It never contains a row
+   * standing for the caller, which is what stops a two-person split being
+   * divided three ways between one person and two copies of the other.
+   */
+  viewer_slot_friends?: Record<string, number>;
+  /**
+   * This group's ledger from the caller's side, in their own friend rows.
+   *
+   * Served rather than summed on the client: a bill's `direction` is written
+   * relative to whoever recorded it, so adding up every participant row in a
+   * group as if the direction were absolute inverts the sign of every expense
+   * somebody else entered — a card telling you a member owes you money she in
+   * fact laid out for you.
+   */
+  viewer_balances?: SplitGroupFriendBalance[];
+  /** Positive means the group owes the caller overall. */
+  viewer_net_balance?: number;
   members?: SplitGroupMember[];
   /** Returned only on a create or update, for the people just added. */
   member_invites?: SplitGroupMemberInvite[];
@@ -204,6 +233,11 @@ export type SplitActivityItem = {
   friend_id?: number | null;
   friend?: SplitFriend | null;
   direction?: SettlementDirection;
+  /**
+   * Who recorded this, when it was not the caller — named the way the caller
+   * names them. Present only on items from a shared group.
+   */
+  actor_name?: string;
   participant_count?: number;
   participants?: SplitParticipant[];
   notes?: string;
@@ -410,7 +444,17 @@ export const fetchSplitGroups = async (token: string): Promise<SplitGroup[]> => 
   if (!Array.isArray(payload)) {
     throw new Error('The split groups response was invalid.');
   }
-  return payload as SplitGroup[];
+  // Money arrives as a JSON number already; coerced for the same reason the
+  // balances endpoint coerces, so one bad payload cannot turn arithmetic into
+  // string concatenation further down.
+  return (payload as SplitGroup[]).map((group) => ({
+    ...group,
+    viewer_net_balance: Number(group.viewer_net_balance ?? 0),
+    viewer_balances: (group.viewer_balances ?? []).map((entry) => ({
+      friend_id: entry.friend_id,
+      net_balance: Number(entry.net_balance),
+    })),
+  }));
 };
 
 export const createSplitGroup = async (

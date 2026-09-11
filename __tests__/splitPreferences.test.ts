@@ -4,6 +4,7 @@ import {
   defaultSplitToComposerKeys,
   describeGroupDefaultSplit,
   describeMemberInvites,
+  groupComposerMembers,
   groupSplitSlots,
   viewerSplitSlot,
 } from '@/lib/split-preferences';
@@ -146,9 +147,51 @@ describe('shared group frames', () => {
     expect(viewerSplitSlot(group)).toBe('4');
   });
 
-  it('refuses to translate a default a member cannot express', () => {
-    // The composer can only name the member's own friend rows, and a member has
-    // none for the group's owner.
+  it('translates a default through the member\'s own rows, owner included', () => {
+    // The reported bug: a group set to 60/40 came out 50/50 on the member's
+    // phone. Every default names the owner, the member had no row for them, so
+    // the whole default was refused and silently replaced with an equal split.
+    // `viewer_slot_friends` is the server's translation of the roster into rows
+    // this member owns, which is what makes the owner expressible at all.
+    const linked = {
+      ...group,
+      viewer_slot_friends: { owner: 21, '7': 22 },
+    } as SplitGroup;
+
+    expect(
+      defaultSplitToComposerKeys(linked, {
+        payer: 'owner',
+        tab: 'percentages',
+        participants: [
+          { slot: 'owner', weight: '60' },
+          { slot: '4', weight: '40' },
+        ],
+      })
+    ).toEqual({
+      // The owner is friend row 21 in this member's list; slot 4 is the member
+      // herself, so she is "you".
+      payerKey: '21',
+      participantKeys: ['21', CURRENT_USER_KEY],
+      weights: { '21': '60', [CURRENT_USER_KEY]: '40' },
+    });
+  });
+
+  it('still refuses a default naming somebody the member has no row for', () => {
+    // A member who has left: the slot survives in the stored default but no
+    // longer translates. Half-applying it would silently change the numbers.
+    const linked = { ...group, viewer_slot_friends: { owner: 21 } } as SplitGroup;
+
+    expect(
+      defaultSplitToComposerKeys(linked, {
+        payer: 'owner',
+        tab: 'equally',
+        participants: [{ slot: 'owner' }, { slot: '7' }],
+      })
+    ).toBeNull();
+  });
+
+  it('refuses everything while a member has no translations at all', () => {
+    // A group joined before slot links existed, not yet healed by a read.
     expect(
       defaultSplitToComposerKeys(group, {
         payer: 'owner',
@@ -156,6 +199,33 @@ describe('shared group frames', () => {
         participants: [{ slot: 'owner' }, { slot: '4' }],
       })
     ).toBeNull();
+  });
+
+  it('offers a member the roster in their own namespace, never themselves', () => {
+    const linked = {
+      ...group,
+      viewer_slot_friends: { owner: 21, '7': 22 },
+    } as SplitGroup;
+
+    // Slot 4 is the member herself and is deliberately absent: offering it back
+    // is what put two copies of her in a two-person split.
+    expect(groupComposerMembers(linked)).toEqual([{ friend_id: 21 }, { friend_id: 22 }]);
+  });
+
+  it('offers the owner their own membership rows unchanged', () => {
+    const ownerView = {
+      ...group,
+      viewer_role: 'owner',
+      viewer_friend_id: null,
+    } as SplitGroup;
+
+    expect(groupComposerMembers(ownerView)).toEqual([{ friend_id: 4 }, { friend_id: 7 }]);
+  });
+
+  it('says "no group" rather than "an empty group" when nothing is chosen', () => {
+    // The composer falls through to the whole friends list on undefined; an
+    // empty array would mean a real group with nobody in it.
+    expect(groupComposerMembers(null)).toBeUndefined();
   });
 
   it('translates a default the owner can express into composer keys', () => {
