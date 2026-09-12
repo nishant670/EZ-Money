@@ -56,7 +56,7 @@
           ]
         }
       ],
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "output": "static",
