@@ -52,6 +52,36 @@ export const isLocalAttachmentUri = (value: string | null | undefined): boolean 
 export const isPdfAttachment = (value: string | null | undefined): boolean =>
   !!value && value.split('?')[0].toLowerCase().endsWith('.pdf');
 
+const finnriUploadName = (value: string): string | null => {
+  try {
+    const parsed = new URL(value, API_BASE_URL);
+    if (parsed.origin !== new URL(API_BASE_URL).origin) return null;
+    const match = parsed.pathname.match(/^\/uploads\/([^/]+)$/);
+    return match?.[1] ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Exchanges a stable stored path for a five-minute owner-session URL. */
+export const resolveAttachmentForDisplay = async (
+  token: string,
+  attachment: string
+): Promise<string> => {
+  const name = finnriUploadName(attachment);
+  if (!name) return attachment;
+
+  const response = await fetch(`${API_BASE_URL}/v1/uploads/${encodeURIComponent(name)}/url`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw await readApiError(response, 'Unable to open that receipt right now.');
+  }
+  const data = (await response.json()) as { url?: string };
+  if (!data.url) throw new Error('Unable to open that receipt right now.');
+  return data.url;
+};
+
 const attachmentFileName = (uri: string): string => {
   const fromPath = uri.split('?')[0].split('/').pop();
   return fromPath && fromPath.length > 0 ? decodeURIComponent(fromPath) : 'receipt';
@@ -87,9 +117,7 @@ const compressImage = async (uri: string): Promise<File> => {
     longestEdge > MAX_IMAGE_EDGE
       ? await ImageManipulator.manipulate(decoded)
           .resize(
-            decoded.width >= decoded.height
-              ? { width: MAX_IMAGE_EDGE }
-              : { height: MAX_IMAGE_EDGE }
+            decoded.width >= decoded.height ? { width: MAX_IMAGE_EDGE } : { height: MAX_IMAGE_EDGE }
           )
           .renderAsync()
       : decoded;
@@ -113,7 +141,10 @@ type PreparedUpload = {
   temporary: boolean;
 };
 
-const prepareUpload = async (uri: string, declaredMimeType?: string | null): Promise<PreparedUpload> => {
+const prepareUpload = async (
+  uri: string,
+  declaredMimeType?: string | null
+): Promise<PreparedUpload> => {
   const source = new File(uri);
   const mimeType = attachmentMimeType(source, uri, declaredMimeType);
 
@@ -169,7 +200,11 @@ export const uploadAttachment = async (
     });
 
     if (!response.ok) {
-      throw await readApiError(response, 'Unable to upload that receipt right now.', uploadFieldLabels);
+      throw await readApiError(
+        response,
+        'Unable to upload that receipt right now.',
+        uploadFieldLabels
+      );
     }
 
     const data = (await response.json()) as { url?: string };

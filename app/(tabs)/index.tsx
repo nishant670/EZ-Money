@@ -118,6 +118,7 @@ import { notifyTransactionsChanged, subscribeTransactionsChanged } from '@/lib/t
 import { fetchBillingStatus, type BillingStatus } from '@/lib/billing';
 import { getFriendlyErrorMessage } from '@/lib/api-error';
 import { updateAndroidMonthWidget } from '@/lib/android-widget';
+import { clampDateToStatementCycle } from '@/lib/statement-composer';
 import {
   TransactionFormModal,
   type AiReviewMetadata,
@@ -227,8 +228,26 @@ export default function HomeScreen() {
   const isDark = themeTokens.mode === 'dark';
   const dialog = useAppDialog();
   const router = useRouter();
-  const { captureFile } = useLocalSearchParams<{ captureFile?: string | string[] }>();
+  const {
+    captureFile,
+    compose,
+    composeKey,
+    accountId: composeAccountId,
+    start_date: composeStartDate,
+    end_date: composeEndDate,
+    statementId: composeStatementId,
+  } = useLocalSearchParams<{
+    captureFile?: string | string[];
+    compose?: string;
+    composeKey?: string;
+    accountId?: string;
+    start_date?: string;
+    end_date?: string;
+    statementId?: string;
+  }>();
   const consumedCaptureFile = useRef<string | null>(null);
+  const consumedStatementComposer = useRef<string | null>(null);
+  const statementComposerReturnId = useRef<string | null>(null);
   /**
    * A recording handed over by the quick-capture tile or the widget, waiting to
    * be sent. It cannot be submitted in the same effect that receives it, because
@@ -935,6 +954,76 @@ export default function HomeScreen() {
     setIsEditOpen(true);
   }, [createBlankForm]);
 
+  useEffect(() => {
+    if (
+      compose !== '1' ||
+      !composeKey ||
+      consumedStatementComposer.current === composeKey ||
+      !token ||
+      !composeAccountId ||
+      !composeStartDate ||
+      !composeEndDate ||
+      !composeStatementId
+    ) {
+      return;
+    }
+
+    consumedStatementComposer.current = composeKey;
+    let active = true;
+    void loadAccounts(token)
+      .then((loadedAccounts) => {
+        if (!active) return;
+        const accountID = Number(composeAccountId);
+        const selected = loadedAccounts.find((account) => account.id === accountID);
+        if (!selected) {
+          throw new Error('The statement card is no longer available.');
+        }
+        const today = formatApiDate(new Date());
+        const clamped = clampDateToStatementCycle(today, composeStartDate, composeEndDate);
+        const parsedDate = parseDateLabel(clamped);
+
+        setAccounts(loadedAccounts);
+        setAiReview(null);
+        setAiSourceText('');
+        setAiInputSource('text');
+        pendingSuggestionSetup.current = null;
+        setAccountSuggestionHint(null);
+        createIdempotencyKey.current = null;
+        setForm({
+          ...createBlankForm(),
+          mode: 'Credit Card',
+          accountId: selected.id,
+          account: selected.name,
+          date: parsedDate ? formatDateLabel(parsedDate) : clamped,
+        });
+        setModalMode('manual');
+        statementComposerReturnId.current = composeStatementId;
+        setIsEditOpen(true);
+      })
+      .catch((error) => {
+        if (!active) return;
+        void dialog.alert({
+          title: 'Statement not available',
+          message: getFriendlyErrorMessage(error, 'Unable to open the transaction form.'),
+          tone: 'danger',
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    compose,
+    composeAccountId,
+    composeEndDate,
+    composeKey,
+    composeStartDate,
+    composeStatementId,
+    createBlankForm,
+    dialog,
+    token,
+  ]);
+
   const ensureAccountForEntry = useCallback(
     async (formData: EntryForm) => {
       const requiredType = getAccountTypeForPaymentMode(formData.mode);
@@ -1102,6 +1191,10 @@ export default function HomeScreen() {
           void showNewBudgetAlert(budgetNotificationIds);
         }
         void fetchSplitOptions();
+        if (statementComposerReturnId.current) {
+          statementComposerReturnId.current = null;
+          router.back();
+        }
       } catch (error) {
         const saveError =
           error instanceof Error
@@ -1117,6 +1210,7 @@ export default function HomeScreen() {
       ensureAccountForEntry,
       fetchSplitOptions,
       modalMode,
+      router,
       showNewBudgetAlert,
       token,
     ]
@@ -1936,6 +2030,10 @@ export default function HomeScreen() {
           setIsEditOpen(false);
           pendingSuggestionSetup.current = null;
           setAccountSuggestionHint(null);
+          if (statementComposerReturnId.current) {
+            statementComposerReturnId.current = null;
+            router.back();
+          }
         }}
         initialData={form}
         onSave={handleConfirmEntry}

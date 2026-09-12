@@ -1,5 +1,12 @@
 import { File } from 'expo-file-system';
-import { isLocalAttachmentUri, isPdfAttachment, resolveAttachmentForSave, uploadAttachment } from '@/lib/uploads';
+import {
+  isLocalAttachmentUri,
+  isPdfAttachment,
+  resolveAttachmentForDisplay,
+  resolveAttachmentForSave,
+  uploadAttachment,
+} from '@/lib/uploads';
+import { API_BASE_URL } from '@/lib/transactions';
 
 const fileSystem = require('expo-file-system') as {
   __setFileSize: (uri: string, size: number) => void;
@@ -38,7 +45,9 @@ const jsonResponse = (payload: unknown, ok = true, status = 200) =>
     ok,
     status,
     json: jest.fn().mockResolvedValue(payload),
-    text: jest.fn().mockResolvedValue(typeof payload === 'string' ? payload : JSON.stringify(payload)),
+    text: jest
+      .fn()
+      .mockResolvedValue(typeof payload === 'string' ? payload : JSON.stringify(payload)),
   }) as unknown as Response;
 
 const fetchMock = () => global.fetch as jest.MockedFunction<typeof fetch>;
@@ -46,11 +55,13 @@ const fetchMock = () => global.fetch as jest.MockedFunction<typeof fetch>;
 beforeEach(() => {
   global.fetch = jest.fn();
   appendedParts.length = 0;
-  jest
-    .spyOn(FormData.prototype, 'append')
-    .mockImplementation(function (this: FormData, field: string, value: unknown) {
-      appendedParts.push([field, value]);
-    } as typeof FormData.prototype.append);
+  jest.spyOn(FormData.prototype, 'append').mockImplementation(function (
+    this: FormData,
+    field: string,
+    value: unknown
+  ) {
+    appendedParts.push([field, value]);
+  } as typeof FormData.prototype.append);
   fileSystem.__resetFiles();
   manipulator.__resetManipulator();
   // Big enough that every test that does not say otherwise takes the
@@ -79,9 +90,32 @@ describe('attachment uri helpers', () => {
   });
 });
 
+describe('resolveAttachmentForDisplay', () => {
+  it('exchanges a Finnri upload path for a signed URL', async () => {
+    const storedURL = `${API_BASE_URL}/uploads/abc.jpg`;
+    const signedURL = `${storedURL}?signature=signed`;
+    fetchMock().mockResolvedValueOnce(jsonResponse({ url: signedURL }));
+
+    await expect(resolveAttachmentForDisplay('token-1', storedURL)).resolves.toBe(signedURL);
+
+    expect(fetchMock()).toHaveBeenCalledWith(expect.stringContaining('/v1/uploads/abc.jpg/url'), {
+      headers: { Authorization: 'Bearer token-1' },
+    });
+  });
+
+  it('leaves external attachment URLs unchanged', async () => {
+    await expect(
+      resolveAttachmentForDisplay('token-1', 'https://files.example/receipt.pdf')
+    ).resolves.toBe('https://files.example/receipt.pdf');
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});
+
 describe('uploadAttachment', () => {
   it('posts multipart without a hand-set content-type so the boundary survives', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     const url = await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -100,7 +134,9 @@ describe('uploadAttachment', () => {
   // has none, and the upload died on "Unsupported FormDataPart implementation"
   // rather than on anything the user could act on.
   it('sends a part expo fetch can actually read', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -114,7 +150,10 @@ describe('uploadAttachment', () => {
   it('throws when the server rejects the file type', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse(
-        { error: 'unsupported_file_type', fields: { file: 'attach a JPEG, PNG, HEIC, WebP image or a PDF' } },
+        {
+          error: 'unsupported_file_type',
+          fields: { file: 'attach a JPEG, PNG, HEIC, WebP image or a PDF' },
+        },
         false,
         415
       )
@@ -132,7 +171,9 @@ describe('uploadAttachment', () => {
 
 describe('image compression', () => {
   it('downscales and re-encodes a camera photo before it leaves the device', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -145,7 +186,9 @@ describe('image compression', () => {
 
   it('constrains the height instead when the photo is portrait', async () => {
     manipulator.__manipulatorState.source = { width: 3000, height: 4000 };
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -154,7 +197,9 @@ describe('image compression', () => {
 
   it('re-encodes without resizing an image that is already small enough on screen', async () => {
     manipulator.__manipulatorState.source = { width: 1200, height: 900 };
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -163,7 +208,9 @@ describe('image compression', () => {
   });
 
   it('deletes the re-encoded copy once the upload is done', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -181,7 +228,9 @@ describe('image compression', () => {
 
   it('leaves a small image alone rather than re-encoding it for nothing', async () => {
     fileSystem.__setFileSize(CAMERA_PHOTO, 90 * 1024);
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -192,7 +241,9 @@ describe('image compression', () => {
   it('never re-encodes a pdf', async () => {
     const pdf = 'file:///cache/bill.pdf';
     fileSystem.__setFileSize(pdf, 4 * 1024 * 1024);
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.pdf' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.pdf' })
+    );
 
     await uploadAttachment('token-1', pdf);
 
@@ -203,7 +254,9 @@ describe('image compression', () => {
   it('keeps the original when the re-encode comes out bigger', async () => {
     // A flat PNG screenshot can grow on its way to JPEG.
     fileSystem.__setFileSize(COMPRESSED_URI, 5 * 1024 * 1024);
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await uploadAttachment('token-1', CAMERA_PHOTO);
 
@@ -213,7 +266,9 @@ describe('image compression', () => {
 
   it('still uploads at full size when the image cannot be decoded', async () => {
     manipulator.__manipulatorState.failNext = true;
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/abc.jpg' })
+    );
 
     await expect(uploadAttachment('token-1', CAMERA_PHOTO)).resolves.toBe(
       'https://api.finnri.com/uploads/abc.jpg'
@@ -224,7 +279,9 @@ describe('image compression', () => {
 
 describe('resolveAttachmentForSave', () => {
   it('uploads a newly picked local file', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ url: 'https://api.finnri.com/uploads/new.jpg' }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ url: 'https://api.finnri.com/uploads/new.jpg' })
+    );
 
     await expect(resolveAttachmentForSave('token-1', 'file:///cache/receipt.jpg')).resolves.toBe(
       'https://api.finnri.com/uploads/new.jpg'
