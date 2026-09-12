@@ -24,7 +24,11 @@ import { useAuthStore } from '@/hooks/use-auth-store';
 import { decodeFrame, useSharedElementTarget } from '@/hooks/use-shared-element';
 import { Account, fetchAccounts } from '@/lib/accounts';
 import { fetchEntry, updateEntry, type EntryMutationPayload } from '@/lib/entries';
-import { isPdfAttachment, resolveAttachmentForSave } from '@/lib/uploads';
+import {
+  isPdfAttachment,
+  resolveAttachmentForDisplay,
+  resolveAttachmentForSave,
+} from '@/lib/uploads';
 import {
   fetchNewUnreadBudgetNotification,
   fetchUnreadBudgetNotificationIds,
@@ -270,11 +274,31 @@ export default function TransactionDetailsScreen() {
   const bgColor = meta.bgColor;
 
   const receiptUrl = displayData.attachment || null;
+  const [displayReceiptUrl, setDisplayReceiptUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setDisplayReceiptUrl(null);
+    if (!receiptUrl || !token)
+      return () => {
+        active = false;
+      };
+    resolveAttachmentForDisplay(token, receiptUrl)
+      .then((url) => {
+        if (active) setDisplayReceiptUrl(url);
+      })
+      .catch(() => {
+        if (active) setDisplayReceiptUrl(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [receiptUrl, token]);
 
   const handleOpenReceipt = async () => {
-    if (!receiptUrl) return;
+    if (!displayReceiptUrl) return;
     try {
-      await WebBrowser.openBrowserAsync(receiptUrl);
+      await WebBrowser.openBrowserAsync(displayReceiptUrl);
     } catch {
       void dialog.alert({
         title: 'Receipt unavailable',
@@ -862,7 +886,7 @@ export default function TransactionDetailsScreen() {
                 className="rounded-[32px] overflow-hidden border"
                 style={{ borderColor: theme.border }}>
                 <Image
-                  source={{ uri: receiptUrl }}
+                  source={{ uri: displayReceiptUrl ?? undefined }}
                   style={{ width: '100%', height: 220 }}
                   contentFit="cover"
                   transition={150}

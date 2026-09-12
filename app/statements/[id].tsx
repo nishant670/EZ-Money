@@ -130,6 +130,21 @@ export default function StatementDetailScreen() {
     });
   };
 
+  const openCycleComposer = () => {
+    if (!statement) return;
+    router.push({
+      pathname: '/',
+      params: {
+        compose: '1',
+        composeKey: String(Date.now()),
+        accountId: String(statement.account_id),
+        start_date: statement.cycle_start,
+        end_date: statement.cycle_end,
+        statementId: String(statement.id),
+      },
+    });
+  };
+
   if (!statement) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -179,8 +194,7 @@ export default function StatementDetailScreen() {
             className="rounded-[28px] border px-5 py-6"
             style={{ backgroundColor: theme.card, borderColor: theme.border }}>
             <TText className="text-xs" style={{ fontFamily: Fonts.body, color: '#7C8EA8' }}>
-              {card?.name ?? 'Credit card'} ·{' '}
-              {formatStatementMonth(statement.statement_date)}
+              {card?.name ?? 'Credit card'} · {formatStatementMonth(statement.statement_date)}
             </TText>
 
             <TText
@@ -240,7 +254,11 @@ export default function StatementDetailScreen() {
           {statement.reconciliation && (
             <ItemizationBanner
               reconciliation={statement.reconciliation}
-              onReview={openCycleTransactions}
+              onReview={
+                statement.reconciliation.state === 'under'
+                  ? openCycleComposer
+                  : openCycleTransactions
+              }
             />
           )}
 
@@ -351,15 +369,7 @@ export default function StatementDetailScreen() {
   );
 }
 
-function MetaItem({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}) {
+function MetaItem({ label, value, tone }: { label: string; value: string; tone?: string }) {
   const theme = useThemeTokens().colors;
   return (
     <View>
@@ -368,7 +378,9 @@ function MetaItem({
         style={{ fontFamily: Fonts.title, color: '#8EA0B8', letterSpacing: 1 }}>
         {label}
       </TText>
-      <TText className="mt-1 text-sm" style={{ fontFamily: Fonts.title, color: tone ?? theme.text }}>
+      <TText
+        className="mt-1 text-sm"
+        style={{ fontFamily: Fonts.title, color: tone ?? theme.text }}>
         {value}
       </TText>
     </View>

@@ -68,9 +68,9 @@ export function ItemizationBanner({
             <TText
               className="mt-1 text-xs"
               style={{ fontFamily: Fonts.body, color: light ? '#9A3412' : '#FDBA74' }}>
-              Finnri has more tracked for {formatCycleRange(reconciliation.cycle_start, reconciliation.cycle_end)} than
-              the bank billed. Something may be duplicated, on the wrong card, or dated into the
-              next cycle.
+              Finnri has more tracked for{' '}
+              {formatCycleRange(reconciliation.cycle_start, reconciliation.cycle_end)} than the bank
+              billed. Something may be duplicated, on the wrong card, or dated into the next cycle.
             </TText>
           </View>
         </View>
@@ -105,9 +105,9 @@ export function ItemizationBanner({
             className="mt-1 text-xs"
             style={{ fontFamily: Fonts.body, color: light ? '#1E40AF' : '#93C5FD' }}>
             Your bill is {formatMoney(reconciliation.statement_total)} and Finnri can account for{' '}
-            {formatMoney(reconciliation.itemized_total)} of it. Your total spending is still
-            correct — only the category breakdown is missing this much. Add the missing
-            transactions whenever you like and this shrinks on its own.
+            {formatMoney(reconciliation.itemized_total)} of it. Your total spending is still correct
+            — only the category breakdown is missing this much. Add the missing transactions
+            whenever you like and this shrinks on its own.
           </TText>
         </View>
       </View>
@@ -118,7 +118,7 @@ export function ItemizationBanner({
         className="mt-3 self-start rounded-full px-4 py-2"
         style={{ backgroundColor: theme.accent }}>
         <TText className="text-xs" style={{ fontFamily: Fonts.title, color: '#FFFFFF' }}>
-          See this cycle&apos;s transactions
+          Add a missing transaction
         </TText>
       </Pressable>
     </View>
