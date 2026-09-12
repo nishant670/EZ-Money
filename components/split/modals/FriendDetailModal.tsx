@@ -54,11 +54,13 @@ export function FriendDetailModal({
 
   const { friend, groups, netBalance } = summary;
   const friendFirstName = getFirstName(friend.name);
+  // Which group the outstanding money is in. Taken from the served balances
+  // rather than from the bills' participant rows: those name their own author's
+  // friend ids, so in a shared group somebody else runs this never matched and
+  // the line lost the "in \"Home\"" that tells you where to go and settle it.
   const unsettledGroup = groups.find((group) =>
-    group.bills.some((bill) =>
-      bill.participants?.some(
-        (participant) => participant.friend_id === friend.id && participant.share_amount > 0
-      )
+    (group.group.viewer_balances ?? []).some(
+      (entry) => entry.friend_id === friend.id && entry.net_balance !== 0
     )
   );
   const balanceCopy =

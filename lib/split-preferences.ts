@@ -234,6 +234,27 @@ export const groupSplitSlots = (
   currentUserContact: string
 ): SplitSlotPerson[] => {
   const selfSlot = viewerSplitSlot(group);
+
+  // The server's roster, which names each slot with the *reader's* own row for
+  // that person. Preferred over the raw membership list: that one is written in
+  // the owner's names, and on a member's phone half of it resolved to nothing
+  // at all.
+  if (group.viewer_members && group.viewer_members.length > 0) {
+    return group.viewer_members.map((member) =>
+      member.is_viewer
+        ? { key: member.slot, label: currentUserName, subtitle: currentUserContact }
+        : {
+            key: member.slot,
+            // The server already resolved this to the reader's own row for the
+            // person; `friendName` only fills in when it could not.
+            label: member.name || friendName(member.friend_id),
+            subtitle:
+              [member.phone, member.email].filter(Boolean).join(' • ') ||
+              friendContact(member.friend_id),
+          }
+    );
+  }
+
   const owner: SplitSlotPerson =
     selfSlot === SPLIT_GROUP_OWNER_SLOT
       ? { key: SPLIT_GROUP_OWNER_SLOT, label: currentUserName, subtitle: currentUserContact }
@@ -256,7 +277,11 @@ export const defaultSplitToSelection = (
   value: SplitGroupDefaultSplit
 ): SplitSelection => ({
   selfKey: viewerSplitSlot(group),
-  payerKey: value.payer,
+  // Not `value.payer`. The stored payer is only there so `full_amount` has
+  // somebody to be about; the split itself is applied with the person entering
+  // the expense as the payer, so the editor has to open on the same reading or
+  // it would show every member a default their own composer never uses.
+  payerKey: viewerSplitSlot(group),
   fullAmount: Boolean(value.full_amount),
   participantKeys: value.participants.map((participant) => participant.slot),
   tab: value.tab,
@@ -294,8 +319,17 @@ export const selectionToDefaultSplit = (
  * owner (which is nearly all of them) was refused and silently replaced with an
  * equal split: a group set to 60/40 divided 50/50 on the member's phone.
  *
- * A slot that still cannot be mapped — somebody who has left the group — is
- * reported as unmappable rather than handed back as a half-applied split.
+ * The payer is deliberately *not* translated. A default split is a ratio the
+ * group has agreed on; who laid the money out is a fact about one evening, and
+ * it is the person entering the expense. Anchoring it on a stored name meant
+ * the wife's composer opened pre-set to "Nishant Munjal paid" every time she
+ * added something she had bought — and, because the mirror-to-transaction step
+ * only fires when the composer's author is the payer, quietly recorded no
+ * spend of hers either. `payer` survives in the stored document for the sake
+ * of `full_amount`, which is a statement about the payer's own share.
+ *
+ * A slot that cannot be mapped — somebody who has left the group — is reported
+ * as unmappable rather than handed back as a half-applied split.
  */
 export const defaultSplitToComposerKeys = (
   group: SplitGroup,
@@ -315,8 +349,6 @@ export const defaultSplitToComposerKeys = (
     return null;
   };
 
-  const payerKey = toComposerKey(value.payer);
-  if (!payerKey) return null;
   const participantKeys: string[] = [];
   const weights: SplitWeights = {};
   for (const participant of value.participants) {
@@ -325,7 +357,7 @@ export const defaultSplitToComposerKeys = (
     participantKeys.push(key);
     if (participant.weight) weights[key] = participant.weight;
   }
-  return { payerKey, participantKeys, weights };
+  return { payerKey: CURRENT_USER_KEY, participantKeys, weights };
 };
 
 /**
@@ -392,20 +424,20 @@ export const describeSplitTab = (tab: AdjustSplitTab) => {
  * stops seeing the split screen on every expense.
  */
 export const describeGroupDefaultSplit = (
-  group: SplitGroup,
   value: SplitGroupDefaultSplit | null | undefined,
   slotLabel: (slot: string) => string
 ) => {
   if (!value) return 'Not set — new expenses start split equally';
-  const selfSlot = viewerSplitSlot(group);
-  const payerLabel = value.payer === selfSlot ? 'you' : slotLabel(value.payer);
-  if (value.full_amount) return `Paid by ${payerLabel}, owed the full amount`;
-  if (value.tab === 'equally') return `Paid by ${payerLabel} and split equally`;
+  // Always "you". The payer is whoever is adding the expense — see
+  // `defaultSplitToComposerKeys` — so naming somebody here would describe a
+  // split nobody's composer actually opens on.
+  if (value.full_amount) return 'Paid by you, owed the full amount';
+  if (value.tab === 'equally') return 'Paid by you and split equally';
   const suffix = value.tab === 'percentages' ? '%' : ' shares';
   const parts = value.participants.map(
     (participant) => `${slotLabel(participant.slot)} ${participant.weight ?? '0'}${suffix}`
   );
-  return `Paid by ${payerLabel}, ${describeSplitTab(value.tab)} (${parts.join(', ')})`;
+  return `Paid by you, ${describeSplitTab(value.tab)} (${parts.join(', ')})`;
 };
 
 export type { SplitGroupKind as GroupKind };

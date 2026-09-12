@@ -28,6 +28,11 @@ const TText = cssInterop(ThemedText, { className: 'style' });
  * on whichever slot belongs to the viewer. The stored default names the same
  * people for every member, so it has to be edited in those terms rather than in
  * one member's private frame.
+ *
+ * The payer is the one thing it does *not* name: a ratio outlives one evening
+ * and the person who laid the money out does not, so every expense is entered
+ * by its payer. Hence `variant="default"`, which offers the two self-payer
+ * shapes and nothing else.
  */
 export function GroupDefaultSplitModal({
   visible,
@@ -89,6 +94,7 @@ export function GroupDefaultSplitModal({
             <SplitChoiceScreen
               people={people}
               selection={draft}
+              variant="default"
               title={`Default split for ${groupName}`}
               onBack={onClose}
               onDone={onSave}

@@ -3,7 +3,7 @@ import { cssInterop } from 'nativewind';
 import { useRef } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { formatBalance } from '@/components/split/split-utils';
+import { formatBalance, readBillForViewer } from '@/components/split/split-utils';
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { Fonts } from '@/constants/theme';
@@ -14,14 +14,14 @@ const TText = cssInterop(ThemedText, { className: 'style' });
 
 export function BillDetailModal({
   bill,
-  friends,
+  friendById,
   currentUserName,
   onClose,
   onEdit,
   onDelete,
 }: {
   bill: SplitBill | null;
-  friends: SplitFriend[];
+  friendById: Map<number, SplitFriend>;
   currentUserName: string;
   onClose: () => void;
   onEdit: (bill: SplitBill) => void;
@@ -34,14 +34,11 @@ export function BillDetailModal({
 
   if (!presentedBill) return null;
 
-  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
-  const payerParticipant = presentedBill.participants.find(
-    (participant) => participant.direction === 'user_owes_friend'
-  );
-  const payerName = payerParticipant
-    ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
-    : currentUserName;
-  const paidLine = `${payerName === currentUserName ? 'You' : payerName} paid ${formatBalance(
+  // Read for whoever opened it, not for whoever wrote it — see
+  // `readBillForViewer`. This sheet used to tell a member she had paid for an
+  // expense her husband entered, and then list her own share as his debt.
+  const reading = readBillForViewer(presentedBill, friendById, currentUserName);
+  const paidLine = `${reading.paidByYou ? 'You' : reading.payerName} paid ${formatBalance(
     presentedBill.total_amount
   )}`;
   const canEdit = presentedBill.viewer_can_edit === true;
@@ -119,29 +116,27 @@ export function BillDetailModal({
               {paidLine}
             </TText>
             <View className="mt-5 gap-4">
-              {presentedBill.participants.map((participant) => {
-                const friendName = friendById.get(participant.friend_id)?.name ?? 'Friend';
-                const isUserOwes = participant.direction === 'user_owes_friend';
-                const label = isUserOwes
-                  ? `You owe ${friendName} ${formatBalance(participant.share_amount)}`
-                  : `${friendName} owes ${formatBalance(participant.share_amount)}`;
-                return (
-                  <View
-                    key={`${participant.friend_id}-${participant.direction}`}
-                    className="flex-row items-center">
-                    <View
-                      className="mr-4 h-10 w-10 items-center justify-center rounded-full"
-                      style={{ backgroundColor: theme.secondary }}>
-                      <TText style={{ color: theme.accent, fontFamily: Fonts.title }}>
-                        {friendName.charAt(0).toUpperCase()}
+              {reading.people
+                .filter((person) => person.share > 0)
+                .map((person) => {
+                  const label = person.isViewer
+                    ? `Your share is ${formatBalance(person.share)}`
+                    : `${person.name}'s share is ${formatBalance(person.share)}`;
+                  return (
+                    <View key={person.key} className="flex-row items-center">
+                      <View
+                        className="mr-4 h-10 w-10 items-center justify-center rounded-full"
+                        style={{ backgroundColor: theme.secondary }}>
+                        <TText style={{ color: theme.accent, fontFamily: Fonts.title }}>
+                          {person.name.charAt(0).toUpperCase()}
+                        </TText>
+                      </View>
+                      <TText className="flex-1 text-lg" style={{ color: theme.muted }}>
+                        {label}
                       </TText>
                     </View>
-                    <TText className="flex-1 text-lg" style={{ color: theme.muted }}>
-                      {label}
-                    </TText>
-                  </View>
-                );
-              })}
+                  );
+                })}
             </View>
           </View>
 

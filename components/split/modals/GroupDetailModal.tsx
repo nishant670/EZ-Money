@@ -9,6 +9,7 @@ import {
   formatBalance,
   formatBillListDate,
   getExpenseIconConfig,
+  readBillForViewer,
 } from '@/components/split/split-utils';
 import type { GroupActionMode, SplitGroupSummary } from '@/components/split/split-types';
 import { SplitFullScreenModal } from '@/components/split/primitives/SplitFullScreenModal';
@@ -22,7 +23,7 @@ const TText = cssInterop(ThemedText, { className: 'style' });
 
 export function GroupDetailModal({
   summary,
-  friends,
+  friendById,
   currentUserName,
   onClose,
   onAddExpense,
@@ -33,7 +34,7 @@ export function GroupDetailModal({
   onOpenSettings,
 }: {
   summary: SplitGroupSummary | null;
-  friends: SplitFriend[];
+  friendById: Map<number, SplitFriend>;
   currentUserName: string;
   onClose: () => void;
   onAddExpense: (groupId: number) => void;
@@ -48,17 +49,17 @@ export function GroupDetailModal({
   const [groupSearchQuery, setGroupSearchQuery] = useState('');
   if (!summary) return null;
 
-  const memberNames = summary.memberIds
-    .map((memberId) => friends.find((friend) => friend.id === memberId)?.name)
-    .filter(Boolean);
+  // The roster, not `memberIds`: those are the owner's own friend rows, so on
+  // anybody else's phone they resolved to nothing and the group announced
+  // itself as having one person in it — the reader.
+  const others = summary.roster.filter((person) => !person.isViewer);
   const canManageGroup = summary.group.viewer_can_manage === true;
   const canAddExpense = summary.group.viewer_can_add_expense !== false;
   const normalizedGroupSearch = groupSearchQuery.trim().toLowerCase();
   const filteredBills = normalizedGroupSearch
     ? summary.bills.filter((bill) => {
-        const participantNames = bill.participants
-          .map((participant) => friends.find((friend) => friend.id === participant.friend_id)?.name)
-          .filter(Boolean)
+        const participantNames = readBillForViewer(bill, friendById, currentUserName)
+          .people.map((person) => person.name)
           .join(' ');
         return [
           bill.title,
@@ -165,10 +166,18 @@ export function GroupDetailModal({
                     </TText>
                   </Pressable>
                 ) : null}
+                {/*
+                  * Members cannot edit a roster they do not own, but they can
+                  * read it — and this pill was simply inert for them, on a
+                  * screen that had nowhere else to say who was in the group.
+                  * It now takes them to the list in settings instead.
+                  */}
                 <Pressable
                   accessibilityRole="button"
-                  disabled={!canManageGroup}
-                  onPress={() => onManageMembers(summary)}
+                  accessibilityLabel={canManageGroup ? 'Manage group members' : 'See group members'}
+                  onPress={() =>
+                    canManageGroup ? onManageMembers(summary) : onOpenSettings(summary)
+                  }
                   className="min-h-12 flex-row items-center rounded-full px-4"
                   style={{ backgroundColor: `${theme.shadow}B8` }}>
                   <MaterialCommunityIcons
@@ -177,7 +186,7 @@ export function GroupDetailModal({
                     color={theme.onAccent}
                   />
                   <TText variant="button" className="ml-3" style={{ color: theme.onAccent }}>
-                    {memberNames.length + 1} people
+                    {summary.roster.length} people
                   </TText>
                 </Pressable>
               </View>
@@ -263,7 +272,7 @@ export function GroupDetailModal({
              * change something, not to finish making it. Both routes in belong
              * here, on the screen that is telling you nobody else is in.
              */}
-            {memberNames.length === 0 && canManageGroup ? (
+            {others.length === 0 && canManageGroup ? (
               <View
                 className="mt-6 rounded-3xl border p-5"
                 style={{ backgroundColor: theme.card, borderColor: theme.border }}>
@@ -311,7 +320,7 @@ export function GroupDetailModal({
                     key={bill.id}
                     bill={bill}
                     currentUserName={currentUserName}
-                    friends={friends}
+                    friendById={friendById}
                     onPress={() => onOpenExpense(bill)}
                   />
                 ))
@@ -367,32 +376,21 @@ export function GroupDetailModal({
 function GroupExpenseRow({
   bill,
   currentUserName,
-  friends,
+  friendById,
   onPress,
 }: {
   bill: SplitBill;
   currentUserName: string;
-  friends: SplitFriend[];
+  friendById: Map<number, SplitFriend>;
   onPress: () => void;
 }) {
   const theme = useThemeTokens().colors;
   const date = formatBillListDate(bill.date);
-  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
-  const payerParticipant = bill.participants.find(
-    (participant) => participant.direction === 'user_owes_friend'
-  );
-  const payerName = payerParticipant
-    ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
-    : currentUserName;
-  const paidByYou = !payerParticipant || payerName === currentUserName;
+  // Read for whoever is holding the phone. Straight off `participants` this row
+  // said "You paid ₹5,880 … you lent ₹2,352" to the member who had done
+  // neither: both figures belonged to the man who entered the expense.
+  const { payerName, paidByYou, net } = readBillForViewer(bill, friendById, currentUserName);
   const iconConfig = getExpenseIconConfig(bill.title);
-  const youLent = bill.participants
-    .filter((participant) => participant.direction === 'friend_owes_user')
-    .reduce((sum, participant) => sum + participant.share_amount, 0);
-  const youBorrowed = bill.participants
-    .filter((participant) => participant.direction === 'user_owes_friend')
-    .reduce((sum, participant) => sum + participant.share_amount, 0);
-  const net = youLent - youBorrowed;
 
   return (
     <Pressable
