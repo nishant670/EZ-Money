@@ -82,19 +82,10 @@ describe('computeSplitShares', () => {
 });
 
 describe('describeGroupDefaultSplit', () => {
-  const ownerGroup = {
-    id: 1,
-    user_id: 9,
-    name: 'Home',
-    archived: false,
-    owner_name: 'Nishant',
-    viewer_role: 'owner',
-    members: [{ id: 1, user_id: 9, group_id: 1, friend_id: 4 }],
-  } as SplitGroup;
   const slotLabel = (slot: string) => (slot === 'owner' ? 'Nishant' : 'Priya');
 
   it('falls back to the equal split when nothing is saved', () => {
-    expect(describeGroupDefaultSplit(ownerGroup, null, slotLabel)).toBe(
+    expect(describeGroupDefaultSplit(null, slotLabel)).toBe(
       'Not set — new expenses start split equally'
     );
   });
@@ -109,7 +100,7 @@ describe('describeGroupDefaultSplit', () => {
       ],
     };
 
-    expect(describeGroupDefaultSplit(ownerGroup, value, slotLabel)).toBe(
+    expect(describeGroupDefaultSplit(value, slotLabel)).toBe(
       'Paid by you, split by percentages (Nishant 60%, Priya 40%)'
     );
   });
@@ -169,11 +160,43 @@ describe('shared group frames', () => {
       })
     ).toEqual({
       // The owner is friend row 21 in this member's list; slot 4 is the member
-      // herself, so she is "you".
-      payerKey: '21',
+      // herself, so she is "you". The payer is *not* carried over from the
+      // stored default: a ratio outlives one evening and the person who laid
+      // the money out does not, so whoever is entering the expense is the payer.
+      payerKey: CURRENT_USER_KEY,
       participantKeys: ['21', CURRENT_USER_KEY],
       weights: { '21': '60', [CURRENT_USER_KEY]: '40' },
     });
+  });
+
+  it('anchors the payer on whoever is composing, whatever the default stored', () => {
+    // The reported bug: on the member's phone the composer opened pre-set to
+    // "Nishant Munjal paid" for an expense she was entering because she had
+    // paid for it — and, because the mirror-to-transaction step only fires when
+    // the composer's author is the payer, recorded no spend of hers either.
+    const linked = {
+      ...group,
+      viewer_slot_friends: { owner: 21, '7': 22 },
+    } as SplitGroup;
+
+    const asMember = defaultSplitToComposerKeys(linked, {
+      payer: 'owner',
+      tab: 'equally',
+      participants: [{ slot: 'owner' }, { slot: '4' }],
+    });
+    expect(asMember?.payerKey).toBe(CURRENT_USER_KEY);
+
+    const ownerView = {
+      ...group,
+      viewer_role: 'owner',
+      viewer_friend_id: null,
+    } as SplitGroup;
+    const asOwner = defaultSplitToComposerKeys(ownerView, {
+      payer: '4',
+      tab: 'equally',
+      participants: [{ slot: 'owner' }, { slot: '4' }],
+    });
+    expect(asOwner?.payerKey).toBe(CURRENT_USER_KEY);
   });
 
   it('still refuses a default naming somebody the member has no row for', () => {

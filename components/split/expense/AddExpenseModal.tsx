@@ -402,6 +402,7 @@ export function SplitChoiceScreen({
   people,
   selection,
   title,
+  variant = 'expense',
   onBack,
   onDone,
   onSelectPayer,
@@ -410,6 +411,14 @@ export function SplitChoiceScreen({
   people: SplitSlotPerson[];
   selection: SplitSelection;
   title?: string;
+  /**
+   * A group default is a ratio, not a record of one evening. Who laid the money
+   * out is decided per expense — by whoever is entering it — so the default
+   * editor offers only the two self-payer shapes. Anchoring a name here is what
+   * had a member's composer open on "Nishant Munjal paid" every time she added
+   * something she had bought herself.
+   */
+  variant?: 'expense' | 'default';
   onBack: () => void;
   onDone?: () => void;
   onSelectPayer: (payerKey: string, fullAmount: boolean) => void;
@@ -422,20 +431,25 @@ export function SplitChoiceScreen({
   const activeOther =
     others.find((person) => person.key === selection.payerKey) ?? others[0] ?? null;
   const otherName = activeOther?.label ?? 'Friend';
+  const payerIsFixed = variant === 'default';
   const choices: { key: string; payerKey: string; fullAmount: boolean; label: string }[] = [
     {
       key: 'self_equal',
       payerKey: selection.selfKey,
       fullAmount: false,
-      label: 'You paid, split equally.',
+      label: payerIsFixed
+        ? 'Whoever adds the expense paid, split equally.'
+        : 'You paid, split equally.',
     },
     {
       key: 'self_full',
       payerKey: selection.selfKey,
       fullAmount: true,
-      label: 'You are owed the full amount.',
+      label: payerIsFixed
+        ? 'Whoever adds the expense is owed the full amount.'
+        : 'You are owed the full amount.',
     },
-    ...(activeOther
+    ...(activeOther && !payerIsFixed
       ? [
           {
             key: 'other_equal',
@@ -494,7 +508,7 @@ export function SplitChoiceScreen({
             );
           })}
 
-          {others.length > 1 ? (
+          {others.length > 1 && !payerIsFixed ? (
             <View className="mt-2">
               <TText className="mb-2 text-sm" style={{ color: theme.muted }}>
                 Paid by someone else
@@ -601,8 +615,9 @@ export function AdjustSplitScreen({
   const [payerPickerVisible, setPayerPickerVisible] = useState(false);
   const isDefaultVariant = variant === 'default';
   const activeTab = selection.tab;
-  const payerName =
-    people.find((person) => person.key === selection.payerKey)?.label ?? 'Somebody';
+  const payerName = isDefaultVariant
+    ? 'whoever adds the expense'
+    : (people.find((person) => person.key === selection.payerKey)?.label ?? 'Somebody');
   const activeKeys = splitParticipantKeys(selection);
   const shareResult = computeSplitShares({
     amount,

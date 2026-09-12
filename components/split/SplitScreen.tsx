@@ -53,8 +53,10 @@ import {
   countHiddenSettledGroups,
   formatBalance,
   getGroupKindConfig,
+  buildGroupRoster,
   getGroupBalanceRows,
   groupMatchesSearch,
+  readBillForViewer,
   parseAmount,
   todayApiDate,
   zeroBalanceLabel,
@@ -331,11 +333,10 @@ const getSafeExportFileName = (name: string) =>
 
 const buildGroupExportCsv = (
   summary: SplitGroupSummary,
-  friends: SplitFriend[],
+  friendById: Map<number, SplitFriend>,
   currentUserName: string
 ) => {
-  const friendById = new Map(friends.map((friend) => [friend.id, friend]));
-  const balances = getGroupBalanceRows(summary, friends);
+  const balances = getGroupBalanceRows(summary);
   const rows: string[] = [
     csvRow(['Finnri Split Report']),
     csvRow(['Group', summary.group.name]),
@@ -350,11 +351,11 @@ const buildGroupExportCsv = (
   if (openBalances.length === 0) {
     rows.push(csvRow(['Everyone', 'Everyone', 0, 'Settled up']));
   } else {
-    openBalances.forEach(({ friend, balance }) => {
+    openBalances.forEach(({ person, balance }) => {
       rows.push(
         balance > 0
-          ? csvRow([friend.name, currentUserName, toAmountString(Math.abs(balance)), 'Open'])
-          : csvRow([currentUserName, friend.name, toAmountString(Math.abs(balance)), 'Open'])
+          ? csvRow([person.name, currentUserName, toAmountString(Math.abs(balance)), 'Open'])
+          : csvRow([currentUserName, person.name, toAmountString(Math.abs(balance)), 'Open'])
       );
     });
   }
@@ -371,30 +372,26 @@ const buildGroupExportCsv = (
     'Notes',
   ].map(csvCell).join(','));
 
+  // Read through the viewer's restatement, like every other surface. Exported
+  // straight from `participants` this named the owner's friend rows and stated
+  // every direction from the owner's side, so a member's spreadsheet said she
+  // had paid for the lot.
   summary.bills.forEach((bill) => {
-    const payerParticipant = bill.participants.find(
-      (participant) => participant.direction === 'user_owes_friend'
-    );
-    const payer = payerParticipant
-      ? (friendById.get(payerParticipant.friend_id)?.name ?? 'Friend')
-      : currentUserName;
-    const splitWith = bill.participants
-      .map((participant) => friendById.get(participant.friend_id)?.name ?? 'Friend')
+    const reading = readBillForViewer(bill, friendById, currentUserName);
+    const splitWith = reading.people
+      .filter((person) => person.share > 0)
+      .map((person) => person.name)
       .join(', ');
-    const shareDetails = bill.participants
-      .map((participant) => {
-        const friendName = friendById.get(participant.friend_id)?.name ?? 'Friend';
-        return participant.direction === 'friend_owes_user'
-          ? `${friendName} owes ${currentUserName} ${formatBalance(participant.share_amount)}`
-          : `${currentUserName} owes ${friendName} ${formatBalance(participant.share_amount)}`;
-      })
+    const shareDetails = reading.people
+      .filter((person) => person.share > 0)
+      .map((person) => `${person.name} owes ${formatBalance(person.share)}`)
       .join('; ');
     rows.push(
       csvRow([
         bill.date,
         bill.title,
         toAmountString(bill.total_amount),
-        payer,
+        reading.payerName,
         splitWith,
         shareDetails,
         bill.notes ?? '',
@@ -545,7 +542,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const duplicateFriendPair = useMemo<DuplicateFriendPair | null>(() => {
     for (const group of groups) {
-      const memberIds = [...new Set((group.members ?? []).map((member) => member.friend_id))];
+      // The roster in this viewer's own rows. Read off `group.members` this
+      // only ever looked at the owner's list, so a member with two rows for the
+      // same person in a shared group was never offered the merge.
+      const memberIds = [
+        ...new Set((groupComposerMembers(group) ?? []).map((member) => member.friend_id)),
+      ];
       for (let leftIndex = 0; leftIndex < memberIds.length; leftIndex += 1) {
         const left = friends.find((friend) => friend.id === memberIds[leftIndex]);
         if (!left) continue;
@@ -801,8 +803,6 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     return map;
   }, [bills, friends, groups]);
 
-  const splitFriendCatalog = useMemo(() => [...friendById.values()], [friendById]);
-
   const groupSummaries = useMemo<SplitGroupSummary[]>(() => {
     return groups.map((group) => {
       const kind = group.kind ?? 'other';
@@ -839,10 +839,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         latestBill,
         kind,
         memberIds,
+        roster: buildGroupRoster({ group, friendById, currentUserName, currentUserContact }),
         netBalance,
       };
     });
-  }, [bills, friendById, groups]);
+  }, [bills, currentUserContact, currentUserName, friendById, groups]);
 
   const selectedGroupSummary = useMemo(
     () => groupSummaries.find((summary) => summary.group.id === selectedGroupDetailId) ?? null,
@@ -892,13 +893,22 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const friendDetailSummaries = useMemo<FriendDetailSummary[]>(() => {
     return friends.map((friend) => {
+      // Matched through the viewer's restatement where there is one: a bill
+      // somebody else wrote names *their* friend rows, so filtering on the raw
+      // participants hid every shared-group expense from the card for the very
+      // person it was split with.
       const friendBills = bills
         .filter((bill) =>
-          bill.participants?.some((participant) => participant.friend_id === friend.id)
+          bill.viewer_shares && bill.viewer_shares.length > 0
+            ? bill.viewer_shares.some((share) => share.friend_id === friend.id)
+            : bill.participants?.some((participant) => participant.friend_id === friend.id)
         )
         .sort((a, b) => b.date.localeCompare(a.date));
+      // Matched on the roster rather than `memberIds`: those are the owner's
+      // friend rows, so in a shared group a member's own friend never lined up
+      // with one and the group never appeared on their card.
       const sharedGroups = groupSummaries.filter((summary) =>
-        summary.memberIds.includes(friend.id)
+        summary.roster.some((person) => person.friendId === friend.id)
       );
       const balance = balanceByFriendId.get(friend.id) ?? null;
       return {
@@ -1029,6 +1039,11 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   /** How one slot of a shared group reads in a sentence for this viewer. */
   const resolveSlotLabel = useCallback(
     (group: SplitGroup, slot: string) => {
+      // The served roster first: it is the one list that names every slot in
+      // the reader's own words, including the owner — whom a member has no
+      // membership row for and used to see as "Group owner".
+      const rosterEntry = group.viewer_members?.find((member) => member.slot === slot);
+      if (rosterEntry) return rosterEntry.is_viewer ? currentUserName : rosterEntry.name;
       if (slot === viewerSplitSlot(group)) return currentUserName;
       if (slot === SPLIT_GROUP_OWNER_SLOT) return group.owner_name || 'Group owner';
       return resolveFriendName(Number(slot));
@@ -1114,7 +1129,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const visibleGroupSummaries = useMemo(() => {
     return groupSummaries.filter((summary) => {
-      const matchesSearch = groupMatchesSearch(summary, normalizedSearch, friendById);
+      const matchesSearch = groupMatchesSearch(summary, normalizedSearch);
       const isNewEmptyGroup = summary.billCount === 0 && summary.netBalance === 0;
       const matchesBalance =
         balanceFilter === 'open' && isNewEmptyGroup
@@ -1122,14 +1137,14 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
           : balanceMatchesFilter(summary.netBalance);
       return matchesSearch && matchesBalance;
     });
-  }, [balanceFilter, balanceMatchesFilter, friendById, groupSummaries, normalizedSearch]);
+  }, [balanceFilter, balanceMatchesFilter, groupSummaries, normalizedSearch]);
 
   const hiddenSettledCount = useMemo(
     () =>
       countHiddenSettledGroups(groupSummaries, visibleGroupSummaries, (summary) =>
-        groupMatchesSearch(summary, normalizedSearch, friendById)
+        groupMatchesSearch(summary, normalizedSearch)
       ),
-    [friendById, groupSummaries, normalizedSearch, visibleGroupSummaries]
+    [groupSummaries, normalizedSearch, visibleGroupSummaries]
   );
 
   const showNonGroupSummary =
@@ -2083,8 +2098,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const openBillForGroup = (groupId: number) => {
     const group = groups.find((candidate) => candidate.id === groupId) ?? null;
-    const groupHasMembers = Boolean(
-      group?.members?.some((member) => friendById.has(member.friend_id))
+    // Whether the composer can draw a row for anybody but the reader. Asked of
+    // the roster in the reader's own namespace rather than of `members`, which
+    // is the owner's — a member would otherwise be told the group has people in
+    // it by ids her own composer cannot name.
+    const groupHasMembers = (groupComposerMembers(group) ?? []).some((member) =>
+      friendById.has(member.friend_id)
     );
     /**
      * An expense in a group of one is a valid thing to record, and sometimes
@@ -2170,17 +2189,31 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
     setGroupAction({ groupId: summary.group.id, mode });
   };
 
+  /**
+   * Record a payment against one person's balance in a group.
+   *
+   * `amount` is what the sheet collected, which is the whole balance unless the
+   * user typed something smaller — a part payment has to be possible, because
+   * most of them are. The direction still comes from the balance's sign: paying
+   * somebody back a slice of what you owe them does not change who owes whom.
+   *
+   * `friendId` is the viewer's *own* row for that person. It used to be the
+   * group's roster id, which for anybody but the owner belongs to another
+   * account — so `friends.find` came back empty and the Record payment button
+   * did nothing at all, silently, every time a member pressed it.
+   */
   const openSettlementForGroupFriend = (
     summary: SplitGroupSummary,
     friendId: number,
-    balance: number
+    balance: number,
+    amount: number
   ) => {
-    if (balance === 0) return;
-    const friend = friends.find((candidate) => candidate.id === friendId);
+    if (balance === 0 || !Number.isFinite(amount) || amount <= 0) return;
+    const friend = friendById.get(friendId);
     if (!friend) return;
     resetSettlementForm();
     setSettlementFriendId(friend.id);
-    setSettlementAmount(toAmountString(Math.abs(balance)));
+    setSettlementAmount(toAmountString(amount));
     setSettlementDirection(balance > 0 ? 'friend_paid_user' : 'user_paid_friend');
     setSettlementNotes(`Settlement for ${summary.group.name}`);
     setSettlementGroupId(summary.group.id);
@@ -2190,7 +2223,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
   const shareGroupExport = async (summary: SplitGroupSummary) => {
     try {
-      const csv = buildGroupExportCsv(summary, friends, currentUserName);
+      const csv = buildGroupExportCsv(summary, friendById, currentUserName);
       const sharingAvailable = await Sharing.isAvailableAsync();
       if (!FileSystem.documentDirectory || !sharingAvailable) {
         await Share.share({
@@ -2348,12 +2381,12 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
   };
 
   const renderGroupCard = (summary: SplitGroupSummary, entranceIndex: number) => {
-    const { group, detailLines, memberIds, kind, netBalance, billCount, latestBill } = summary;
+    const { group, detailLines, roster, kind, netBalance, billCount, latestBill } = summary;
     const tone = getBalanceTone(netBalance, theme, billCount > 0);
     const kindConfig = getGroupKindConfig(kind);
-    const memberNames = memberIds
-      .map((memberId) => friendById.get(memberId)?.name)
-      .filter(Boolean)
+    const memberNames = roster
+      .filter((person) => !person.isViewer)
+      .map((person) => person.name)
       .join(', ');
 
     return (
@@ -2764,7 +2797,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
         <GroupDetailModal
           summary={selectedGroupSummary}
-          friends={splitFriendCatalog}
+          friendById={friendById}
           currentUserName={currentUserName}
           onClose={() => setSelectedGroupDetailId(null)}
           onAddExpense={(groupId) => openBillForGroup(groupId)}
@@ -2778,7 +2811,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
         <GroupActionModal
           summary={groupActionSummary}
           mode={groupAction?.mode ?? null}
-          friends={splitFriendCatalog}
+          friendById={friendById}
           currentUserName={currentUserName}
           onClose={() => setGroupAction(null)}
           onSettleWithFriend={openSettlementForGroupFriend}
@@ -2787,7 +2820,7 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
         <BillDetailModal
           bill={selectedBill}
-          friends={splitFriendCatalog}
+          friendById={friendById}
           currentUserName={currentUserName}
           onClose={() => setSelectedBillId(null)}
           onEdit={openBillEditor}
@@ -2809,16 +2842,13 @@ export default function SplitScreen({ embedded = false }: SplitScreenProps) {
 
         <GroupSettingsModal
           summary={groupSettingsSummary}
-          friends={friends}
           currentUserName={currentUserName}
           currentUserContact={currentUserContact}
           simplifyGroupDebts={simplifyGroupDebts}
           defaultSplitLabel={
             groupSettingsSummary
-              ? describeGroupDefaultSplit(
-                  groupSettingsSummary.group,
-                  groupSettingsSummary.group.default_split,
-                  (slot) => resolveSlotLabel(groupSettingsSummary.group, slot)
+              ? describeGroupDefaultSplit(groupSettingsSummary.group.default_split, (slot) =>
+                  resolveSlotLabel(groupSettingsSummary.group, slot)
                 )
               : ''
           }

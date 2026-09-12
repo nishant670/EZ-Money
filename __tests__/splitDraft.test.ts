@@ -129,15 +129,17 @@ describe('resolveSplitDraft', () => {
       groups
     );
 
-    // The owner paid and the member carries 40%, so the entry stores the one
-    // debt the member owes the owner through their local friend row.
+    // The ratio survives the translation — the member carries her 40%, the
+    // owner 60% through her local row for him. The payer does not: an expense
+    // is entered by whoever laid the money out, so the composer opens on "you
+    // paid" and the owner's 60% is what he owes her.
     expect(draft.splitParticipants).toEqual([
       {
         friendId: 21,
         friendName: '',
-        shareAmount: '400.00',
-        sharePercent: '40',
-        direction: 'user_owes_friend',
+        shareAmount: '600.00',
+        sharePercent: '60',
+        direction: 'friend_owes_user',
       },
     ]);
     expect(draft.splitDefaultWarning).toBeUndefined();
@@ -178,7 +180,7 @@ describe('resolveSplitDraft', () => {
     );
 
     expect(draft.splitParticipants[0]).toEqual(
-      expect.objectContaining({ friendId: 21, shareAmount: '', sharePercent: '40' })
+      expect.objectContaining({ friendId: 21, shareAmount: '', sharePercent: '60' })
     );
     expect(draft.splitDefaultWarning).toBeUndefined();
   });

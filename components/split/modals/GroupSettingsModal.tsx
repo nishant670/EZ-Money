@@ -13,13 +13,12 @@ import { SkeletonFrame, SkeletonRows } from '@/components/ui/Skeleton';
 import { HapticSwitch } from '@/components/ui/HapticSwitch';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
-import type { SplitFriend, SplitGroupDirectInvite } from '@/lib/splits';
+import type { SplitGroupDirectInvite } from '@/lib/splits';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
 
 export function GroupSettingsModal({
   summary,
-  friends,
   currentUserName,
   currentUserContact,
   simplifyGroupDebts,
@@ -39,7 +38,6 @@ export function GroupSettingsModal({
   onLeaveGroup,
 }: {
   summary: SplitGroupSummary | null;
-  friends: SplitFriend[];
   currentUserName: string;
   currentUserContact: string;
   simplifyGroupDebts: boolean;
@@ -64,9 +62,11 @@ export function GroupSettingsModal({
   const kindConfig = getGroupKindConfig(summary.kind);
   const canManageGroup = summary.group.viewer_can_manage === true;
   const roleLabel = summary.group.viewer_role === 'owner' ? 'Owner' : 'Shared member';
-  const memberFriends = summary.memberIds
-    .map((memberId) => friends.find((friend) => friend.id === memberId))
-    .filter((friend): friend is SplitFriend => Boolean(friend));
+  // Everybody in the group, the reader marked as themselves. Built from
+  // `memberIds` this listed the owner's friend rows, so a member saw exactly
+  // one name — her own — and the person whose group it is was absent from his
+  // own group's member list.
+  const roster = summary.roster;
 
   return (
     <SplitFullScreenModal onClose={onClose}>
@@ -127,14 +127,17 @@ export function GroupSettingsModal({
                 />
               </>
             ) : null}
-            <SettingsMemberRow label={`${currentUserName} (you)`} subtitle={currentUserContact} />
-            {memberFriends.map((friend) => (
-              <SettingsMemberRow
-                key={friend.id}
-                label={friend.name}
-                subtitle={[friend.phone, friend.email].filter(Boolean).join(' • ')}
-              />
-            ))}
+            {roster.length > 0 ? (
+              roster.map((person) => (
+                <SettingsMemberRow
+                  key={person.slot}
+                  label={person.isViewer ? `${person.name} (you)` : person.name}
+                  subtitle={person.subtitle}
+                />
+              ))
+            ) : (
+              <SettingsMemberRow label={`${currentUserName} (you)`} subtitle={currentUserContact} />
+            )}
 
             {canManageGroup && (pendingInvitesLoading || pendingInvites.length > 0) ? (
               <>

@@ -83,6 +83,49 @@ export type SplitGroupFriendBalance = {
   net_balance: number;
 };
 
+/**
+ * One person in a group, named the way the *caller* names them.
+ *
+ * `members` is the owner's list of the owner's own friend rows, so every screen
+ * that rendered it directly was reading somebody else's address book: a member
+ * saw one row — herself — and the person who owns the group was missing
+ * entirely. This is the roster every viewer can draw.
+ *
+ * `friend_id` is 0 for the caller themselves, and 0 for anybody the caller has
+ * no row of their own for yet. `name` is filled either way, so the roster stays
+ * complete even where it is not yet something you can settle against.
+ */
+export type SplitGroupViewerMember = {
+  /** The person in the owner's namespace: 'owner', or a friend id as text. */
+  slot: string;
+  friend_id: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  is_viewer: boolean;
+};
+
+/**
+ * One person's part in one bill, from the caller's side.
+ *
+ * A bill's own `participants` are unreadable by anybody but its author: the
+ * rows name that author's friend ids and `direction` is stated from their side.
+ * Read literally by another member, every expense the owner entered said "You
+ * paid" on her phone. These rows are the same bill turned round to face
+ * whoever asked for it.
+ */
+export type SplitBillViewerShare = {
+  slot: string;
+  /** The caller's own friend row for this person; 0 when it is the caller. */
+  friend_id: number;
+  name: string;
+  is_viewer: boolean;
+  /** What this person laid out. Only the payer has a non-zero figure. */
+  paid: number;
+  /** What the bill makes theirs to carry. */
+  share: number;
+};
+
 export type SplitGroup = {
   id: number;
   user_id: number;
@@ -124,6 +167,11 @@ export type SplitGroup = {
   viewer_balances?: SplitGroupFriendBalance[];
   /** Positive means the group owes the caller overall. */
   viewer_net_balance?: number;
+  /**
+   * The whole roster in the caller's own terms, themselves included and
+   * flagged. Prefer this over `members` anywhere a person is drawn on screen.
+   */
+  viewer_members?: SplitGroupViewerMember[];
   members?: SplitGroupMember[];
   /** Returned only on a create or update, for the people just added. */
   member_invites?: SplitGroupMemberInvite[];
@@ -193,6 +241,12 @@ export type SplitBill = {
   date: string;
   notes?: string;
   participants: SplitParticipant[];
+  /**
+   * This bill restated for whoever asked for it. Prefer it over `participants`
+   * on any screen that says "you": `participants` only ever describes the
+   * author.
+   */
+  viewer_shares?: SplitBillViewerShare[];
   viewer_can_edit?: boolean;
   viewer_can_delete?: boolean;
   created_at?: string;
@@ -356,6 +410,9 @@ const normalizeSplitBill = (bill: SplitBill): SplitBill => ({
   participants: (bill.participants ?? []).map((participant) =>
     coerceAmount(participant as unknown as Record<string, unknown>, ['share_amount'])
   ) as SplitParticipant[],
+  viewer_shares: (bill.viewer_shares ?? []).map((share) =>
+    coerceAmount(share as unknown as Record<string, unknown>, ['paid', 'share'])
+  ) as SplitBillViewerShare[],
 });
 
 export const fetchSplitFriends = async (token: string): Promise<SplitFriend[]> => {

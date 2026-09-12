@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { cssInterop } from 'nativewind';
-import { useRef } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import {
   AvatarCircle,
@@ -12,12 +12,17 @@ import {
   getGroupBalanceRows,
   getGroupTotals,
 } from '@/components/split/split-utils';
-import type { GroupActionMode, SplitGroupSummary } from '@/components/split/split-types';
+import type {
+  GroupActionMode,
+  SplitGroupRosterPerson,
+  SplitGroupSummary,
+} from '@/components/split/split-types';
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedBottomSheet } from '@/components/ui/AnimatedBottomSheet';
 import { StateView } from '@/components/ui/StateView';
 import { Fonts } from '@/constants/theme';
 import { useThemeTokens } from '@/hooks/use-theme-tokens';
+import { roundToPaise, toAmountString } from '@/lib/money';
 import type { SplitFriend } from '@/lib/splits';
 
 const TText = cssInterop(ThemedText, { className: 'style' });
@@ -25,7 +30,7 @@ const TText = cssInterop(ThemedText, { className: 'style' });
 export function GroupActionModal({
   summary: liveSummary,
   mode: liveMode,
-  friends,
+  friendById,
   currentUserName,
   onClose,
   onSettleWithFriend,
@@ -33,10 +38,16 @@ export function GroupActionModal({
 }: {
   summary: SplitGroupSummary | null;
   mode: GroupActionMode | null;
-  friends: SplitFriend[];
+  friendById: Map<number, SplitFriend>;
   currentUserName: string;
   onClose: () => void;
-  onSettleWithFriend: (summary: SplitGroupSummary, friendId: number, balance: number) => void;
+  /** `amount` is what the row collected: the whole balance, or a part of it. */
+  onSettleWithFriend: (
+    summary: SplitGroupSummary,
+    friendId: number,
+    balance: number,
+    amount: number
+  ) => void;
   onShareExport: (summary: SplitGroupSummary) => void;
 }) {
   const theme = useThemeTokens().colors;
@@ -51,8 +62,8 @@ export function GroupActionModal({
   if (!presentation) return null;
   const { summary, mode } = presentation;
 
-  const balances = getGroupBalanceRows(summary, friends);
-  const totals = getGroupTotals(summary, friends, currentUserName);
+  const balances = getGroupBalanceRows(summary);
+  const totals = getGroupTotals(summary, friendById, currentUserName);
   const openBalances = balances.filter((row) => row.balance !== 0);
   const title =
     mode === 'settle'
@@ -97,17 +108,19 @@ export function GroupActionModal({
                 Outstanding balances
               </TText>
               <TText className="mt-2 text-sm leading-5" style={{ color: theme.muted }}>
-                Pick a balance to record the settlement direction and amount automatically.
+                Each row starts at the full balance. Change the amount to record a part payment.
               </TText>
               <View className="mt-6 gap-3">
                 {openBalances.length > 0 ? (
                   openBalances.map((row) => (
                     <GroupBalanceActionRow
-                      key={row.friend.id}
-                      friend={row.friend}
+                      key={row.person.slot}
+                      person={row.person}
                       balance={row.balance}
                       actionLabel="Record payment"
-                      onPress={() => onSettleWithFriend(summary, row.friend.id, row.balance)}
+                      onPress={(amount) =>
+                        onSettleWithFriend(summary, row.person.friendId, row.balance, amount)
+                      }
                     />
                   ))
                 ) : summary.billCount > 0 ? (
@@ -170,8 +183,8 @@ export function GroupActionModal({
               <View className="mt-5 gap-3">
                 {balances.map((row) => (
                   <GroupBalanceActionRow
-                    key={row.friend.id}
-                    friend={row.friend}
+                    key={row.person.slot}
+                    person={row.person}
                     balance={row.balance}
                     hasActivity={summary.billCount > 0}
                   />
@@ -272,32 +285,53 @@ function ExportPreviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * One person's balance in a group, and — where the sheet offers it — the
+ * payment that closes some or all of it.
+ *
+ * The amount box is the point. Settling used to be all-or-nothing at the full
+ * balance, which is not how anybody pays a housemate back: it arrives in
+ * instalments. The field starts at the whole figure, so the common case is
+ * still one tap, and anything smaller is a part payment that leaves the rest
+ * outstanding.
+ *
+ * `person` carries the *viewer's own* friend row for whoever this is. A row
+ * with none (`friendId === 0`) can be shown but not settled with — there is no
+ * record on this account to write the payment against.
+ */
 function GroupBalanceActionRow({
-  friend,
+  person,
   balance,
   hasActivity = true,
   actionLabel,
   onPress,
 }: {
-  friend: SplitFriend;
+  person: SplitGroupRosterPerson;
   balance: number;
   /** False when nothing has been split with this person yet. */
   hasActivity?: boolean;
   actionLabel?: string;
-  onPress?: () => void;
+  onPress?: (amount: number) => void;
 }) {
   const theme = useThemeTokens().colors;
   const settled = balance === 0;
+  const outstanding = roundToPaise(Math.abs(balance));
+  const [amount, setAmount] = useState('');
+  const typed = Number(amount.replace(/,/g, '').trim());
+  const chosen = amount.trim() === '' ? outstanding : typed;
+  const amountValid = Number.isFinite(chosen) && chosen > 0;
   const color = balance > 0 ? theme.positive : balance < 0 ? theme.negative : theme.neutral;
+  const canSettle = Boolean(actionLabel && onPress) && person.friendId > 0;
+
   return (
     <View
       className="rounded-2xl border p-4"
       style={{ backgroundColor: theme.card, borderColor: theme.border }}>
       <View className="flex-row items-center gap-4">
-        <AvatarCircle label={friend.name} size={46} />
+        <AvatarCircle label={person.name} size={46} />
         <View className="flex-1">
           <TText variant="cardTitle" style={{ color: theme.text }}>
-            {friend.name}
+            {person.name}
           </TText>
           <TText className="mt-1 text-sm" style={{ color }}>
             {settled
@@ -314,15 +348,70 @@ function GroupBalanceActionRow({
         </TText>
       </View>
       {actionLabel && onPress ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onPress}
-          className="mt-4 min-h-11 items-center justify-center rounded-full"
-          style={{ backgroundColor: theme.accent }}>
-          <TText className="text-sm" style={{ color: theme.onAccent, fontFamily: Fonts.title }}>
-            {actionLabel}
+        canSettle ? (
+          <View className="mt-4">
+            <View
+              className="min-h-12 flex-row items-center rounded-full border px-4"
+              style={{ borderColor: theme.border, backgroundColor: theme.background }}>
+              <TText className="text-base" style={{ color: theme.muted }}>
+                ₹
+              </TText>
+              <TextInput
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="decimal-pad"
+                accessibilityLabel={`Amount to settle with ${person.name}`}
+                placeholder={toAmountString(outstanding)}
+                placeholderTextColor={theme.muted}
+                style={{
+                  flex: 1,
+                  marginLeft: 6,
+                  minHeight: 44,
+                  color: theme.text,
+                  fontFamily: Fonts.body,
+                  fontSize: 16,
+                }}
+              />
+              {amount.trim() !== '' ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Settle the full balance"
+                  onPress={() => setAmount('')}
+                  className="min-h-11 justify-center pl-3">
+                  <TText className="text-sm" style={{ color: theme.accent, fontFamily: Fonts.title }}>
+                    Full
+                  </TText>
+                </Pressable>
+              ) : null}
+            </View>
+            {amount.trim() !== '' && !amountValid ? (
+              <TText className="mt-2 text-xs" style={{ color: theme.negative }}>
+                Enter an amount greater than zero.
+              </TText>
+            ) : amountValid && chosen < outstanding ? (
+              <TText className="mt-2 text-xs" style={{ color: theme.muted }}>
+                {formatBalance(roundToPaise(outstanding - chosen))} stays outstanding.
+              </TText>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={!amountValid}
+              onPress={() => onPress(chosen)}
+              className="mt-3 min-h-11 items-center justify-center rounded-full"
+              style={{ backgroundColor: theme.accent, opacity: amountValid ? 1 : 0.5 }}>
+              <TText className="text-sm" style={{ color: theme.onAccent, fontFamily: Fonts.title }}>
+                {actionLabel}
+              </TText>
+            </Pressable>
+          </View>
+        ) : (
+          // Somebody in the group the viewer has no friend row for yet. Saying
+          // so beats a button that cannot do anything — which is what this was.
+          <TText className="mt-3 text-xs" style={{ color: theme.muted }}>
+            Waiting for {person.name} to be linked to your friends list before payments can be
+            recorded.
           </TText>
-        </Pressable>
+        )
       ) : null}
     </View>
   );
